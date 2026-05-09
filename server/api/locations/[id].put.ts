@@ -16,6 +16,8 @@ export default defineEventHandler(async (event) => {
     floorPlanImage: body.floorPlanImage !== undefined ? body.floorPlanImage : existing.floorPlanImage,
     layoutData: body.layoutData !== undefined ? body.layoutData : existing.layoutData,
     notes: body.notes !== undefined ? body.notes : existing.notes,
+    dateFrom: body.dateFrom !== undefined ? body.dateFrom : existing.dateFrom,
+    dateTo: body.dateTo !== undefined ? body.dateTo : existing.dateTo,
   }
 
   db.update(locations).set(updated).where(eq(locations.id, id)).run()

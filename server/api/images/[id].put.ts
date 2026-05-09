@@ -10,11 +10,12 @@ export default defineEventHandler(async (event) => {
   const existing = db.select().from(catalogImages).where(eq(catalogImages.id, id)).get()
   if (!existing) throw createError({ statusCode: 404, message: 'Image not found' })
 
-  const updated = {
-    displayMode: body.displayMode ?? existing.displayMode,
-    splitCount: body.splitCount ?? existing.splitCount,
-    sortOrder: body.sortOrder ?? existing.sortOrder,
-  }
+  const updated: Record<string, unknown> = {}
+  if (body.displayMode !== undefined) updated.displayMode = body.displayMode
+  if (body.splitCount !== undefined) updated.splitCount = body.splitCount
+  if (body.sortOrder !== undefined) updated.sortOrder = body.sortOrder
+  if (body.customName !== undefined) updated.customName = body.customName
+  if (body.imageType !== undefined) updated.imageType = body.imageType
 
   db.update(catalogImages).set(updated).where(eq(catalogImages.id, id)).run()
 

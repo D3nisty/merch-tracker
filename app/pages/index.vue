@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { useEventsStore } from '~/stores/events'
+import { useAuthStore } from '~/stores/auth'
 
 const store = useEventsStore()
+const authStore = useAuthStore()
 await store.fetchEvents()
 
 const conventionEvents = computed(() => store.events.filter(e => e.type === 'convention'))
@@ -30,7 +32,7 @@ async function handleDelete() {
         <h1 class="text-3xl font-bold text-white">Your Events</h1>
         <p class="text-gray-400 mt-1">Track merch across conventions and travel destinations</p>
       </div>
-      <UButton to="/events/create" icon="i-heroicons-plus" color="purple" size="lg">
+      <UButton v-if="authStore.isEditing" to="/events/create" icon="i-heroicons-plus" color="purple" size="lg">
         New Event
       </UButton>
     </div>

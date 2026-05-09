@@ -19,6 +19,8 @@ export default defineEventHandler(async (event) => {
     type: body.type as 'hall' | 'city' | 'country' | 'area' | 'district',
     floorPlanImage: body.floorPlanImage ?? null,
     notes: body.notes ?? null,
+    dateFrom: body.dateFrom ?? null,
+    dateTo: body.dateTo ?? null,
     createdAt: now(),
   }
 

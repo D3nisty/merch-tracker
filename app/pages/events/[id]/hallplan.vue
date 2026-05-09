@@ -1,9 +1,46 @@
 <script setup lang="ts">
 import { useEventsStore } from '~/stores/events'
-import type { Booth } from '~/stores/events'
+import { useAuthStore } from '~/stores/auth'
+import type { Booth, HallLayoutData } from '~/stores/events'
 
 const route = useRoute()
 const store = useEventsStore()
+const authStore = useAuthStore()
+
+// ── Booth editing ──────────────────────────────────────────────────────
+const editingBooth = ref(false)
+const editForm = reactive({ name: '', boothNr: '', hallNr: '', website: '', notes: '' })
+
+function startEditBooth() {
+  if (!selectedBooth.value) return
+  Object.assign(editForm, {
+    name: selectedBooth.value.name,
+    boothNr: selectedBooth.value.boothNr ?? '',
+    hallNr: selectedBooth.value.hallNr ?? '',
+    website: selectedBooth.value.website ?? '',
+    notes: selectedBooth.value.notes ?? '',
+  })
+  editingBooth.value = true
+}
+
+async function saveEditBooth() {
+  if (!selectedBooth.value || !editForm.name.trim()) return
+  await store.updateBooth(selectedBooth.value.id, {
+    name: editForm.name.trim(),
+    boothNr: editForm.boothNr || null,
+    hallNr: editForm.hallNr || null,
+    website: editForm.website || null,
+    notes: editForm.notes || null,
+  })
+  editingBooth.value = false
+}
+
+async function deleteBooth() {
+  if (!selectedBooth.value) return
+  if (!confirm(`Delete "${selectedBooth.value.name}"? This will also delete all its products.`)) return
+  await store.deleteBooth(selectedBooth.value.id, selectedLocation.value!.id)
+  selectedBoothId.value = null
+}
 
 if (!store.currentEvent) {
   await store.fetchEvent(route.params.id as string)
@@ -13,6 +50,8 @@ const event = computed(() => store.currentEvent)
 const selectedLocationId = ref(event.value?.locations?.[0]?.id ?? '')
 const selectedLocation = computed(() => event.value?.locations?.find(l => l.id === selectedLocationId.value))
 const selectedBoothId = ref<string | null>(null)
+
+watch(selectedBoothId, () => { editingBooth.value = false })
 
 const selectedBooth = computed<Booth | undefined>(() =>
   selectedLocation.value?.booths?.find(b => b.id === selectedBoothId.value),
@@ -26,6 +65,41 @@ const prefillBoothNr = ref('')
 function onAddDetectedBooth(boothNr: string) {
   prefillBoothNr.value = boothNr
   showAddBooth.value = true
+}
+
+async function onCreateManualBooth(
+  data: { name: string; boothNr: string; hallNr: string; website: string; notes: string },
+  imageIdx: number,
+  rect: { x: number; y: number; w: number; h: number },
+) {
+  // Create the booth
+  await store.createBooth({
+    locationId: selectedLocationId.value,
+    name: data.name,
+    boothNr: data.boothNr || null,
+    hallNr: data.hallNr || null,
+    website: data.website || null,
+    notes: data.notes || null,
+    mapX: rect.x,
+    mapY: rect.y,
+    mapW: rect.w,
+    mapH: rect.h,
+  })
+
+  // Add position to layoutData so it shows on the map
+  if (selectedLocation.value?.layoutData && data.boothNr) {
+    const layout = JSON.parse(selectedLocation.value.layoutData) as HallLayoutData
+    if (layout.images[imageIdx]) {
+      layout.images[imageIdx].booths.push({
+        boothNr: data.boothNr,
+        x: rect.x,
+        y: rect.y,
+        w: rect.w,
+        h: rect.h,
+      })
+      await store.updateLocation(selectedLocationId.value, { layoutData: JSON.stringify(layout) })
+    }
+  }
 }
 
 // Stats for selected location
@@ -130,6 +204,7 @@ const locationStats = computed(() => {
           :selected-booth-id="selectedBoothId"
           @select-booth="selectedBoothId = $event"
           @add-detected-booth="onAddDetectedBooth"
+          @create-manual-booth="onCreateManualBooth"
         />
         <div v-else class="bg-gray-900 rounded-xl p-10 text-center text-gray-500">
           No halls found for this event.
@@ -141,7 +216,30 @@ const locationStats = computed(() => {
         <div v-if="selectedBooth" class="space-y-3 sticky top-24">
           <UCard>
             <template #header>
-              <div class="flex items-center justify-between">
+              <!-- Edit form header -->
+              <div v-if="editingBooth" class="space-y-2">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-sm font-semibold text-gray-300">Edit Booth</span>
+                  <div class="flex gap-1">
+                    <UButton size="xs" color="red" variant="ghost" icon="i-heroicons-trash" @click="deleteBooth" />
+                    <UButton size="xs" color="gray" variant="ghost" icon="i-heroicons-x-mark" @click="editingBooth = false" />
+                  </div>
+                </div>
+                <UInput v-model="editForm.name" placeholder="Booth name" size="sm" />
+                <div class="flex gap-2">
+                  <UInput v-model="editForm.hallNr" placeholder="Hall" size="sm" class="w-20" />
+                  <UInput v-model="editForm.boothNr" placeholder="Booth #" size="sm" class="flex-1" />
+                </div>
+                <UInput v-model="editForm.website" placeholder="Website" size="sm" />
+                <UInput v-model="editForm.notes" placeholder="Notes" size="sm" />
+                <div class="flex gap-2 pt-1">
+                  <UButton size="sm" color="purple" block @click="saveEditBooth">Save</UButton>
+                  <UButton size="sm" color="gray" variant="outline" @click="editingBooth = false">Cancel</UButton>
+                </div>
+              </div>
+
+              <!-- View mode header -->
+              <div v-else class="flex items-center justify-between">
                 <div>
                   <h3 class="font-bold text-white text-lg">{{ selectedBooth.name }}</h3>
                   <div class="text-sm text-gray-400 flex gap-2 mt-0.5">
@@ -151,17 +249,27 @@ const locationStats = computed(() => {
                     </span>
                   </div>
                 </div>
-                <UButton
-                  :to="`/events/${route.params.id}/booth/${selectedBooth.id}`"
-                  icon="i-heroicons-arrow-top-right-on-square"
-                  variant="ghost"
-                  size="sm"
-                  color="gray"
-                />
+                <div class="flex gap-1">
+                  <UButton
+                    v-if="authStore.isEditing"
+                    icon="i-heroicons-pencil-square"
+                    variant="ghost"
+                    size="sm"
+                    color="gray"
+                    @click="startEditBooth"
+                  />
+                  <UButton
+                    :to="`/events/${route.params.id}/booth/${selectedBooth.id}`"
+                    icon="i-heroicons-arrow-top-right-on-square"
+                    variant="ghost"
+                    size="sm"
+                    color="gray"
+                  />
+                </div>
               </div>
             </template>
 
-            <div class="space-y-2 max-h-80 overflow-y-auto">
+            <div v-if="!editingBooth" class="space-y-2 max-h-80 overflow-y-auto">
               <div
                 v-for="product in selectedBooth.products"
                 :key="product.id"
@@ -183,7 +291,7 @@ const locationStats = computed(() => {
               </p>
             </div>
 
-            <template #footer>
+            <template v-if="!editingBooth" #footer>
               <div class="space-y-2">
                 <div v-if="selectedBooth.products?.length" class="flex justify-between text-xs text-gray-400">
                   <span>Total</span>

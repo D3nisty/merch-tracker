@@ -40,6 +40,8 @@ export interface Location {
   floorPlanImage: string | null
   layoutData: string | null
   notes: string | null
+  dateFrom: string | null
+  dateTo: string | null
   createdAt: string
   booths?: Booth[]
 }
@@ -56,6 +58,8 @@ export interface Booth {
   mapH: number | null
   website: string | null
   notes: string | null
+  shopCategory: string | null
+  personId: string | null
   createdAt: string
   products?: Product[]
   images?: CatalogImage[]
@@ -70,6 +74,8 @@ export interface CatalogImage {
   displayMode: 'full' | 'split'
   splitCount: number
   sortOrder: number
+  customName: string | null
+  imageType: 'catalog' | 'article' | 'receipt'
   createdAt: string
 }
 
@@ -77,6 +83,7 @@ export interface Product {
   id: string
   boothId: string
   catalogImageId: string | null
+  personId: string | null
   name: string
   description: string | null
   price: number | null
@@ -87,12 +94,22 @@ export interface Product {
   isPurchased: boolean
   priority: number
   notes: string | null
+  website: string | null
   regionX: number | null
   regionY: number | null
   regionW: number | null
   regionH: number | null
   createdAt: string
   updatedAt: string
+}
+
+export interface BoothPreset {
+  id: string
+  boothId: string
+  label: string
+  price: number
+  currency: string
+  createdAt: string
 }
 
 export const useEventsStore = defineStore('events', () => {
@@ -229,33 +246,104 @@ export const useEventsStore = defineStore('events', () => {
     return updateProduct(product.id, { isPurchased: !product.isPurchased })
   }
 
-  function getTotalCost(boothId?: string): number {
-    if (!currentEvent.value?.locations) return 0
-    let total = 0
-    for (const loc of currentEvent.value.locations) {
-      for (const booth of loc.booths ?? []) {
-        if (boothId && booth.id !== boothId) continue
-        for (const product of booth.products ?? []) {
-          if (product.price) total += product.price * product.quantity
+  async function updateImage(id: string, data: Partial<CatalogImage>) {
+    const updated = await $fetch<CatalogImage>(`/api/images/${id}`, { method: 'PUT', body: data })
+    if (currentEvent.value?.locations) {
+      for (const loc of currentEvent.value.locations) {
+        for (const booth of loc.booths ?? []) {
+          const idx = booth.images?.findIndex(i => i.id === id) ?? -1
+          if (idx !== -1 && booth.images) booth.images[idx] = { ...booth.images[idx], ...updated }
         }
       }
     }
-    return total
+    return updated
   }
 
-  function getPurchasedCost(boothId?: string): number {
-    if (!currentEvent.value?.locations) return 0
-    let total = 0
+  async function deleteImage(id: string, boothId: string) {
+    await $fetch(`/api/images/${id}`, { method: 'DELETE' })
+    if (currentEvent.value?.locations) {
+      for (const loc of currentEvent.value.locations) {
+        const booth = loc.booths?.find(b => b.id === boothId)
+        if (booth) booth.images = booth.images?.filter(i => i.id !== id)
+      }
+    }
+  }
+
+  // Article-aware cost helpers:
+  // - article image = 1 item; only the paid source counts toward budget
+  // - catalog products / unlinked products = each counts individually
+
+  function getItemStats(personId?: string | null): { total: number; purchased: number } {
+    if (!currentEvent.value?.locations) return { total: 0, purchased: 0 }
+    let total = 0, purchased = 0
     for (const loc of currentEvent.value.locations) {
       for (const booth of loc.booths ?? []) {
-        if (boothId && booth.id !== boothId) continue
-        for (const product of booth.products ?? []) {
-          if (product.price && product.isPurchased) total += product.price * product.quantity
+        const images = booth.images ?? []
+        const products = (booth.products ?? []).filter(p => !personId || p.personId === personId)
+        for (const img of images) {
+          if (img.imageType !== 'article') continue
+          total++
+          if (products.some(p => p.catalogImageId === img.id && p.isPurchased)) purchased++
+        }
+        for (const p of products) {
+          const img = images.find(i => i.id === p.catalogImageId)
+          if (img?.imageType === 'article') continue
+          total++
+          if (p.isPurchased) purchased++
         }
       }
     }
-    return total
+    return { total, purchased }
   }
+
+  // Planned budget: catalog products (all) + article paid sources only
+  function getPlannedCostByCurrency(personId?: string | null): Record<string, number> {
+    if (!currentEvent.value?.locations) return {}
+    const map: Record<string, number> = {}
+    for (const loc of currentEvent.value.locations) {
+      for (const booth of loc.booths ?? []) {
+        const images = booth.images ?? []
+        const products = (booth.products ?? []).filter(p => !personId || p.personId === personId)
+        for (const img of images) {
+          if (img.imageType !== 'article') continue
+          const paid = products.find(p => p.catalogImageId === img.id && p.isPurchased)
+          if (paid?.price) {
+            const cur = paid.currency || 'EUR'
+            map[cur] = (map[cur] ?? 0) + paid.price * paid.quantity
+          }
+        }
+        for (const p of products) {
+          const img = images.find(i => i.id === p.catalogImageId)
+          if (img?.imageType === 'article') continue
+          if (!p.price) continue
+          const cur = p.currency || 'EUR'
+          map[cur] = (map[cur] ?? 0) + p.price * p.quantity
+        }
+      }
+    }
+    return map
+  }
+
+  // Paid budget: only isPurchased items (same for both catalog and articles)
+  function getPaidCostByCurrency(personId?: string | null): Record<string, number> {
+    if (!currentEvent.value?.locations) return {}
+    const map: Record<string, number> = {}
+    for (const loc of currentEvent.value.locations) {
+      for (const booth of loc.booths ?? []) {
+        for (const p of (booth.products ?? [])) {
+          if (!p.isPurchased || !p.price) continue
+          if (personId && p.personId !== personId) continue
+          const cur = p.currency || 'EUR'
+          map[cur] = (map[cur] ?? 0) + p.price * p.quantity
+        }
+      }
+    }
+    return map
+  }
+
+  // Keep old names pointing to article-aware versions for backwards compat
+  function getTotalCostByCurrency() { return getPlannedCostByCurrency() }
+  function getPurchasedCostByCurrency() { return getPaidCostByCurrency() }
 
   return {
     events,
@@ -276,7 +364,12 @@ export const useEventsStore = defineStore('events', () => {
     updateProduct,
     deleteProduct,
     togglePurchased,
-    getTotalCost,
-    getPurchasedCost,
+    updateImage,
+    deleteImage,
+    getItemStats,
+    getPlannedCostByCurrency,
+    getPaidCostByCurrency,
+    getTotalCostByCurrency,
+    getPurchasedCostByCurrency,
   }
 })

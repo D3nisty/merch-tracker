@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useEventsStore } from '~/stores/events'
+import { usePersonsStore } from '~/stores/persons'
 
 const props = defineProps<{
   modelValue: boolean
@@ -12,7 +13,10 @@ const props = defineProps<{
 const emit = defineEmits<{ 'update:modelValue': [v: boolean]; close: [] }>()
 
 const store = useEventsStore()
+const personsStore = usePersonsStore()
 const submitting = ref(false)
+
+const SHOP_CATEGORIES = ['Figure', 'Artbook', 'Manga', 'CD / Music', 'Camera', 'Electronics', 'Clothes', 'Accessories', 'Stationery', 'Food', 'Toy', 'Game']
 
 const form = reactive({
   name: '',
@@ -20,6 +24,7 @@ const form = reactive({
   hallNr: '',
   website: '',
   notes: '',
+  categories: [] as string[],
 })
 
 watch(() => props.modelValue, (open) => {
@@ -27,6 +32,12 @@ watch(() => props.modelValue, (open) => {
     form.boothNr = props.prefillBoothNr
   }
 })
+
+function toggleCategory(cat: string) {
+  const idx = form.categories.indexOf(cat)
+  if (idx === -1) form.categories.push(cat)
+  else form.categories.splice(idx, 1)
+}
 
 async function handleSubmit() {
   if (!form.name.trim()) return
@@ -39,6 +50,8 @@ async function handleSubmit() {
       hallNr: form.hallNr || null,
       website: form.website || null,
       notes: form.notes || null,
+      shopCategory: form.categories.length ? form.categories.join(',') : null,
+      personId: personsStore.currentPersonId ?? null,
       mapX: props.initialMapX ?? null,
       mapY: props.initialMapY ?? null,
       mapW: 5,
@@ -46,7 +59,7 @@ async function handleSubmit() {
     })
     emit('update:modelValue', false)
     emit('close')
-    Object.assign(form, { name: '', boothNr: '', hallNr: '', website: '', notes: '' })
+    Object.assign(form, { name: '', boothNr: '', hallNr: '', website: '', notes: '', categories: [] })
   } finally {
     submitting.value = false
   }
@@ -79,6 +92,25 @@ async function handleSubmit() {
             <UInput v-model="form.boothNr" placeholder="e.g. L13" />
           </UFormGroup>
         </div>
+
+        <UFormGroup v-if="eventType === 'travel'" label="Categories">
+          <div class="flex flex-wrap gap-2 mt-1">
+            <button
+              v-for="cat in SHOP_CATEGORIES"
+              :key="cat"
+              type="button"
+              @click="toggleCategory(cat)"
+              :class="[
+                'px-2.5 py-1 rounded-full text-xs font-medium border transition-all',
+                form.categories.includes(cat)
+                  ? 'bg-purple-600 border-purple-500 text-white'
+                  : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500 hover:text-white',
+              ]"
+            >
+              {{ cat }}
+            </button>
+          </div>
+        </UFormGroup>
 
         <UFormGroup label="Website">
           <UInput v-model="form.website" placeholder="https://..." type="url" />

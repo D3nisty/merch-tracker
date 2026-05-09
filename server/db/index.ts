@@ -23,6 +23,13 @@ export function useDb() {
 
   // Create tables if they don't exist
   sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS persons (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      color TEXT NOT NULL DEFAULT 'purple',
+      created_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS events (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -72,10 +79,20 @@ export function useDb() {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS booth_price_presets (
+      id TEXT PRIMARY KEY,
+      booth_id TEXT NOT NULL REFERENCES booths(id) ON DELETE CASCADE,
+      label TEXT NOT NULL,
+      price REAL NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'EUR',
+      created_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS products (
       id TEXT PRIMARY KEY,
       booth_id TEXT NOT NULL REFERENCES booths(id) ON DELETE CASCADE,
       catalog_image_id TEXT REFERENCES catalog_images(id) ON DELETE SET NULL,
+      person_id TEXT REFERENCES persons(id) ON DELETE SET NULL,
       name TEXT NOT NULL,
       description TEXT,
       price REAL,
@@ -86,6 +103,7 @@ export function useDb() {
       is_purchased INTEGER NOT NULL DEFAULT 0,
       priority INTEGER NOT NULL DEFAULT 0,
       notes TEXT,
+      website TEXT,
       region_x REAL,
       region_y REAL,
       region_w REAL,
@@ -97,6 +115,14 @@ export function useDb() {
 
   // Column migrations for existing databases (ALTER TABLE is idempotent via try/catch)
   try { sqlite.exec(`ALTER TABLE locations ADD COLUMN layout_data TEXT`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE catalog_images ADD COLUMN custom_name TEXT`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE catalog_images ADD COLUMN image_type TEXT DEFAULT 'catalog'`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE products ADD COLUMN website TEXT`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE products ADD COLUMN person_id TEXT`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE locations ADD COLUMN date_from TEXT`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE locations ADD COLUMN date_to TEXT`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE booths ADD COLUMN shop_category TEXT`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE booths ADD COLUMN person_id TEXT`) } catch { /* already exists */ }
 
   return _db
 }

@@ -20,6 +20,8 @@ export default defineEventHandler(async (event) => {
     mapH: body.mapH !== undefined ? body.mapH : existing.mapH,
     website: body.website !== undefined ? body.website : existing.website,
     notes: body.notes !== undefined ? body.notes : existing.notes,
+    shopCategory: body.shopCategory !== undefined ? body.shopCategory : existing.shopCategory,
+    personId: body.personId !== undefined ? body.personId : existing.personId,
   }
 
   db.update(booths).set(updated).where(eq(booths.id, id)).run()

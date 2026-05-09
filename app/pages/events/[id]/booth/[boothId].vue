@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { useEventsStore } from '~/stores/events'
-import type { Booth, Product } from '~/stores/events'
+import { useAuthStore } from '~/stores/auth'
+import { usePersonsStore } from '~/stores/persons'
+import type { Booth, Product, CatalogImage, BoothPreset } from '~/stores/events'
 
 const route = useRoute()
 const store = useEventsStore()
+const authStore = useAuthStore()
+const personsStore = usePersonsStore()
 
 if (!store.currentEvent) {
   await store.fetchEvent(route.params.id as string)
@@ -28,18 +32,64 @@ const selectedImageId = ref<string | null>(null)
 const showDeleteProductModal = ref(false)
 const deleteProductId = ref<string | null>(null)
 
+// Price presets
+const presets = ref<BoothPreset[]>([])
+const showAddPreset = ref(false)
+const presetForm = reactive({ label: '', price: '' as string | number, currency: 'EUR' })
+const CURRENCIES = ['EUR', 'JPY', 'USD', 'GBP', 'CHF', 'KRW']
+const SIZES = ['A6', 'A5', 'A4', 'A3', 'A2', 'B2', 'B3', '90×50cm', '40×23.5cm', '25cm', '20cm', '15cm', '10cm']
+const sizeOptions = [{ value: '', label: '— Pick size —' }, ...SIZES.map(s => ({ value: s, label: s }))]
+
+async function loadPresets() {
+  presets.value = await $fetch<BoothPreset[]>(`/api/booths/${route.params.boothId}/presets`)
+}
+
+async function addPreset() {
+  if (!presetForm.label.trim() || !presetForm.price) return
+  const created = await $fetch<BoothPreset>('/api/presets', {
+    method: 'POST',
+    body: { boothId: route.params.boothId, label: presetForm.label, price: Number(presetForm.price), currency: presetForm.currency },
+  })
+  presets.value.push(created)
+  Object.assign(presetForm, { label: '', price: '', currency: 'EUR' })
+  showAddPreset.value = false
+}
+
+async function deletePreset(id: string) {
+  await $fetch(`/api/presets/${id}`, { method: 'DELETE' })
+  presets.value = presets.value.filter(p => p.id !== id)
+}
+
+onMounted(loadPresets)
+
 function confirmDeleteProduct(id: string) {
   deleteProductId.value = id
   showDeleteProductModal.value = true
 }
 
-const totalCost = computed(() => {
-  return (booth.value?.products ?? []).reduce((sum, p) => sum + (p.price ?? 0) * p.quantity, 0)
-})
+function formatCostMap(map: Record<string, number>) {
+  const entries = Object.entries(map)
+  if (!entries.length) return null
+  return entries.map(([cur, amt]) => `${amt.toFixed(2)} ${cur}`).join(' · ')
+}
 
-const purchasedCost = computed(() => {
-  return (booth.value?.products ?? []).filter(p => p.isPurchased).reduce((sum, p) => sum + (p.price ?? 0) * p.quantity, 0)
-})
+function buildCostMap(products: Product[], images: CatalogImage[], paidOnly: boolean) {
+  const map: Record<string, number> = {}
+  for (const p of products) {
+    if (!p.price) continue
+    if (paidOnly && !p.isPurchased) continue
+    const img = images.find(i => i.id === p.catalogImageId)
+    if (img?.imageType === 'article' && !p.isPurchased) continue
+    const cur = p.currency || 'EUR'
+    map[cur] = (map[cur] ?? 0) + p.price * p.quantity
+  }
+  return map
+}
+
+const costByCurrency = computed(() =>
+  buildCostMap(booth.value?.products ?? [], booth.value?.images ?? [], false))
+const purchasedByCurrency = computed(() =>
+  buildCostMap(booth.value?.products ?? [], booth.value?.images ?? [], true))
 
 async function handleToggle(product: Product) {
   await store.togglePurchased(product)
@@ -52,6 +102,10 @@ async function handleDeleteProduct() {
   deleteProductId.value = null
 }
 
+const sortedImages = computed(() =>
+  [...(booth.value?.images ?? [])].sort((a, b) => a.sortOrder - b.sortOrder),
+)
+
 const groupedByImage = computed(() => {
   const groups: Record<string, Product[]> = { none: [] }
   for (const img of booth.value?.images ?? []) {
@@ -63,6 +117,56 @@ const groupedByImage = computed(() => {
     groups[key].push(p)
   }
   return groups
+})
+
+async function moveImage(imageId: string, direction: 'up' | 'down') {
+  const images = sortedImages.value
+  const idx = images.findIndex(i => i.id === imageId)
+  if (idx === -1) return
+  const swapIdx = direction === 'up' ? idx - 1 : idx + 1
+  if (swapIdx < 0 || swapIdx >= images.length) return
+  // Re-assign clean sequential orders, then swap the two
+  const orders = images.map((_, i) => i * 10)
+  const tmp = orders[idx]
+  orders[idx] = orders[swapIdx]
+  orders[swapIdx] = tmp
+  await Promise.all([
+    store.updateImage(images[idx].id, { sortOrder: orders[idx] }),
+    store.updateImage(images[swapIdx].id, { sortOrder: orders[swapIdx] }),
+  ])
+}
+
+// Per-person breakdown
+const COLOR_MAP: Record<string, string> = {
+  purple: 'bg-purple-500', blue: 'bg-blue-500', green: 'bg-green-500',
+  yellow: 'bg-yellow-500', red: 'bg-red-500', pink: 'bg-pink-500',
+  orange: 'bg-orange-500', teal: 'bg-teal-500',
+}
+
+const personBreakdown = computed(() => {
+  const images = booth.value?.images ?? []
+  const result: Array<{ person: typeof personsStore.persons[0] | null; label: string; entries: [string, number][] }> = []
+  const personMap = new Map<string | null, Record<string, number>>()
+
+  for (const p of booth.value?.products ?? []) {
+    if (!p.price) continue
+    const img = images.find(i => i.id === p.catalogImageId)
+    if (img?.imageType === 'article' && !p.isPurchased) continue
+    const key = p.personId ?? null
+    if (!personMap.has(key)) personMap.set(key, {})
+    const cur = p.currency || 'EUR'
+    personMap.get(key)![cur] = (personMap.get(key)![cur] ?? 0) + p.price * p.quantity
+  }
+
+  for (const [personId, map] of personMap) {
+    const person = personId ? personsStore.persons.find(p => p.id === personId) ?? null : null
+    result.push({
+      person,
+      label: person?.name ?? 'Unassigned',
+      entries: Object.entries(map),
+    })
+  }
+  return result
 })
 </script>
 
@@ -89,30 +193,143 @@ const groupedByImage = computed(() => {
             </a>
           </div>
           <p v-if="booth.notes" class="text-gray-500 text-sm mt-1">{{ booth.notes }}</p>
+          <div v-if="booth.shopCategory" class="flex flex-wrap gap-1.5 mt-2">
+            <span
+              v-for="cat in booth.shopCategory.split(',')"
+              :key="cat"
+              class="px-2 py-0.5 rounded-full text-xs bg-gray-800 text-gray-300 border border-gray-700"
+            >
+              {{ cat }}
+            </span>
+          </div>
         </div>
         <div class="text-right">
-          <div class="text-2xl font-bold text-yellow-400">{{ totalCost.toFixed(2) }}€</div>
-          <div class="text-sm text-gray-400">{{ purchasedCost.toFixed(2) }}€ spent</div>
+          <div v-if="formatCostMap(costByCurrency)" class="font-bold text-yellow-400 leading-tight">
+            <div v-for="[cur, amt] in Object.entries(costByCurrency)" :key="cur" class="text-xl">
+              {{ amt.toFixed(2) }} {{ cur }}
+            </div>
+          </div>
+          <div v-else class="text-xl font-bold text-yellow-400">—</div>
+          <div class="text-sm text-gray-400 mt-0.5">
+            {{ formatCostMap(purchasedByCurrency) ?? '0.00' }} spent
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Action bar -->
-    <div class="flex gap-2 mb-6">
+    <!-- Action bar (edit mode only) -->
+    <div v-if="authStore.isEditing" class="flex gap-2 mb-6">
       <UButton icon="i-heroicons-plus" color="purple" @click="showAddProduct = true">Add Product</UButton>
-      <UButton icon="i-heroicons-photo" variant="outline" color="gray" @click="showUploadImage = true">Upload Catalog</UButton>
+      <UButton icon="i-heroicons-photo" variant="outline" color="gray" @click="showUploadImage = true">Upload Image</UButton>
+    </div>
+
+    <!-- Price presets (edit mode only) -->
+    <div v-if="authStore.isEditing" class="mb-6">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-sm font-semibold text-gray-400">Price Presets</h3>
+        <UButton
+          icon="i-heroicons-plus"
+          variant="ghost"
+          color="gray"
+          size="xs"
+          @click="showAddPreset = !showAddPreset"
+        >
+          Add Preset
+        </UButton>
+      </div>
+
+      <div v-if="presets.length" class="flex flex-wrap gap-2 mb-2">
+        <div
+          v-for="preset in presets"
+          :key="preset.id"
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-800 border border-gray-700 text-xs group"
+        >
+          <span class="text-gray-300">{{ preset.label }}</span>
+          <span class="text-yellow-400 font-medium">{{ preset.price.toFixed(2) }} {{ preset.currency }}</span>
+          <button
+            class="text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+            @click="deletePreset(preset.id)"
+          >
+            <UIcon name="i-heroicons-x-mark" class="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+      <p v-else-if="!showAddPreset" class="text-xs text-gray-600">No presets yet. Add common prices like "A4 Print = 5 EUR".</p>
+
+      <div v-if="showAddPreset" class="flex gap-2 items-end mt-2">
+        <UFormGroup label="Size" class="w-40">
+          <USelect
+            v-model="presetForm.label"
+            :options="sizeOptions"
+            option-attribute="label"
+            value-attribute="value"
+            size="sm"
+          />
+        </UFormGroup>
+        <UFormGroup label="Price" class="w-28">
+          <UInput v-model="presetForm.price" type="number" step="0.01" min="0" placeholder="0.00" size="sm" />
+        </UFormGroup>
+        <UFormGroup label="Currency" class="w-24">
+          <USelect
+            v-model="presetForm.currency"
+            :options="CURRENCIES.map(c => ({ value: c, label: c }))"
+            option-attribute="label"
+            value-attribute="value"
+            size="sm"
+          />
+        </UFormGroup>
+        <UButton color="purple" size="sm" @click="addPreset">Save</UButton>
+        <UButton variant="ghost" color="gray" size="sm" @click="showAddPreset = false">Cancel</UButton>
+      </div>
+    </div>
+
+    <!-- Per-person breakdown -->
+    <div v-if="personBreakdown.length > 1" class="mb-6 p-4 rounded-xl bg-gray-900 border border-gray-800">
+      <h3 class="text-sm font-semibold text-gray-400 mb-3">Cost by Person</h3>
+      <div class="space-y-2">
+        <div v-for="item in personBreakdown" :key="item.label" class="flex items-center justify-between text-sm">
+          <div class="flex items-center gap-2">
+            <span
+              v-if="item.person"
+              :class="['w-2.5 h-2.5 rounded-full', COLOR_MAP[item.person.color] ?? 'bg-purple-500']"
+            />
+            <UIcon v-else name="i-heroicons-user" class="w-3 h-3 text-gray-500" />
+            <span class="text-gray-300">{{ item.label }}</span>
+          </div>
+          <div class="text-yellow-400 font-medium">
+            <span v-for="([cur, amt], i) in item.entries" :key="cur">
+              <span v-if="i > 0" class="text-gray-600"> · </span>{{ amt.toFixed(2) }} {{ cur }}
+            </span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Catalog images with products -->
-    <div class="space-y-8">
-      <!-- Images with associated products -->
-      <div v-for="img in booth.images" :key="img.id">
+    <div :class="['space-y-8', authStore.isEditing && sortedImages.length > 1 ? 'pl-8' : '']">
+      <div v-for="(img, idx) in sortedImages" :key="img.id" class="relative group/img">
+        <!-- Reorder controls -->
+        <div v-if="authStore.isEditing && sortedImages.length > 1" class="absolute -left-8 top-2 flex flex-col gap-0.5 opacity-0 group-hover/img:opacity-100 transition-opacity z-10">
+          <button
+            :disabled="idx === 0"
+            class="w-6 h-6 flex items-center justify-center rounded bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 disabled:opacity-20 disabled:cursor-not-allowed"
+            @click="moveImage(img.id, 'up')"
+          >
+            <UIcon name="i-heroicons-chevron-up" class="w-3.5 h-3.5" />
+          </button>
+          <button
+            :disabled="idx === sortedImages.length - 1"
+            class="w-6 h-6 flex items-center justify-center rounded bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 disabled:opacity-20 disabled:cursor-not-allowed"
+            @click="moveImage(img.id, 'down')"
+          >
+            <UIcon name="i-heroicons-chevron-down" class="w-3.5 h-3.5" />
+          </button>
+        </div>
         <CatalogImageViewer
           :image="img"
           :products="groupedByImage[img.id] ?? []"
-          @toggle="handleToggle"
-          @add-product="(data) => store.createProduct({ boothId: booth!.id, catalogImageId: img.id, ...data })"
-          @delete-product="confirmDeleteProduct($event)"
+          :presets="presets"
+          :booth-products="img.imageType === 'receipt' ? booth.products : undefined"
         />
       </div>
 
@@ -136,7 +353,7 @@ const groupedByImage = computed(() => {
       <div v-if="!booth.products?.length && !booth.images?.length" class="text-center py-12 text-gray-500">
         <UIcon name="i-heroicons-shopping-bag" class="w-12 h-12 mx-auto mb-3 text-gray-600" />
         <p>No products or catalog images yet.</p>
-        <p class="text-sm mt-1">Upload a catalog image to extract products, or add them manually.</p>
+        <p v-if="authStore.isEditing" class="text-sm mt-1">Upload a catalog image to extract products, or add them manually.</p>
       </div>
     </div>
 

@@ -24,6 +24,8 @@ export default defineEventHandler(async (event) => {
     mapH: body.mapH ?? null,
     website: body.website ?? null,
     notes: body.notes ?? null,
+    shopCategory: body.shopCategory ?? null,
+    personId: body.personId ?? null,
     createdAt: now(),
   }
 

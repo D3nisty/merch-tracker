@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import type { Event } from '~/stores/events'
+import { useAuthStore } from '~/stores/auth'
 
 const props = defineProps<{ event: Event }>()
 const emit = defineEmits<{ delete: [id: string] }>()
+
+const authStore = useAuthStore()
 
 const totalBooths = computed(() =>
   props.event.locations?.reduce((sum, l) => sum + (l.booths?.length ?? 0), 0) ?? 0,
@@ -18,10 +21,22 @@ const purchasedProducts = computed(() =>
 )
 
 const isConvention = computed(() => props.event.type === 'convention')
+
+const dropdownItems = computed(() => {
+  const items = [
+    { label: 'View', icon: 'i-heroicons-eye', to: `/events/${props.event.id}` },
+  ]
+  if (isConvention.value) {
+    items.push({ label: 'Hall Plan', icon: 'i-heroicons-map', to: `/events/${props.event.id}/hallplan` } as any)
+  }
+  if (authStore.isEditing) {
+    items.push({ label: 'Delete', icon: 'i-heroicons-trash', click: () => emit('delete', props.event.id), class: 'text-red-400' } as any)
+  }
+  return [items]
+})
 </script>
 
 <template>
-  <!-- Relative wrapper so nothing bleeds outside the card -->
   <div class="relative group">
     <NuxtLink :to="`/events/${event.id}`" class="block">
       <UCard class="hover:border-purple-500/50 transition-colors cursor-pointer">
@@ -61,13 +76,8 @@ const isConvention = computed(() => props.event.type === 'convention')
       </UCard>
     </NuxtLink>
 
-    <!-- Dropdown overlaid at top-right, above the NuxtLink -->
     <div class="absolute top-3 right-3 z-10" @click.stop @mousedown.stop>
-      <UDropdown :items="[[
-        { label: 'Edit', icon: 'i-heroicons-pencil', to: `/events/${event.id}` },
-        { label: 'Hall Plan', icon: 'i-heroicons-map', to: `/events/${event.id}/hallplan`, disabled: !isConvention },
-        { label: 'Delete', icon: 'i-heroicons-trash', click: () => emit('delete', event.id), class: 'text-red-400' },
-      ]]">
+      <UDropdown :items="dropdownItems">
         <UButton icon="i-heroicons-ellipsis-vertical" variant="ghost" color="gray" size="xs" />
       </UDropdown>
     </div>

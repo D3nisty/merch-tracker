@@ -15,6 +15,8 @@ const form = reactive({
   name: '',
   type: props.eventType === 'convention' ? 'hall' : 'city',
   notes: '',
+  dateFrom: '',
+  dateTo: '',
 })
 
 const typeOptions = computed(() => {
@@ -38,10 +40,14 @@ async function handleSubmit() {
       name: form.name.trim(),
       type: form.type as 'hall' | 'city' | 'country' | 'area' | 'district',
       notes: form.notes || null,
+      dateFrom: form.dateFrom || null,
+      dateTo: form.dateTo || null,
     })
     emit('update:modelValue', false)
     form.name = ''
     form.notes = ''
+    form.dateFrom = ''
+    form.dateTo = ''
   } finally {
     submitting.value = false
   }
@@ -64,6 +70,16 @@ async function handleSubmit() {
         <UFormGroup label="Name" required>
           <UInput v-model="form.name" :placeholder="eventType === 'convention' ? 'e.g. Halle 10' : 'e.g. Tokyo'" autofocus />
         </UFormGroup>
+        <template v-if="eventType === 'travel'">
+          <div class="flex gap-3">
+            <UFormGroup label="From" class="flex-1">
+              <UInput v-model="form.dateFrom" type="date" />
+            </UFormGroup>
+            <UFormGroup label="To" class="flex-1">
+              <UInput v-model="form.dateTo" type="date" />
+            </UFormGroup>
+          </div>
+        </template>
         <UFormGroup label="Notes">
           <UTextarea v-model="form.notes" rows="2" />
         </UFormGroup>

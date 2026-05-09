@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useEventsStore } from '~/stores/events'
+import { usePersonsStore } from '~/stores/persons'
 
 const props = defineProps<{
   modelValue: boolean
@@ -15,6 +16,7 @@ const props = defineProps<{
 const emit = defineEmits<{ 'update:modelValue': [v: boolean] }>()
 
 const store = useEventsStore()
+const personsStore = usePersonsStore()
 const submitting = ref(false)
 
 const CURRENCIES = [
@@ -27,6 +29,7 @@ const CURRENCIES = [
 ]
 
 const SIZES = ['A6', 'A5', 'A4', 'A3', 'A2', 'B2', 'B3', '90×50cm', '40×23.5cm', '25cm', '20cm', '15cm', '10cm']
+const sizeOptions = [{ value: '', label: '— No size —' }, ...SIZES.map(s => ({ value: s, label: s }))]
 const CATEGORIES = ['Print', 'Keychain', 'Sticker', 'Acrylic Figure', 'Figure', 'Mousepad', 'Shirt', 'Pin', 'Plush', 'Bag', 'Other']
 
 const form = reactive({
@@ -39,12 +42,14 @@ const form = reactive({
   category: '',
   priority: 0,
   notes: '',
+  personId: null as string | null,
 })
 
 watch(() => props.modelValue, (open) => {
   if (open) {
     form.name = props.prefillName ?? ''
     form.category = props.prefillCategory ?? ''
+    form.personId = personsStore.currentPersonId
   }
 })
 
@@ -53,6 +58,11 @@ const priorityOptions = [
   { value: 1, label: 'Want' },
   { value: 2, label: 'Must Have' },
 ]
+
+const personOptions = computed(() => [
+  { value: null, label: 'No person' },
+  ...personsStore.persons.map(p => ({ value: p.id, label: p.name })),
+])
 
 async function handleSubmit() {
   if (!form.name.trim()) return
@@ -69,6 +79,7 @@ async function handleSubmit() {
       category: form.category || null,
       priority: form.priority,
       notes: form.notes || null,
+      personId: form.personId,
       catalogImageId: props.prefillCatalogImageId ?? null,
       regionX: props.prefillRegionX ?? null,
       regionY: props.prefillRegionY ?? null,
@@ -113,24 +124,15 @@ async function handleSubmit() {
         </div>
 
         <div class="grid grid-cols-2 gap-3">
-          <!-- Free-text size with quick-pick chips -->
           <UFormGroup label="Size">
-            <UInput v-model="form.size" placeholder="e.g. A3, 25cm, 90×50cm…" />
-            <div class="flex flex-wrap gap-1 mt-1.5">
-              <button
-                v-for="s in SIZES"
-                :key="s"
-                type="button"
-                class="px-1.5 py-0.5 text-xs rounded border transition-colors"
-                :class="form.size === s
-                  ? 'bg-purple-600 border-purple-500 text-white'
-                  : 'border-gray-700 text-gray-400 hover:border-gray-500'"
-                @click="form.size = form.size === s ? '' : s"
-              >{{ s }}</button>
-            </div>
+            <USelect
+              v-model="form.size"
+              :options="sizeOptions"
+              option-attribute="label"
+              value-attribute="value"
+            />
           </UFormGroup>
 
-          <!-- Category with quick-pick chips -->
           <UFormGroup label="Category">
             <UInput v-model="form.category" placeholder="e.g. Figure, Print…" />
             <div class="flex flex-wrap gap-1 mt-1.5">
@@ -148,14 +150,24 @@ async function handleSubmit() {
           </UFormGroup>
         </div>
 
-        <UFormGroup label="Priority">
-          <USelect
-            v-model.number="form.priority"
-            :options="priorityOptions"
-            option-attribute="label"
-            value-attribute="value"
-          />
-        </UFormGroup>
+        <div class="grid grid-cols-2 gap-3">
+          <UFormGroup label="Priority">
+            <USelect
+              v-model.number="form.priority"
+              :options="priorityOptions"
+              option-attribute="label"
+              value-attribute="value"
+            />
+          </UFormGroup>
+          <UFormGroup label="Person" v-if="personsStore.persons.length">
+            <USelect
+              v-model="form.personId"
+              :options="personOptions"
+              option-attribute="label"
+              value-attribute="value"
+            />
+          </UFormGroup>
+        </div>
 
         <UFormGroup label="Description / Notes">
           <UInput v-model="form.description" placeholder="Optional details…" />

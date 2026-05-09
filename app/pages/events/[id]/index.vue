@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { useEventsStore } from '~/stores/events'
+import { useAuthStore } from '~/stores/auth'
+import { usePersonsStore } from '~/stores/persons'
 import type { Location } from '~/stores/events'
 
 const route = useRoute()
 const store = useEventsStore()
+const authStore = useAuthStore()
+const personsStore = usePersonsStore()
 await store.fetchEvent(route.params.id as string)
 
 const event = computed(() => store.currentEvent)
@@ -17,13 +21,11 @@ const showEditEvent = ref(false)
 const showDeleteLocationModal = ref(false)
 const deleteLocationId = ref<string | null>(null)
 
-// Totals
-const totalCost = computed(() => store.getTotalCost())
-const purchasedCost = computed(() => store.getPurchasedCost())
-const allProducts = computed(() => {
-  return event.value?.locations?.flatMap(l => l.booths?.flatMap(b => b.products ?? []) ?? []) ?? []
-})
-const purchasedCount = computed(() => allProducts.value.filter(p => p.isPurchased).length)
+// Totals — article-aware, filtered by selected person
+const pid = computed(() => personsStore.currentPersonId)
+const itemStats = computed(() => store.getItemStats(pid.value))
+const plannedEntries = computed(() => Object.entries(store.getPlannedCostByCurrency(pid.value)))
+const paidEntries = computed(() => Object.entries(store.getPaidCostByCurrency(pid.value)))
 
 async function handleDeleteLocation() {
   if (!deleteLocationId.value) return
@@ -73,6 +75,7 @@ function locationIcon(type: Location['type']) {
         </div>
         <div class="flex gap-2">
           <UButton
+            v-if="authStore.isEditing"
             icon="i-heroicons-pencil"
             variant="ghost"
             color="gray"
@@ -83,8 +86,25 @@ function locationIcon(type: Location['type']) {
       </div>
     </div>
 
+    <!-- Person filter notice -->
+    <div v-if="personsStore.currentPerson" class="flex items-center gap-2 mb-3 text-sm text-gray-400">
+      <span
+        :class="['w-2.5 h-2.5 rounded-full shrink-0', {
+          'bg-purple-500': personsStore.currentPerson.color === 'purple',
+          'bg-blue-500': personsStore.currentPerson.color === 'blue',
+          'bg-green-500': personsStore.currentPerson.color === 'green',
+          'bg-yellow-500': personsStore.currentPerson.color === 'yellow',
+          'bg-red-500': personsStore.currentPerson.color === 'red',
+          'bg-pink-500': personsStore.currentPerson.color === 'pink',
+          'bg-orange-500': personsStore.currentPerson.color === 'orange',
+          'bg-teal-500': personsStore.currentPerson.color === 'teal',
+        }]"
+      />
+      Showing budget for <span class="text-white font-medium">{{ personsStore.currentPerson.name }}</span>
+    </div>
+
     <!-- Stats bar -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-8">
       <UCard class="text-center p-4">
         <div class="text-2xl font-bold text-purple-400">{{ event.locations?.length ?? 0 }}</div>
         <div class="text-xs text-gray-400 mt-1">{{ event.type === 'convention' ? 'Halls' : 'Locations' }}</div>
@@ -96,12 +116,26 @@ function locationIcon(type: Location['type']) {
         <div class="text-xs text-gray-400 mt-1">{{ event.type === 'convention' ? 'Booths' : 'Shops' }}</div>
       </UCard>
       <UCard class="text-center p-4">
-        <div class="text-2xl font-bold text-green-400">{{ purchasedCount }}/{{ allProducts.length }}</div>
+        <div class="text-2xl font-bold text-green-400">{{ itemStats.purchased }}/{{ itemStats.total }}</div>
         <div class="text-xs text-gray-400 mt-1">Purchased</div>
       </UCard>
       <UCard class="text-center p-4">
-        <div class="text-2xl font-bold text-yellow-400">{{ totalCost.toFixed(2) }}€</div>
-        <div class="text-xs text-gray-400 mt-1">Total Budget</div>
+        <div v-if="plannedEntries.length" class="font-bold text-yellow-400 leading-snug">
+          <div v-for="[cur, amt] in plannedEntries" :key="cur" class="text-xl">
+            {{ amt.toFixed(2) }} {{ cur }}
+          </div>
+        </div>
+        <div v-else class="text-xl font-bold text-yellow-400">—</div>
+        <div class="text-xs text-gray-400 mt-1">Planned Budget</div>
+      </UCard>
+      <UCard class="text-center p-4">
+        <div v-if="paidEntries.length" class="font-bold text-green-400 leading-snug">
+          <div v-for="[cur, amt] in paidEntries" :key="cur" class="text-xl">
+            {{ amt.toFixed(2) }} {{ cur }}
+          </div>
+        </div>
+        <div v-else class="text-xl font-bold text-gray-600">—</div>
+        <div class="text-xs text-gray-400 mt-1">Paid</div>
       </UCard>
     </div>
 
@@ -110,7 +144,7 @@ function locationIcon(type: Location['type']) {
       <h2 class="text-xl font-bold text-white">
         {{ event.type === 'convention' ? 'Halls' : 'Locations' }}
       </h2>
-      <UButton icon="i-heroicons-plus" color="purple" size="sm" @click="showAddLocation = true">
+      <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" color="purple" size="sm" @click="showAddLocation = true">
         Add {{ event.type === 'convention' ? 'Hall' : 'Location' }}
       </UButton>
     </div>
