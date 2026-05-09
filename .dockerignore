@@ -1,0 +1,11 @@
+node_modules
+.output
+.nuxt
+.git
+data
+uploads
+public/uploads
+*.md
+.env
+.env.*
+drizzle

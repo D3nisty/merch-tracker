@@ -1,0 +1,15 @@
+services:
+  merch-tracker:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      HOST: "0.0.0.0"
+      PORT: "3000"
+    volumes:
+      # SQLite database — persists across image rebuilds
+      - ./data:/app/.output/data
+      # Uploaded images — persists across image rebuilds, served as /uploads/
+      - ./uploads:/app/.output/public/uploads
