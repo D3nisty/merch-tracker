@@ -102,6 +102,32 @@ async function onCreateManualBooth(
   }
 }
 
+async function onPlaceExistingBooth(
+  boothId: string,
+  imageIdx: number,
+  rect: { x: number; y: number; w: number; h: number },
+) {
+  const booth = selectedLocation.value?.booths?.find(b => b.id === boothId)
+  if (!booth) return
+
+  await store.updateBooth(boothId, { mapX: rect.x, mapY: rect.y, mapW: rect.w, mapH: rect.h })
+
+  // Add to layoutData so it appears on the map with its boothNr
+  if (selectedLocation.value?.layoutData && booth.boothNr) {
+    const layout = JSON.parse(selectedLocation.value.layoutData) as HallLayoutData
+    if (layout.images[imageIdx]) {
+      layout.images[imageIdx].booths.push({
+        boothNr: booth.boothNr,
+        x: rect.x,
+        y: rect.y,
+        w: rect.w,
+        h: rect.h,
+      })
+      await store.updateLocation(selectedLocationId.value, { layoutData: JSON.stringify(layout) })
+    }
+  }
+}
+
 // Stats for selected location
 const locationStats = computed(() => {
   const booths = selectedLocation.value?.booths ?? []
@@ -205,6 +231,7 @@ const locationStats = computed(() => {
           @select-booth="selectedBoothId = $event"
           @add-detected-booth="onAddDetectedBooth"
           @create-manual-booth="onCreateManualBooth"
+          @place-existing-booth="onPlaceExistingBooth"
         />
         <div v-else class="bg-gray-900 rounded-xl p-10 text-center text-gray-500">
           No halls found for this event.

@@ -1,0 +1,19 @@
+import { useDb } from '../../../db'
+import { catalogImages, products } from '../../../db/schema'
+import { eq } from 'drizzle-orm'
+
+export default defineEventHandler(async (event) => {
+  const id = getRouterParam(event, 'id')!
+  const { boothId } = await readBody(event)
+  if (!boothId) throw createError({ statusCode: 400, message: 'boothId is required' })
+
+  const db = useDb()
+  const existing = db.select().from(catalogImages).where(eq(catalogImages.id, id)).get()
+  if (!existing) throw createError({ statusCode: 404, message: 'Image not found' })
+
+  db.update(catalogImages).set({ boothId }).where(eq(catalogImages.id, id)).run()
+  db.update(catalogImages).set({ boothId }).where(eq(catalogImages.parentId, id)).run()
+  db.update(products).set({ boothId }).where(eq(products.catalogImageId, id)).run()
+
+  return { success: true }
+})

@@ -71,6 +71,8 @@ export const catalogImages = sqliteTable('catalog_images', {
   sortOrder: integer('sort_order').notNull().default(0),
   customName: text('custom_name'),
   imageType: text('image_type', { enum: ['catalog', 'article', 'receipt'] }).notNull().default('catalog'),
+  personId: text('person_id').references(() => persons.id, { onDelete: 'set null' }),
+  parentId: text('parent_id'),
   createdAt: text('created_at').notNull(),
 })
 
@@ -87,6 +89,7 @@ export const products = sqliteTable('products', {
   size: text('size'),
   category: text('category'),
   isPurchased: integer('is_purchased', { mode: 'boolean' }).notNull().default(false),
+  isPlanned: integer('is_planned', { mode: 'boolean' }).notNull().default(false),
   priority: integer('priority').notNull().default(0),
   notes: text('notes'),
   website: text('website'),

@@ -7,15 +7,18 @@ const emit = defineEmits<{ delete: [id: string] }>()
 
 const authStore = useAuthStore()
 
+const locationCount = computed(() =>
+  props.event.locationCount ?? props.event.locations?.length ?? 0,
+)
 const totalBooths = computed(() =>
-  props.event.locations?.reduce((sum, l) => sum + (l.booths?.length ?? 0), 0) ?? 0,
+  props.event.boothCount ?? props.event.locations?.reduce((sum, l) => sum + (l.booths?.length ?? 0), 0) ?? 0,
 )
 const totalProducts = computed(() =>
-  props.event.locations?.reduce((sum, l) =>
+  props.event.totalProducts ?? props.event.locations?.reduce((sum, l) =>
     sum + (l.booths?.reduce((s, b) => s + (b.products?.length ?? 0), 0) ?? 0), 0) ?? 0,
 )
 const purchasedProducts = computed(() =>
-  props.event.locations?.reduce((sum, l) =>
+  props.event.purchasedProducts ?? props.event.locations?.reduce((sum, l) =>
     sum + (l.booths?.reduce((s, b) =>
       s + (b.products?.filter(p => p.isPurchased).length ?? 0), 0) ?? 0), 0) ?? 0,
 )
@@ -62,7 +65,7 @@ const dropdownItems = computed(() => {
         <div class="flex items-center gap-4 mt-4 pt-4 border-t border-gray-800 text-xs text-gray-400">
           <span class="flex items-center gap-1">
             <UIcon name="i-heroicons-building-office" class="w-3 h-3" />
-            {{ event.locations?.length ?? 0 }} {{ isConvention ? 'halls' : 'locations' }}
+            {{ locationCount }} {{ isConvention ? 'halls' : 'locations' }}
           </span>
           <span class="flex items-center gap-1">
             <UIcon name="i-heroicons-shopping-bag" class="w-3 h-3" />

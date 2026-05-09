@@ -16,6 +16,8 @@ export default defineEventHandler(async (event) => {
   const sortOrderField = formData.find(f => f.name === 'sortOrder')
   const customNameField = formData.find(f => f.name === 'customName')
   const imageTypeField = formData.find(f => f.name === 'imageType')
+  const personIdField = formData.find(f => f.name === 'personId')
+  const parentIdField = formData.find(f => f.name === 'parentId')
 
   if (!boothIdField || !imageFile) {
     throw createError({ statusCode: 400, message: 'boothId and image are required' })
@@ -47,6 +49,8 @@ export default defineEventHandler(async (event) => {
     sortOrder: nextOrder,
     customName: customNameField?.data.toString() || null,
     imageType: (imageTypeField?.data.toString() ?? 'catalog') as 'catalog' | 'article',
+    personId: personIdField?.data.toString() || null,
+    parentId: parentIdField?.data.toString() || null,
     createdAt: now(),
   }
 

@@ -9,6 +9,7 @@ const props = defineProps<{
   products: Product[]
   presets?: BoothPreset[]
   boothProducts?: Product[]
+  subImages?: CatalogImage[]
 }>()
 
 const store = useEventsStore()
@@ -17,6 +18,8 @@ const personsStore = usePersonsStore()
 
 const expanded = ref(true)
 const fullscreen = ref(false)
+const showProductsPanel = ref(true)
+const showBoxLabels = ref(true)
 const showOcr = ref(false)
 const mode = ref(props.image.displayMode)
 const splitCount = ref(props.image.splitCount ?? 2)
@@ -31,8 +34,83 @@ const COLOR_MAP: Record<string, string> = {
   yellow: 'bg-yellow-500', red: 'bg-red-500', pink: 'bg-pink-500',
   orange: 'bg-orange-500', teal: 'bg-teal-500',
 }
+const PERSON_HEX: Record<string, string> = {
+  purple: '#a855f8', blue: '#3b82f6', green: '#22c55e', yellow: '#eab308',
+  red: '#ef4444', pink: '#ec4899', orange: '#f97316', teal: '#14b8a6',
+}
+function personHex(personId: string | null | undefined): string {
+  if (!personId) return '#a855f8'
+  const p = personsStore.persons.find(x => x.id === personId)
+  return p ? (PERSON_HEX[p.color] ?? '#a855f8') : '#a855f8'
+}
 function personById(id: string | null) {
   return id ? personsStore.persons.find(p => p.id === id) ?? null : null
+}
+
+// ── Image person assignment (article only) ────────────────────────────
+const imagePersonId = ref(props.image.personId ?? '')
+
+async function saveImagePerson() {
+  await store.updateImage(props.image.id, { personId: imagePersonId.value || null })
+}
+
+// ── Move image to another booth ───────────────────────────────────────
+const showMoveModal = ref(false)
+const moveTargetBoothId = ref('')
+const moving = ref(false)
+
+const moveBoothOptions = computed(() => {
+  const result: Array<{ locName: string; booths: Array<{ id: string; name: string }> }> = []
+  for (const loc of store.currentEvent?.locations ?? []) {
+    const booths = (loc.booths ?? []).filter(b => b.id !== props.image.boothId)
+    if (booths.length) result.push({ locName: loc.name, booths: booths.map(b => ({ id: b.id, name: b.name })) })
+  }
+  return result
+})
+
+async function confirmMove() {
+  if (!moveTargetBoothId.value) return
+  moving.value = true
+  try {
+    await store.moveImage(props.image.id, props.image.boothId, moveTargetBoothId.value)
+    showMoveModal.value = false
+    moveTargetBoothId.value = ''
+  } finally {
+    moving.value = false
+  }
+}
+
+// ── Article gallery: add / replace images ────────────────────────────
+const addingSubImage = ref(false)
+const subImageInput = ref<HTMLInputElement>()
+const replaceInput = ref<HTMLInputElement>()
+const replaceTargetId = ref<string | null>(null)
+
+async function handleSubImageFiles(e: Event) {
+  const files = (e.target as HTMLInputElement).files
+  if (!files?.length) return
+  addingSubImage.value = true
+  try {
+    for (const file of Array.from(files)) {
+      await store.uploadSubImage(props.image.boothId, props.image.id, file, imagePersonId.value || undefined)
+    }
+  } finally {
+    addingSubImage.value = false
+    ;(e.target as HTMLInputElement).value = ''
+  }
+}
+
+function triggerReplace(id: string) {
+  replaceTargetId.value = id
+  replaceInput.value?.click()
+}
+
+async function handleReplaceFile(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file || !replaceTargetId.value) return
+  await store.replaceImage(replaceTargetId.value, props.image.boothId, file)
+  replaceTargetId.value = null
+  ;(e.target as HTMLInputElement).value = ''
 }
 
 // ── Name editing ──────────────────────────────────────────────────────
@@ -120,9 +198,20 @@ const currencyOptions = computed(() => CURRENCIES.map(c => ({ value: c, label: `
 
 function defaultPersonId() { return personsStore.currentPersonId ?? '' }
 
-const annotateForm = reactive({ name: '', price: '' as string | number, currency: 'EUR', category: '', size: '', website: '', personId: '' })
+interface SizeEntry { size: string; price: string }
+
+const annotateForm = reactive({ name: '', noSizePrice: '' as string | number, currency: 'EUR', category: '', website: '', personId: '', sizes: [] as SizeEntry[] })
 const showQuickAdd = ref(false)
-const quickForm = reactive({ name: '', price: '' as string | number, currency: 'EUR', category: '', size: '', website: '', personId: '' })
+const quickForm = reactive({ name: '', noSizePrice: '' as string | number, currency: 'EUR', category: '', website: '', personId: '', sizes: [] as SizeEntry[] })
+
+function isSizeSelected(size: string, form: { sizes: SizeEntry[] }): boolean {
+  return form.sizes.some(e => e.size === size)
+}
+function toggleSize(size: string, form: { sizes: SizeEntry[]; noSizePrice: string | number }) {
+  const idx = form.sizes.findIndex(e => e.size === size)
+  if (idx >= 0) form.sizes.splice(idx, 1)
+  else form.sizes.push({ size, price: form.sizes.length === 0 && form.noSizePrice ? String(form.noSizePrice) : '' })
+}
 
 // Article mode: add source form
 const showAddSource = ref(false)
@@ -203,37 +292,50 @@ async function saveEditProduct(id: string) {
 
 // ── Preset quick-fill ─────────────────────────────────────────────────
 function applyPreset(preset: BoothPreset, form: Record<string, unknown>) {
-  form.price = preset.price
   form.currency = preset.currency
-  form.size = preset.label
+  if (Array.isArray((form as { sizes?: unknown }).sizes)) {
+    const f = form as { sizes: SizeEntry[]; noSizePrice: string | number }
+    if (SIZES.includes(preset.label)) {
+      const existing = f.sizes.find(e => e.size === preset.label)
+      if (!existing) f.sizes.push({ size: preset.label, price: String(preset.price) })
+      else existing.price = String(preset.price)
+    } else {
+      f.noSizePrice = preset.price
+    }
+  } else {
+    form.price = preset.price
+    form.size = preset.label
+  }
 }
 
 function activeImgRef(): HTMLImageElement | undefined {
   return fullscreen.value ? fsImgRef.value : imgRef.value
 }
 
-function getPct(e: MouseEvent): { x: number; y: number } {
+function getPctFromPoint(clientX: number, clientY: number): { x: number; y: number } {
   const el = activeImgRef()
   if (!el) return { x: 0, y: 0 }
   const r = el.getBoundingClientRect()
   return {
-    x: Math.max(0, Math.min(100, ((e.clientX - r.left) / r.width) * 100)),
-    y: Math.max(0, Math.min(100, ((e.clientY - r.top) / r.height) * 100)),
+    x: Math.max(0, Math.min(100, ((clientX - r.left) / r.width) * 100)),
+    y: Math.max(0, Math.min(100, ((clientY - r.top) / r.height) * 100)),
   }
 }
 
-function onImgMouseDown(e: MouseEvent) {
-  if (!annotateMode.value || !authStore.isEditing || props.image.imageType !== 'catalog') return
-  e.preventDefault()
-  const p = getPct(e)
+function getPct(e: MouseEvent): { x: number; y: number } {
+  return getPctFromPoint(e.clientX, e.clientY)
+}
+
+function startDraw(clientX: number, clientY: number) {
+  const p = getPctFromPoint(clientX, clientY)
   drawStart.value = p
   liveRect.value = { x: p.x, y: p.y, w: 0, h: 0 }
   pendingRect.value = null
 }
 
-function onImgMouseMove(e: MouseEvent) {
-  if (!annotateMode.value || !drawStart.value) return
-  const p = getPct(e)
+function moveDraw(clientX: number, clientY: number) {
+  if (!drawStart.value) return
+  const p = getPctFromPoint(clientX, clientY)
   liveRect.value = {
     x: Math.min(drawStart.value.x, p.x),
     y: Math.min(drawStart.value.y, p.y),
@@ -242,17 +344,55 @@ function onImgMouseMove(e: MouseEvent) {
   }
 }
 
-function onImgMouseUp() {
-  if (!annotateMode.value || !liveRect.value) return
+function endDraw() {
+  if (!liveRect.value) return
   if (liveRect.value.w < 1.5 || liveRect.value.h < 1.5) {
     liveRect.value = null
     drawStart.value = null
     return
   }
   pendingRect.value = { ...liveRect.value }
+  selectedGroupKey.value = null
   liveRect.value = null
   drawStart.value = null
-  Object.assign(annotateForm, { name: '', price: '', currency: 'EUR', category: '', size: '', website: '', personId: defaultPersonId() })
+  Object.assign(annotateForm, { name: '', noSizePrice: '', currency: 'EUR', category: '', website: '', personId: defaultPersonId() })
+  annotateForm.sizes.splice(0)
+}
+
+function onImgMouseDown(e: MouseEvent) {
+  if (!annotateMode.value || !authStore.isEditing || props.image.imageType !== 'catalog') return
+  e.preventDefault()
+  startDraw(e.clientX, e.clientY)
+}
+
+function onImgMouseMove(e: MouseEvent) {
+  if (!annotateMode.value || !drawStart.value) return
+  moveDraw(e.clientX, e.clientY)
+}
+
+function onImgMouseUp() {
+  if (!annotateMode.value || !liveRect.value) return
+  endDraw()
+}
+
+function onImgTouchStart(e: TouchEvent) {
+  if (!annotateMode.value || !authStore.isEditing || props.image.imageType !== 'catalog') return
+  if (e.touches.length !== 1) return
+  e.preventDefault()
+  const t = e.touches[0]
+  startDraw(t.clientX, t.clientY)
+}
+
+function onImgTouchMove(e: TouchEvent) {
+  if (!annotateMode.value || !drawStart.value || e.touches.length !== 1) return
+  e.preventDefault()
+  const t = e.touches[0]
+  moveDraw(t.clientX, t.clientY)
+}
+
+function onImgTouchEnd(e: TouchEvent) {
+  if (!annotateMode.value || !liveRect.value) return
+  endDraw()
 }
 
 function cancelAnnotation() {
@@ -263,40 +403,52 @@ function cancelAnnotation() {
 
 async function saveAnnotation() {
   if (!pendingRect.value || !annotateForm.name.trim()) return
-  await store.createProduct({
+  const base = {
     boothId: props.image.boothId,
     catalogImageId: props.image.id,
     name: annotateForm.name.trim(),
-    price: annotateForm.price ? Number(annotateForm.price) : undefined,
     currency: annotateForm.currency,
     category: annotateForm.category || undefined,
-    size: annotateForm.size || undefined,
     website: annotateForm.website || undefined,
     personId: annotateForm.personId || undefined,
     regionX: pendingRect.value.x,
     regionY: pendingRect.value.y,
     regionW: pendingRect.value.w,
     regionH: pendingRect.value.h,
-  })
+  }
+  if (annotateForm.sizes.length) {
+    for (const e of annotateForm.sizes) {
+      await store.createProduct({ ...base, size: e.size, price: e.price ? Number(e.price) : undefined })
+    }
+  } else {
+    await store.createProduct({ ...base, price: annotateForm.noSizePrice ? Number(annotateForm.noSizePrice) : undefined })
+  }
   pendingRect.value = null
-  Object.assign(annotateForm, { name: '', price: '', currency: 'EUR', category: '', size: '', website: '', personId: defaultPersonId() })
+  Object.assign(annotateForm, { name: '', noSizePrice: '', currency: 'EUR', category: '', website: '', personId: defaultPersonId() })
+  annotateForm.sizes.splice(0)
 }
 
 async function saveQuickAdd() {
   if (!quickForm.name.trim()) return
-  await store.createProduct({
+  const base = {
     boothId: props.image.boothId,
     catalogImageId: props.image.id,
     name: quickForm.name.trim(),
-    price: quickForm.price ? Number(quickForm.price) : undefined,
     currency: quickForm.currency,
     category: quickForm.category || undefined,
-    size: quickForm.size || undefined,
     website: quickForm.website || undefined,
     personId: quickForm.personId || undefined,
-  })
+  }
+  if (quickForm.sizes.length) {
+    for (const e of quickForm.sizes) {
+      await store.createProduct({ ...base, size: e.size, price: e.price ? Number(e.price) : undefined })
+    }
+  } else {
+    await store.createProduct({ ...base, price: quickForm.noSizePrice ? Number(quickForm.noSizePrice) : undefined })
+  }
   showQuickAdd.value = false
-  Object.assign(quickForm, { name: '', price: '', currency: 'EUR', category: '', size: '', website: '', personId: defaultPersonId() })
+  Object.assign(quickForm, { name: '', noSizePrice: '', currency: 'EUR', category: '', website: '', personId: defaultPersonId() })
+  quickForm.sizes.splice(0)
 }
 
 async function saveSource() {
@@ -327,6 +479,18 @@ async function markAsPaid(product: Product) {
   await store.updateProduct(product.id, { isPurchased: true })
 }
 
+async function markAsPlanned(product: Product) {
+  if (product.isPlanned) {
+    await store.updateProduct(product.id, { isPlanned: false })
+    return
+  }
+  const currentPlanned = props.products.find(p => p.isPlanned && p.id !== product.id)
+  if (currentPlanned) {
+    await store.updateProduct(currentPlanned.id, { isPlanned: false })
+  }
+  await store.updateProduct(product.id, { isPlanned: true })
+}
+
 const paidSource = computed(() => props.products.find(p => p.isPurchased))
 
 const regionProducts = computed(() => props.products.filter(p => p.regionX !== null && p.regionX !== undefined))
@@ -338,6 +502,58 @@ function regionStyle(p: Product) {
     width: p.regionW + '%',
     height: p.regionH + '%',
   }
+}
+
+function groupKey(p: Product): string {
+  return `${Math.round((p.regionX ?? 0) * 10)},${Math.round((p.regionY ?? 0) * 10)},${Math.round((p.regionW ?? 0) * 10)},${Math.round((p.regionH ?? 0) * 10)}`
+}
+
+const regionGroups = computed(() => {
+  const groups = new Map<string, Product[]>()
+  for (const p of regionProducts.value) {
+    const key = groupKey(p)
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(p)
+  }
+  return Array.from(groups.values())
+})
+
+const selectedGroupKey = ref<string | null>(null)
+const addSizeForm = reactive({ size: '', price: '' as string | number, currency: 'EUR' })
+
+function selectGroup(group: Product[]) {
+  if (pendingRect.value) cancelAnnotation()
+  const key = groupKey(group[0])
+  if (selectedGroupKey.value === key) { selectedGroupKey.value = null; return }
+  selectedGroupKey.value = key
+  showProductsPanel.value = true
+  addSizeForm.size = ''
+  addSizeForm.price = ''
+  addSizeForm.currency = group[0].currency || 'EUR'
+}
+
+async function saveAddSize() {
+  if (!addSizeForm.price) return
+  const group = regionGroups.value.find(g => groupKey(g[0]) === selectedGroupKey.value)
+  if (!group) return
+  const ref = group[0]
+  await store.createProduct({
+    boothId: ref.boothId,
+    catalogImageId: ref.catalogImageId ?? undefined,
+    name: ref.name,
+    price: Number(addSizeForm.price),
+    currency: addSizeForm.currency,
+    size: addSizeForm.size || undefined,
+    category: ref.category ?? undefined,
+    website: ref.website ?? undefined,
+    personId: ref.personId ?? undefined,
+    regionX: ref.regionX ?? undefined,
+    regionY: ref.regionY ?? undefined,
+    regionW: ref.regionW ?? undefined,
+    regionH: ref.regionH ?? undefined,
+  })
+  addSizeForm.size = ''
+  addSizeForm.price = ''
 }
 
 // ── OCR ───────────────────────────────────────────────────────────────
@@ -401,6 +617,7 @@ const badgeLabel = computed(() => {
 // Open quick add / add source with person pre-filled
 function openQuickAdd() {
   quickForm.personId = defaultPersonId()
+  quickForm.sizes.splice(0)
   showQuickAdd.value = !showQuickAdd.value
   pendingRect.value = null
 }
@@ -443,7 +660,26 @@ function openAddSource() {
 
       <UBadge :label="badgeLabel" :color="badgeColor" variant="soft" size="xs" class="shrink-0" />
       <UBadge v-if="image.imageType === 'catalog'" :label="`${products.length}`" variant="soft" color="gray" size="xs" class="shrink-0" />
+      <UBadge v-if="image.imageType === 'article' && (subImages?.length ?? 0) > 0" :label="`${1 + (subImages?.length ?? 0)} photos`" variant="soft" color="orange" size="xs" class="shrink-0" />
       <UBadge v-if="image.imageType === 'receipt'" :label="`${receiptProducts.filter(p=>p.isPurchased).length}/${receiptProducts.length}`" variant="soft" color="green" size="xs" class="shrink-0" />
+
+      <!-- Article: person assignment -->
+      <template v-if="image.imageType === 'article'">
+        <USelect
+          v-if="authStore.isEditing"
+          v-model="imagePersonId"
+          :options="personOptions"
+          option-attribute="label"
+          value-attribute="value"
+          size="xs"
+          class="w-32 shrink-0"
+          @change="saveImagePerson"
+        />
+        <div v-else-if="personById(image.personId)" class="flex items-center gap-1 shrink-0">
+          <span :class="['w-2 h-2 rounded-full', COLOR_MAP[personById(image.personId)!.color] ?? 'bg-purple-500']" />
+          <span class="text-xs text-gray-400">{{ personById(image.personId)!.name }}</span>
+        </div>
+      </template>
 
       <div class="flex items-center gap-1 shrink-0">
         <template v-if="image.imageType === 'catalog' && authStore.isEditing">
@@ -474,6 +710,7 @@ function openAddSource() {
           />
         </template>
         <UButton icon="i-heroicons-arrows-pointing-out" variant="ghost" color="gray" size="xs" @click="fullscreen = true" />
+        <UButton v-if="authStore.isEditing" icon="i-heroicons-arrow-right-circle" variant="ghost" color="gray" size="xs" title="Move to another booth" @click="showMoveModal = true" />
         <UButton v-if="authStore.isEditing" icon="i-heroicons-trash" variant="ghost" color="red" size="xs" @click="showDeleteConfirm = true" />
       </div>
     </div>
@@ -482,19 +719,27 @@ function openAddSource() {
       <!-- Annotate hint -->
       <div v-if="annotateMode && image.imageType === 'catalog' && authStore.isEditing" class="px-4 py-2 bg-purple-900/30 border-b border-purple-700/40 text-xs text-purple-300 flex items-center gap-2">
         <UIcon name="i-heroicons-pencil-square" class="w-3.5 h-3.5 shrink-0" />
-        Drag a rectangle on the image to mark an item.
-        <UButton size="xs" variant="link" color="purple" @click="fullscreen = true">Open full-screen ↗</UButton>
+        Drag or touch-drag on the image to mark an item. Fill the form below.
+        <UButton size="xs" variant="link" color="purple" @click="fullscreen = true">Full-screen ↗</UButton>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-0">
-        <!-- Image panel -->
+      <!-- Hidden file inputs for article gallery -->
+      <input ref="subImageInput" type="file" multiple accept="image/*" class="hidden" @change="handleSubImageFiles" />
+      <input ref="replaceInput" type="file" accept="image/*" class="hidden" @change="handleReplaceFile" />
+
+      <div :class="['grid gap-0', showProductsPanel && image.imageType === 'catalog' ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1']">
+        <!-- Image panel: catalog / receipt -->
         <div
+          v-if="image.imageType !== 'article'"
           class="relative bg-black select-none"
           :class="annotateMode && image.imageType === 'catalog' && authStore.isEditing ? 'cursor-crosshair' : ''"
           @mousedown="onImgMouseDown"
           @mousemove="onImgMouseMove"
           @mouseup="onImgMouseUp"
           @mouseleave="drawStart = null; liveRect = null"
+          @touchstart="onImgTouchStart"
+          @touchmove="onImgTouchMove"
+          @touchend="onImgTouchEnd"
         >
           <img ref="imgRef" :src="image.path" class="w-full h-auto block" draggable="false" />
 
@@ -511,31 +756,117 @@ function openAddSource() {
           </template>
 
           <template v-if="image.imageType === 'catalog'">
-            <div v-for="p in regionProducts" :key="`region-${p.id}`"
-              class="absolute pointer-events-auto"
-              :style="regionStyle(p)"
-              @mouseenter="hoveredProductId = p.id"
+            <div v-for="group in regionGroups" :key="`region-${group[0].id}`"
+              class="absolute pointer-events-auto cursor-pointer"
+              :style="regionStyle(group[0])"
+              @mouseenter="hoveredProductId = group[0].id"
               @mouseleave="hoveredProductId = null"
+              @click.stop="!annotateMode && selectGroup(group)"
             >
-              <div class="absolute inset-0 border-2 rounded transition-all"
-                :class="[p.isPurchased ? 'border-green-400' : 'border-purple-400', hoveredProductId === p.id ? 'bg-purple-400/20' : '']" />
-              <div class="absolute top-0 left-0 text-xs font-medium px-1 py-0.5 rounded-br truncate max-w-full leading-tight pointer-events-none"
-                :class="p.isPurchased ? 'bg-green-600/90 text-white' : 'bg-purple-600/90 text-white'">
-                {{ p.name }}
+              <div class="absolute inset-0 rounded transition-all"
+                :style="{
+                  borderStyle: 'solid',
+                  borderWidth: selectedGroupKey === groupKey(group[0]) ? '3px' : '2px',
+                  borderColor: group.every(p => p.isPurchased) ? '#22c55e' : personHex(group[0].personId),
+                  backgroundColor: hoveredProductId === group[0].id ? (group.every(p => p.isPurchased) ? '#22c55e33' : personHex(group[0].personId) + '33') : 'transparent',
+                }" />
+              <div v-if="showBoxLabels" class="absolute top-0 left-0 text-xs font-medium px-1 py-0.5 rounded-br truncate max-w-full leading-tight pointer-events-none text-white"
+                :style="{ backgroundColor: (group.every(p => p.isPurchased) ? '#22c55e' : personHex(group[0].personId)) + 'e6' }">
+                {{ group[0].name }}
+              </div>
+              <div v-if="showBoxLabels" class="absolute bottom-0 left-0 right-0 flex flex-wrap gap-0.5 p-0.5 pointer-events-none">
+                <span v-for="p in group" :key="`chip-${p.id}`"
+                  class="text-xs leading-none px-1 py-0.5 rounded font-medium text-white"
+                  :style="{ backgroundColor: (p.isPurchased ? '#22c55e' : personHex(p.personId)) + 'cc' }">
+                  {{ [p.size, p.price != null ? `${p.price}${currencySymbol(p.currency)}` : ''].filter(Boolean).join(' ') }}
+                </span>
               </div>
             </div>
           </template>
 
-          <div v-if="liveRect" class="absolute border-2 border-dashed border-yellow-400 bg-yellow-400/10 pointer-events-none rounded"
-            :style="{ left: liveRect.x+'%', top: liveRect.y+'%', width: liveRect.w+'%', height: liveRect.h+'%' }" />
-          <div v-if="pendingRect" class="absolute border-2 border-yellow-400 bg-yellow-400/15 pointer-events-none rounded"
-            :style="{ left: pendingRect.x+'%', top: pendingRect.y+'%', width: pendingRect.w+'%', height: pendingRect.h+'%' }" />
+          <div v-if="liveRect" class="absolute border-2 border-dashed pointer-events-none rounded"
+            :style="{ left: liveRect.x+'%', top: liveRect.y+'%', width: liveRect.w+'%', height: liveRect.h+'%', borderColor: personHex(annotateForm.personId), backgroundColor: personHex(annotateForm.personId) + '1a' }" />
+          <div v-if="pendingRect" class="absolute border-2 pointer-events-none rounded"
+            :style="{ left: pendingRect.x+'%', top: pendingRect.y+'%', width: pendingRect.w+'%', height: pendingRect.h+'%', borderColor: personHex(annotateForm.personId), backgroundColor: personHex(annotateForm.personId) + '26' }" />
+
+          <!-- Toggle products panel button -->
+          <button
+            v-if="image.imageType === 'catalog'"
+            type="button"
+            class="absolute bottom-2 right-2 flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-gray-900/80 border border-gray-700 text-gray-300 hover:text-white hover:border-gray-500 transition-colors backdrop-blur-sm pointer-events-auto"
+            @click.stop="showProductsPanel = !showProductsPanel"
+          >
+            <UIcon :name="showProductsPanel ? 'i-heroicons-eye-slash' : 'i-heroicons-list-bullet'" class="w-3.5 h-3.5" />
+            {{ showProductsPanel ? 'Hide' : 'Products' }}
+          </button>
+        </div>
+
+        <!-- Image panel: article gallery -->
+        <div v-else class="bg-black divide-y divide-gray-800">
+          <!-- Primary image -->
+          <div class="relative group/img0">
+            <img :src="image.path" class="w-full h-auto block" draggable="false" />
+            <div v-if="authStore.isEditing" class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/img0:opacity-100 transition-opacity">
+              <button
+                type="button"
+                class="px-2 py-1 text-xs rounded bg-gray-900/90 border border-gray-700 text-gray-300 hover:text-white hover:border-gray-500 transition-colors"
+                @click="triggerReplace(image.id)"
+              >
+                Replace
+              </button>
+            </div>
+          </div>
+          <!-- Sub-images -->
+          <div v-for="sub in subImages" :key="sub.id" class="relative group/subimg">
+            <img :src="sub.path" class="w-full h-auto block" draggable="false" />
+            <div v-if="authStore.isEditing" class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/subimg:opacity-100 transition-opacity">
+              <button
+                type="button"
+                class="px-2 py-1 text-xs rounded bg-gray-900/90 border border-gray-700 text-gray-300 hover:text-white hover:border-gray-500 transition-colors"
+                @click="triggerReplace(sub.id)"
+              >
+                Replace
+              </button>
+              <button
+                type="button"
+                class="px-2 py-1 text-xs rounded bg-red-900/90 border border-red-700 text-red-300 hover:text-white hover:border-red-500 transition-colors"
+                @click="store.deleteImage(sub.id, sub.boothId)"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+          <!-- Add image -->
+          <div v-if="authStore.isEditing" class="p-3">
+            <UButton
+              icon="i-heroicons-plus"
+              size="sm"
+              variant="ghost"
+              color="gray"
+              block
+              :loading="addingSubImage"
+              @click="subImageInput?.click()"
+            >
+              Add Image
+            </UButton>
+          </div>
         </div>
 
         <!-- CATALOG: products panel -->
-        <div v-if="image.imageType === 'catalog'" class="p-4 space-y-2 bg-gray-950 max-h-[600px] overflow-y-auto">
+        <div v-if="image.imageType === 'catalog' && showProductsPanel" class="p-4 space-y-2 bg-gray-950 max-h-[600px] overflow-y-auto">
           <div class="flex items-center justify-between mb-3">
-            <span class="text-sm font-medium text-gray-300">Products from this image</span>
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-medium text-gray-300">Products from this image</span>
+              <button
+                type="button"
+                class="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition-colors"
+                :class="showBoxLabels ? 'bg-purple-600/30 text-purple-300' : 'bg-gray-800 text-gray-500 hover:text-gray-300'"
+                :title="showBoxLabels ? 'Hide box labels' : 'Show box labels'"
+                @click="showBoxLabels = !showBoxLabels"
+              >
+                <UIcon :name="showBoxLabels ? 'i-heroicons-eye' : 'i-heroicons-eye-slash'" class="w-3.5 h-3.5" />
+              </button>
+            </div>
             <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="purple" variant="soft"
               @click="openQuickAdd">Add</UButton>
           </div>
@@ -543,16 +874,26 @@ function openAddSource() {
           <!-- Quick add form -->
           <div v-if="authStore.isEditing && showQuickAdd" class="bg-gray-800 rounded-lg p-3 space-y-2">
             <UInput v-model="quickForm.name" placeholder="Product name…" size="sm" autofocus />
-            <div class="grid grid-cols-2 gap-2">
-              <UInput v-model="quickForm.price" type="number" step="0.01" placeholder="Price" size="sm" />
-              <USelect v-model="quickForm.currency" :options="currencyOptions" size="sm" />
-            </div>
+            <USelect v-model="quickForm.currency" :options="currencyOptions" size="sm" />
+            <UInput v-if="!quickForm.sizes.length" v-model="quickForm.noSizePrice" type="number" step="0.01" placeholder="Price (no specific size)" size="sm" />
             <div v-if="presets?.length" class="flex flex-wrap gap-1">
               <button v-for="preset in presets" :key="preset.id" type="button"
                 class="px-2 py-0.5 text-xs rounded-full border border-gray-600 text-gray-400 hover:border-purple-500 hover:text-purple-300 transition-colors"
                 @click="applyPreset(preset, quickForm)">{{ preset.label }} {{ preset.price }}{{ preset.currency }}</button>
             </div>
-            <USelect v-model="quickForm.size" :options="sizeOptions" option-attribute="label" value-attribute="value" size="sm" />
+            <div class="flex flex-wrap gap-1">
+              <button v-for="s in SIZES" :key="s" type="button"
+                class="px-2 py-1 text-xs rounded border transition-colors"
+                :class="isSizeSelected(s, quickForm) ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'"
+                @click="toggleSize(s, quickForm)">{{ s }}</button>
+            </div>
+            <div v-if="quickForm.sizes.length" class="space-y-1.5">
+              <div v-for="entry in quickForm.sizes" :key="entry.size" class="flex items-center gap-2">
+                <span class="text-xs font-mono text-purple-300 w-14 shrink-0">{{ entry.size }}</span>
+                <UInput v-model="entry.price" type="number" step="0.01" placeholder="Price" size="sm" class="flex-1" />
+                <span class="text-xs text-gray-500 shrink-0">{{ quickForm.currency }}</span>
+              </div>
+            </div>
             <UInput v-model="quickForm.website" placeholder="Website URL (optional)" size="sm" />
             <div class="flex flex-wrap gap-1">
               <button v-for="c in QUICK_CATS" :key="c" type="button"
@@ -574,16 +915,26 @@ function openAddSource() {
               Name this marked item:
             </p>
             <UInput v-model="annotateForm.name" placeholder="e.g. Cherry Blossom A3 Print" size="sm" autofocus />
-            <div class="grid grid-cols-2 gap-2">
-              <UInput v-model="annotateForm.price" type="number" step="0.01" placeholder="Price" size="sm" />
-              <USelect v-model="annotateForm.currency" :options="currencyOptions" size="sm" />
-            </div>
+            <USelect v-model="annotateForm.currency" :options="currencyOptions" size="sm" />
+            <UInput v-if="!annotateForm.sizes.length" v-model="annotateForm.noSizePrice" type="number" step="0.01" placeholder="Price (no specific size)" size="sm" />
             <div v-if="presets?.length" class="flex flex-wrap gap-1">
               <button v-for="preset in presets" :key="preset.id" type="button"
                 class="px-2 py-0.5 text-xs rounded-full border border-gray-600 text-gray-400 hover:border-purple-500 hover:text-purple-300 transition-colors"
                 @click="applyPreset(preset, annotateForm)">{{ preset.label }} {{ preset.price }}{{ preset.currency }}</button>
             </div>
-            <USelect v-model="annotateForm.size" :options="sizeOptions" option-attribute="label" value-attribute="value" size="sm" />
+            <div class="flex flex-wrap gap-1">
+              <button v-for="s in SIZES" :key="s" type="button"
+                class="px-2 py-1 text-xs rounded border transition-colors"
+                :class="isSizeSelected(s, annotateForm) ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'"
+                @click="toggleSize(s, annotateForm)">{{ s }}</button>
+            </div>
+            <div v-if="annotateForm.sizes.length" class="space-y-1.5">
+              <div v-for="entry in annotateForm.sizes" :key="entry.size" class="flex items-center gap-2">
+                <span class="text-xs font-mono text-purple-300 w-14 shrink-0">{{ entry.size }}</span>
+                <UInput v-model="entry.price" type="number" step="0.01" placeholder="Price" size="sm" class="flex-1" />
+                <span class="text-xs text-gray-500 shrink-0">{{ annotateForm.currency }}</span>
+              </div>
+            </div>
             <UInput v-model="annotateForm.website" placeholder="Website URL (optional)" size="sm" />
             <div class="flex flex-wrap gap-1">
               <button v-for="c in QUICK_CATS" :key="c" type="button"
@@ -595,6 +946,36 @@ function openAddSource() {
             <div class="flex gap-2">
               <UButton size="xs" color="purple" :disabled="!annotateForm.name.trim()" @click="saveAnnotation">Save</UButton>
               <UButton size="xs" variant="ghost" color="gray" @click="cancelAnnotation">Cancel</UButton>
+            </div>
+          </div>
+
+          <!-- Add size to selected group -->
+          <div v-if="selectedGroupKey && authStore.isEditing" class="bg-purple-900/20 border border-purple-600/40 rounded-lg p-3 space-y-2">
+            <div class="flex items-center justify-between">
+              <p class="text-xs font-medium text-purple-300 truncate">
+                Add size · {{ regionGroups.find(g => groupKey(g[0]) === selectedGroupKey)?.[0]?.name }}
+              </p>
+              <UButton icon="i-heroicons-x-mark" variant="ghost" color="gray" size="xs" @click="selectedGroupKey = null" />
+            </div>
+            <div class="flex flex-wrap gap-1">
+              <span v-for="p in (regionGroups.find(g => groupKey(g[0]) === selectedGroupKey) ?? [])" :key="`existing-${p.id}`"
+                class="text-xs px-1.5 py-0.5 rounded bg-gray-800 text-gray-300 font-mono">
+                {{ p.size || '—' }}: {{ p.price != null ? `${p.price}${currencySymbol(p.currency)}` : '—' }}
+              </span>
+            </div>
+            <div class="flex flex-wrap gap-1">
+              <button v-for="s in SIZES" :key="s" type="button"
+                class="px-2 py-1 text-xs rounded border transition-colors"
+                :class="addSizeForm.size === s ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'"
+                @click="addSizeForm.size = addSizeForm.size === s ? '' : s">{{ s }}</button>
+            </div>
+            <div class="flex gap-2">
+              <UInput v-model="addSizeForm.price" type="number" step="0.01" placeholder="Price" size="sm" class="flex-1" autofocus />
+              <USelect v-model="addSizeForm.currency" :options="currencyOptions" size="sm" class="w-24" />
+            </div>
+            <div class="flex gap-2">
+              <UButton size="xs" color="purple" :disabled="!addSizeForm.price" @click="saveAddSize">Add</UButton>
+              <UButton size="xs" variant="ghost" color="gray" @click="selectedGroupKey = null">Cancel</UButton>
             </div>
           </div>
 
@@ -630,7 +1011,7 @@ function openAddSource() {
             <!-- Normal product row -->
             <div v-else
               class="flex items-center gap-1 group"
-              :class="hoveredProductId === product.id ? 'ring-1 ring-purple-400 rounded-lg' : ''"
+              :class="selectedGroupKey && product.regionX != null && groupKey(product) === selectedGroupKey ? 'ring-1 ring-purple-500 rounded-lg' : hoveredProductId === product.id ? 'ring-1 ring-purple-400 rounded-lg' : ''"
               @mouseenter="hoveredProductId = product.id"
               @mouseleave="hoveredProductId = null"
             >
@@ -701,7 +1082,7 @@ function openAddSource() {
 
           <!-- Source rows -->
           <div v-for="p in products" :key="p.id"
-            class="border rounded-lg transition-colors overflow-hidden"
+            class="border rounded-lg transition-colors overflow-hidden group"
             :class="p.isPurchased ? 'border-green-500/40 bg-green-900/10' : 'border-gray-800 bg-gray-900'"
           >
             <div class="flex items-center gap-2 px-3 py-2">
@@ -723,10 +1104,23 @@ function openAddSource() {
                 </div>
               </div>
               <UButton
+                v-if="authStore.isEditing"
+                icon="i-heroicons-pencil-square"
+                variant="ghost" color="gray" size="xs"
+                class="opacity-0 group-hover:opacity-100 shrink-0"
+                @click.stop="startEditSource(p)"
+              />
+              <UButton
                 :icon="expandedSourceId === p.id ? 'i-heroicons-chevron-up' : 'i-heroicons-chevron-down'"
                 variant="ghost" color="gray" size="xs"
                 @click="toggleSourceExpand(p.id)"
               />
+              <button
+                type="button"
+                class="text-xs px-2 py-1 rounded-full border transition-all font-medium shrink-0"
+                :class="p.isPlanned ? 'bg-orange-600 border-orange-500 text-white' : 'border-gray-700 text-gray-400 hover:border-orange-500 hover:text-orange-400'"
+                @click="markAsPlanned(p)"
+              >{{ p.isPlanned ? '★ Planned' : 'Plan?' }}</button>
               <button
                 type="button"
                 class="text-xs px-2 py-1 rounded-full border transition-all font-medium shrink-0"
@@ -764,12 +1158,21 @@ function openAddSource() {
             </div>
           </div>
 
-          <div v-if="paidSource" class="mt-2 p-3 bg-green-900/20 border border-green-700/30 rounded-lg flex items-center gap-2">
-            <UIcon name="i-heroicons-check-circle" class="w-4 h-4 text-green-400 shrink-0" />
-            <div>
+          <!-- Planned / Paid summary -->
+          <div class="mt-2 space-y-1.5">
+            <div v-if="products.some(p => p.isPlanned)" class="p-2.5 bg-orange-900/20 border border-orange-700/30 rounded-lg flex items-center gap-2">
+              <UIcon name="i-heroicons-star" class="w-4 h-4 text-orange-400 shrink-0" />
+              <span class="text-xs text-gray-400">Planned from</span>
+              <span class="ml-0.5 text-sm font-medium text-white">{{ products.find(p => p.isPlanned)!.name }}</span>
+              <span v-if="products.find(p => p.isPlanned)!.price" class="ml-auto text-sm font-bold text-orange-400">
+                {{ products.find(p => p.isPlanned)!.price!.toFixed(2) }} {{ currencySymbol(products.find(p => p.isPlanned)!.currency) }}
+              </span>
+            </div>
+            <div v-if="paidSource" class="p-2.5 bg-green-900/20 border border-green-700/30 rounded-lg flex items-center gap-2">
+              <UIcon name="i-heroicons-check-circle" class="w-4 h-4 text-green-400 shrink-0" />
               <span class="text-xs text-gray-400">Paid from</span>
-              <span class="ml-1.5 text-sm font-medium text-white">{{ paidSource.name }}</span>
-              <span v-if="paidSource.price" class="ml-2 text-sm font-bold text-green-400">
+              <span class="ml-0.5 text-sm font-medium text-white">{{ paidSource.name }}</span>
+              <span v-if="paidSource.price" class="ml-auto text-sm font-bold text-green-400">
                 {{ paidSource.price.toFixed(2) }} {{ currencySymbol(paidSource.currency) }}
               </span>
             </div>
@@ -814,6 +1217,16 @@ function openAddSource() {
           </div>
         </div>
       </div>
+
+      <!-- Collapse button (touch-friendly) -->
+      <button
+        type="button"
+        class="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800/60 transition-colors border-t border-gray-800"
+        @click="expanded = false"
+      >
+        <UIcon name="i-heroicons-chevron-up" class="w-3.5 h-3.5" />
+        Collapse
+      </button>
     </div>
   </div>
 
@@ -826,6 +1239,42 @@ function openAddSource() {
         <div class="flex gap-2 justify-end">
           <UButton variant="ghost" color="gray" @click="showDeleteConfirm = false">Cancel</UButton>
           <UButton color="red" @click="handleDeleteImage">Delete</UButton>
+        </div>
+      </template>
+    </UCard>
+  </UModal>
+
+  <!-- Move to another booth -->
+  <UModal v-model="showMoveModal" :ui="{ width: 'sm:max-w-sm' }">
+    <UCard>
+      <template #header>
+        <h3 class="font-semibold text-white">Move to Another Booth</h3>
+        <p class="text-xs text-gray-400 mt-0.5">All linked products will move with it.</p>
+      </template>
+      <div class="space-y-3 max-h-72 overflow-y-auto">
+        <div v-for="group in moveBoothOptions" :key="group.locName">
+          <p class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">{{ group.locName }}</p>
+          <div class="space-y-1">
+            <button
+              v-for="booth in group.booths"
+              :key="booth.id"
+              type="button"
+              class="w-full text-left px-3 py-2 rounded-lg text-sm transition-colors"
+              :class="moveTargetBoothId === booth.id
+                ? 'bg-purple-600/30 border border-purple-500/50 text-white'
+                : 'hover:bg-gray-800 text-gray-300 border border-transparent'"
+              @click="moveTargetBoothId = booth.id"
+            >
+              {{ booth.name }}
+            </button>
+          </div>
+        </div>
+        <p v-if="!moveBoothOptions.length" class="text-gray-500 text-sm text-center py-4">No other booths available.</p>
+      </div>
+      <template #footer>
+        <div class="flex gap-2 justify-end">
+          <UButton variant="ghost" color="gray" @click="showMoveModal = false; moveTargetBoothId = ''">Cancel</UButton>
+          <UButton color="purple" :disabled="!moveTargetBoothId" :loading="moving" @click="confirmMove">Move</UButton>
         </div>
       </template>
     </UCard>
@@ -849,8 +1298,8 @@ function openAddSource() {
             :color="annotateMode ? 'purple' : 'gray'"
             variant="outline" size="sm"
             @click="annotateMode = !annotateMode; if (!annotateMode) cancelAnnotation()"
-          >{{ annotateMode ? 'Drawing ON — drag to mark' : 'Enable Drawing' }}</UButton>
-          <span v-if="annotateMode" class="text-xs text-purple-400">Drag a rectangle · Esc to cancel</span>
+          >{{ annotateMode ? 'Drawing ON' : 'Enable Drawing' }}</UButton>
+          <span v-if="annotateMode" class="text-xs text-purple-400 hidden sm:inline">Drag a rectangle to mark an item</span>
         </template>
         <span class="ml-auto text-xs text-gray-500 shrink-0">
           {{ products.length }} {{ image.imageType === 'article' ? 'sources' : 'products' }}
@@ -858,39 +1307,83 @@ function openAddSource() {
       </div>
 
       <div class="flex flex-1 min-h-0">
-        <!-- Image -->
+        <!-- Image: article gallery (fullscreen) -->
+        <div v-if="image.imageType === 'article'" class="flex-1 overflow-auto bg-black divide-y divide-gray-800">
+          <div class="relative group/img0">
+            <img :src="image.path" class="w-full h-auto block" draggable="false" />
+            <div v-if="authStore.isEditing" class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/img0:opacity-100 transition-opacity">
+              <button type="button"
+                class="px-2 py-1 text-xs rounded bg-gray-900/90 border border-gray-700 text-gray-300 hover:text-white transition-colors"
+                @click="triggerReplace(image.id)">Replace</button>
+            </div>
+          </div>
+          <div v-for="sub in subImages" :key="`fs-sub-${sub.id}`" class="relative group/subfs">
+            <img :src="sub.path" class="w-full h-auto block" draggable="false" />
+            <div v-if="authStore.isEditing" class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/subfs:opacity-100 transition-opacity">
+              <button type="button"
+                class="px-2 py-1 text-xs rounded bg-gray-900/90 border border-gray-700 text-gray-300 hover:text-white transition-colors"
+                @click="triggerReplace(sub.id)">Replace</button>
+              <button type="button"
+                class="px-2 py-1 text-xs rounded bg-red-900/90 border border-red-700 text-red-300 hover:text-white transition-colors"
+                @click="store.deleteImage(sub.id, sub.boothId)">Delete</button>
+            </div>
+          </div>
+          <div v-if="authStore.isEditing" class="p-4">
+            <UButton icon="i-heroicons-plus" variant="ghost" color="gray" block :loading="addingSubImage" @click="subImageInput?.click()">
+              Add Image
+            </UButton>
+          </div>
+        </div>
+
+        <!-- Image: catalog / receipt (fullscreen) -->
         <div
+          v-else
           class="flex-1 overflow-auto bg-black select-none relative"
           :class="annotateMode && image.imageType === 'catalog' && authStore.isEditing ? 'cursor-crosshair' : 'cursor-default'"
           @mousedown="onImgMouseDown"
           @mousemove="onImgMouseMove"
           @mouseup="onImgMouseUp"
           @mouseleave="drawStart = null; liveRect = null"
+          @touchstart="onImgTouchStart"
+          @touchmove="onImgTouchMove"
+          @touchend="onImgTouchEnd"
         >
           <div class="relative inline-block min-w-full">
             <img ref="fsImgRef" :src="image.path" class="w-full h-auto block" draggable="false" />
 
             <template v-if="image.imageType === 'catalog'">
-              <div v-for="p in regionProducts" :key="`fs-region-${p.id}`"
-                class="absolute pointer-events-auto"
-                :style="regionStyle(p)"
-                @mouseenter="hoveredProductId = p.id"
+              <div v-for="group in regionGroups" :key="`fs-region-${group[0].id}`"
+                class="absolute pointer-events-auto cursor-pointer"
+                :style="regionStyle(group[0])"
+                @mouseenter="hoveredProductId = group[0].id"
                 @mouseleave="hoveredProductId = null"
+                @click.stop="!annotateMode && selectGroup(group)"
               >
-                <div class="absolute inset-0 border-2 rounded transition-all"
-                  :class="[p.isPurchased ? 'border-green-400' : 'border-purple-400', hoveredProductId === p.id ? 'bg-purple-400/25' : 'bg-purple-400/05']" />
-                <div class="absolute top-0 left-0 text-sm font-semibold px-1.5 py-0.5 rounded-br leading-tight pointer-events-none"
-                  :class="p.isPurchased ? 'bg-green-600/90 text-white' : 'bg-purple-600/90 text-white'">
-                  {{ p.name }}
-                  <span v-if="p.price" class="ml-1 font-normal opacity-80">{{ p.price }}{{ currencySymbol(p.currency) }}</span>
+                <div class="absolute inset-0 rounded transition-all"
+                  :style="{
+                    borderStyle: 'solid',
+                    borderWidth: selectedGroupKey === groupKey(group[0]) ? '3px' : '2px',
+                    borderColor: group.every(p => p.isPurchased) ? '#22c55e' : personHex(group[0].personId),
+                    backgroundColor: hoveredProductId === group[0].id ? (group.every(p => p.isPurchased) ? '#22c55e33' : personHex(group[0].personId) + '33') : (group.every(p => p.isPurchased) ? '#22c55e0d' : personHex(group[0].personId) + '0d'),
+                  }" />
+                <div v-if="showBoxLabels" class="absolute top-0 left-0 text-sm font-semibold px-1.5 py-0.5 rounded-br leading-tight pointer-events-none text-white"
+                  :style="{ backgroundColor: (group.every(p => p.isPurchased) ? '#22c55e' : personHex(group[0].personId)) + 'e6' }">
+                  {{ group[0].name }}
+                </div>
+                <div v-if="showBoxLabels" class="absolute bottom-0 left-0 right-0 flex flex-wrap gap-0.5 p-1 pointer-events-none">
+                  <span v-for="p in group" :key="`fs-chip-${p.id}`"
+                    class="text-sm leading-none px-1.5 py-0.5 rounded font-medium text-white"
+                    :style="{ backgroundColor: (p.isPurchased ? '#22c55e' : personHex(p.personId)) + 'cc' }">
+                    {{ [p.size, p.price != null ? `${p.price}${currencySymbol(p.currency)}` : ''].filter(Boolean).join(' ') }}
+                  </span>
                 </div>
               </div>
             </template>
 
-            <div v-if="liveRect" class="absolute border-2 border-dashed border-yellow-400 bg-yellow-400/10 pointer-events-none rounded"
-              :style="{ left: liveRect.x+'%', top: liveRect.y+'%', width: liveRect.w+'%', height: liveRect.h+'%' }" />
-            <div v-if="pendingRect" class="absolute border-2 border-yellow-400 bg-yellow-400/15 pointer-events-none rounded"
-              :style="{ left: pendingRect.x+'%', top: pendingRect.y+'%', width: pendingRect.w+'%', height: pendingRect.h+'%' }" />
+            <div v-if="liveRect" class="absolute border-2 border-dashed pointer-events-none rounded"
+              :style="{ left: liveRect.x+'%', top: liveRect.y+'%', width: liveRect.w+'%', height: liveRect.h+'%', borderColor: personHex(annotateForm.personId), backgroundColor: personHex(annotateForm.personId) + '1a' }" />
+            <div v-if="pendingRect" class="absolute border-2 pointer-events-none rounded"
+              :style="{ left: pendingRect.x+'%', top: pendingRect.y+'%', width: pendingRect.w+'%', height: pendingRect.h+'%', borderColor: personHex(annotateForm.personId), backgroundColor: personHex(annotateForm.personId) + '26' }" />
           </div>
         </div>
 
@@ -899,7 +1392,18 @@ function openAddSource() {
           <!-- CATALOG (fullscreen) -->
           <template v-if="image.imageType === 'catalog'">
             <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800">
-              <span class="text-sm font-medium text-white">Products</span>
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-medium text-white">Products</span>
+                <button
+                  type="button"
+                  class="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition-colors"
+                  :class="showBoxLabels ? 'bg-purple-600/30 text-purple-300' : 'bg-gray-800 text-gray-500 hover:text-gray-300'"
+                  :title="showBoxLabels ? 'Hide box labels' : 'Show box labels'"
+                  @click="showBoxLabels = !showBoxLabels"
+                >
+                  <UIcon :name="showBoxLabels ? 'i-heroicons-eye' : 'i-heroicons-eye-slash'" class="w-3.5 h-3.5" />
+                </button>
+              </div>
               <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="purple" variant="soft"
                 @click="openQuickAdd">Add</UButton>
             </div>
@@ -908,16 +1412,26 @@ function openAddSource() {
               <div v-if="authStore.isEditing && pendingRect" class="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 space-y-2">
                 <p class="text-xs font-medium text-yellow-400">Name this item:</p>
                 <UInput v-model="annotateForm.name" placeholder="e.g. A3 Print" size="sm" autofocus />
-                <div class="grid grid-cols-2 gap-2">
-                  <UInput v-model="annotateForm.price" type="number" step="0.01" placeholder="Price" size="sm" />
-                  <USelect v-model="annotateForm.currency" :options="currencyOptions" size="sm" />
-                </div>
+                <USelect v-model="annotateForm.currency" :options="currencyOptions" size="sm" />
+                <UInput v-if="!annotateForm.sizes.length" v-model="annotateForm.noSizePrice" type="number" step="0.01" placeholder="Price (no specific size)" size="sm" />
                 <div v-if="presets?.length" class="flex flex-wrap gap-1">
                   <button v-for="preset in presets" :key="preset.id" type="button"
                     class="px-2 py-0.5 text-xs rounded-full border border-gray-600 text-gray-400 hover:border-purple-500 hover:text-purple-300 transition-colors"
                     @click="applyPreset(preset, annotateForm)">{{ preset.label }} {{ preset.price }}{{ preset.currency }}</button>
                 </div>
-                <USelect v-model="annotateForm.size" :options="sizeOptions" option-attribute="label" value-attribute="value" size="sm" />
+                <div class="flex flex-wrap gap-1">
+                  <button v-for="s in SIZES" :key="s" type="button"
+                    class="px-2 py-1 text-xs rounded border transition-colors"
+                    :class="isSizeSelected(s, annotateForm) ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'"
+                    @click="toggleSize(s, annotateForm)">{{ s }}</button>
+                </div>
+                <div v-if="annotateForm.sizes.length" class="space-y-1.5">
+                  <div v-for="entry in annotateForm.sizes" :key="entry.size" class="flex items-center gap-2">
+                    <span class="text-xs font-mono text-purple-300 w-14 shrink-0">{{ entry.size }}</span>
+                    <UInput v-model="entry.price" type="number" step="0.01" placeholder="Price" size="sm" class="flex-1" />
+                    <span class="text-xs text-gray-500 shrink-0">{{ annotateForm.currency }}</span>
+                  </div>
+                </div>
                 <UInput v-model="annotateForm.website" placeholder="Website URL" size="sm" />
                 <div class="flex flex-wrap gap-1">
                   <button v-for="c in QUICK_CATS" :key="c" type="button"
@@ -934,16 +1448,26 @@ function openAddSource() {
               <!-- Quick add form -->
               <div v-if="authStore.isEditing && showQuickAdd" class="bg-gray-800 rounded-lg p-3 space-y-2">
                 <UInput v-model="quickForm.name" placeholder="Product name…" size="sm" autofocus />
-                <div class="grid grid-cols-2 gap-2">
-                  <UInput v-model="quickForm.price" type="number" step="0.01" placeholder="Price" size="sm" />
-                  <USelect v-model="quickForm.currency" :options="currencyOptions" size="sm" />
-                </div>
+                <USelect v-model="quickForm.currency" :options="currencyOptions" size="sm" />
+                <UInput v-if="!quickForm.sizes.length" v-model="quickForm.noSizePrice" type="number" step="0.01" placeholder="Price (no specific size)" size="sm" />
                 <div v-if="presets?.length" class="flex flex-wrap gap-1">
                   <button v-for="preset in presets" :key="preset.id" type="button"
                     class="px-2 py-0.5 text-xs rounded-full border border-gray-600 text-gray-400 hover:border-purple-500 hover:text-purple-300 transition-colors"
                     @click="applyPreset(preset, quickForm)">{{ preset.label }} {{ preset.price }}{{ preset.currency }}</button>
                 </div>
-                <USelect v-model="quickForm.size" :options="sizeOptions" option-attribute="label" value-attribute="value" size="sm" />
+                <div class="flex flex-wrap gap-1">
+                  <button v-for="s in SIZES" :key="s" type="button"
+                    class="px-2 py-1 text-xs rounded border transition-colors"
+                    :class="isSizeSelected(s, quickForm) ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'"
+                    @click="toggleSize(s, quickForm)">{{ s }}</button>
+                </div>
+                <div v-if="quickForm.sizes.length" class="space-y-1.5">
+                  <div v-for="entry in quickForm.sizes" :key="entry.size" class="flex items-center gap-2">
+                    <span class="text-xs font-mono text-purple-300 w-14 shrink-0">{{ entry.size }}</span>
+                    <UInput v-model="entry.price" type="number" step="0.01" placeholder="Price" size="sm" class="flex-1" />
+                    <span class="text-xs text-gray-500 shrink-0">{{ quickForm.currency }}</span>
+                  </div>
+                </div>
                 <UInput v-model="quickForm.website" placeholder="Website URL" size="sm" />
                 <div class="flex flex-wrap gap-1">
                   <button v-for="c in QUICK_CATS" :key="c" type="button"
@@ -955,6 +1479,36 @@ function openAddSource() {
                 <div class="flex gap-2">
                   <UButton size="xs" color="purple" :disabled="!quickForm.name.trim()" @click="saveQuickAdd">Save</UButton>
                   <UButton size="xs" variant="ghost" color="gray" @click="showQuickAdd = false">Cancel</UButton>
+                </div>
+              </div>
+
+              <!-- Add size to selected group (fullscreen) -->
+              <div v-if="selectedGroupKey && authStore.isEditing" class="bg-purple-900/20 border border-purple-600/40 rounded-lg p-3 space-y-2">
+                <div class="flex items-center justify-between">
+                  <p class="text-xs font-medium text-purple-300 truncate">
+                    Add size · {{ regionGroups.find(g => groupKey(g[0]) === selectedGroupKey)?.[0]?.name }}
+                  </p>
+                  <UButton icon="i-heroicons-x-mark" variant="ghost" color="gray" size="xs" @click="selectedGroupKey = null" />
+                </div>
+                <div class="flex flex-wrap gap-1">
+                  <span v-for="p in (regionGroups.find(g => groupKey(g[0]) === selectedGroupKey) ?? [])" :key="`fs-existing-${p.id}`"
+                    class="text-xs px-1.5 py-0.5 rounded bg-gray-800 text-gray-300 font-mono">
+                    {{ p.size || '—' }}: {{ p.price != null ? `${p.price}${currencySymbol(p.currency)}` : '—' }}
+                  </span>
+                </div>
+                <div class="flex flex-wrap gap-1">
+                  <button v-for="s in SIZES" :key="s" type="button"
+                    class="px-2 py-0.5 text-xs rounded border transition-colors"
+                    :class="addSizeForm.size === s ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'"
+                    @click="addSizeForm.size = addSizeForm.size === s ? '' : s">{{ s }}</button>
+                </div>
+                <div class="flex gap-2">
+                  <UInput v-model="addSizeForm.price" type="number" step="0.01" placeholder="Price" size="sm" class="flex-1" />
+                  <USelect v-model="addSizeForm.currency" :options="currencyOptions" size="sm" class="w-24" />
+                </div>
+                <div class="flex gap-2">
+                  <UButton size="xs" color="purple" :disabled="!addSizeForm.price" @click="saveAddSize">Add</UButton>
+                  <UButton size="xs" variant="ghost" color="gray" @click="selectedGroupKey = null">Cancel</UButton>
                 </div>
               </div>
 
@@ -987,7 +1541,7 @@ function openAddSource() {
                 </div>
                 <div v-else
                   class="flex items-center gap-1 group"
-                  :class="hoveredProductId === product.id ? 'ring-1 ring-purple-400 rounded-lg' : ''"
+                  :class="selectedGroupKey && product.regionX != null && groupKey(product) === selectedGroupKey ? 'ring-1 ring-purple-500 rounded-lg' : hoveredProductId === product.id ? 'ring-1 ring-purple-400 rounded-lg' : ''"
                   @mouseenter="hoveredProductId = product.id"
                   @mouseleave="hoveredProductId = null"
                 >
@@ -1017,7 +1571,25 @@ function openAddSource() {
           <!-- ARTICLE (fullscreen) -->
           <template v-else-if="image.imageType === 'article'">
             <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800">
-              <span class="text-sm font-medium text-white">Price Sources</span>
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-medium text-white">Price Sources</span>
+                <template v-if="image.imageType === 'article'">
+                  <USelect
+                    v-if="authStore.isEditing"
+                    v-model="imagePersonId"
+                    :options="personOptions"
+                    option-attribute="label"
+                    value-attribute="value"
+                    size="xs"
+                    class="w-32"
+                    @change="saveImagePerson"
+                  />
+                  <div v-else-if="personById(image.personId)" class="flex items-center gap-1">
+                    <span :class="['w-2 h-2 rounded-full', COLOR_MAP[personById(image.personId)!.color] ?? 'bg-purple-500']" />
+                    <span class="text-xs text-gray-400">{{ personById(image.personId)!.name }}</span>
+                  </div>
+                </template>
+              </div>
               <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="orange" variant="soft"
                 @click="openAddSource">Add</UButton>
             </div>
@@ -1043,7 +1615,7 @@ function openAddSource() {
               </div>
 
               <div v-for="p in products" :key="`fs-source-${p.id}`"
-                class="border rounded-lg overflow-hidden transition-colors"
+                class="border rounded-lg overflow-hidden transition-colors group"
                 :class="p.isPurchased ? 'border-green-500/40 bg-green-900/10' : 'border-gray-700 bg-gray-800'"
               >
                 <div class="flex items-center gap-2 px-3 py-2">
@@ -1063,10 +1635,21 @@ function openAddSource() {
                     </div>
                   </div>
                   <UButton
+                    v-if="authStore.isEditing"
+                    icon="i-heroicons-pencil-square"
+                    variant="ghost" color="gray" size="xs"
+                    class="opacity-0 group-hover:opacity-100 shrink-0"
+                    @click.stop="startEditSource(p)"
+                  />
+                  <UButton
                     :icon="expandedSourceId === p.id ? 'i-heroicons-chevron-up' : 'i-heroicons-chevron-down'"
                     variant="ghost" color="gray" size="xs"
                     @click="toggleSourceExpand(p.id)"
                   />
+                  <button type="button"
+                    class="text-xs px-2 py-1 rounded-full border transition-all font-medium shrink-0"
+                    :class="p.isPlanned ? 'bg-orange-600 border-orange-500 text-white' : 'border-gray-600 text-gray-400 hover:border-orange-500 hover:text-orange-400'"
+                    @click="markAsPlanned(p)">{{ p.isPlanned ? '★ Planned' : 'Plan?' }}</button>
                   <button type="button"
                     class="text-xs px-2 py-1 rounded-full border transition-all font-medium shrink-0"
                     :class="p.isPurchased ? 'bg-green-600 border-green-500 text-white' : 'border-gray-600 text-gray-400 hover:border-green-500 hover:text-green-400'"
@@ -1101,11 +1684,26 @@ function openAddSource() {
                 </div>
               </div>
 
-              <div v-if="paidSource" class="p-2 bg-green-900/20 border border-green-700/30 rounded-lg">
-                <div class="text-xs text-gray-400">Paid:</div>
-                <div class="text-sm font-medium text-white">{{ paidSource.name }}</div>
-                <div v-if="paidSource.price" class="text-sm font-bold text-green-400">
-                  {{ paidSource.price.toFixed(2) }} {{ currencySymbol(paidSource.currency) }}
+              <div class="space-y-1.5">
+                <div v-if="products.some(p => p.isPlanned)" class="p-2 bg-orange-900/20 border border-orange-700/30 rounded-lg flex items-center gap-2">
+                  <UIcon name="i-heroicons-star" class="w-3.5 h-3.5 text-orange-400 shrink-0" />
+                  <div class="flex-1 min-w-0">
+                    <span class="text-xs text-gray-400">Planned: </span>
+                    <span class="text-sm text-white">{{ products.find(p => p.isPlanned)!.name }}</span>
+                  </div>
+                  <span v-if="products.find(p => p.isPlanned)!.price" class="text-sm font-bold text-orange-400 shrink-0">
+                    {{ products.find(p => p.isPlanned)!.price!.toFixed(2) }} {{ currencySymbol(products.find(p => p.isPlanned)!.currency) }}
+                  </span>
+                </div>
+                <div v-if="paidSource" class="p-2 bg-green-900/20 border border-green-700/30 rounded-lg flex items-center gap-2">
+                  <UIcon name="i-heroicons-check-circle" class="w-3.5 h-3.5 text-green-400 shrink-0" />
+                  <div class="flex-1 min-w-0">
+                    <span class="text-xs text-gray-400">Paid: </span>
+                    <span class="text-sm text-white">{{ paidSource.name }}</span>
+                  </div>
+                  <span v-if="paidSource.price" class="text-sm font-bold text-green-400 shrink-0">
+                    {{ paidSource.price.toFixed(2) }} {{ currencySymbol(paidSource.currency) }}
+                  </span>
                 </div>
               </div>
               <p v-if="!products.length && !showAddSource" class="text-gray-600 text-sm text-center py-8">

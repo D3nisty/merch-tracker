@@ -16,6 +16,8 @@ export default defineEventHandler(async (event) => {
   if (body.sortOrder !== undefined) updated.sortOrder = body.sortOrder
   if (body.customName !== undefined) updated.customName = body.customName
   if (body.imageType !== undefined) updated.imageType = body.imageType
+  if (body.personId !== undefined) updated.personId = body.personId || null
+  if (body.parentId !== undefined) updated.parentId = body.parentId || null
 
   db.update(catalogImages).set(updated).where(eq(catalogImages.id, id)).run()
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useEventsStore } from '~/stores/events'
+import { usePersonsStore } from '~/stores/persons'
 import type { CatalogImage } from '~/stores/events'
 
 const props = defineProps<{
@@ -9,6 +10,7 @@ const props = defineProps<{
 const emit = defineEmits<{ 'update:modelValue': [v: boolean] }>()
 
 const store = useEventsStore()
+const personsStore = usePersonsStore()
 const uploading = ref(false)
 const dragOver = ref(false)
 const fileInput = ref<HTMLInputElement>()
@@ -18,6 +20,18 @@ const form = reactive({
   imageType: 'catalog' as 'catalog' | 'article' | 'receipt',
   displayMode: 'full' as 'full' | 'split',
   splitCount: 2,
+  personId: '',
+})
+
+const personOptions = computed(() => [
+  { value: '', label: '— Unassigned —' },
+  ...personsStore.persons.map(p => ({ value: p.id, label: p.name })),
+])
+
+watch(() => form.imageType, (t) => {
+  if (t === 'article' && !form.personId) {
+    form.personId = personsStore.currentPersonId ?? ''
+  }
 })
 
 async function handleFiles(files: FileList | null) {
@@ -32,6 +46,7 @@ async function handleFiles(files: FileList | null) {
       fd.append('displayMode', form.displayMode)
       fd.append('splitCount', String(form.splitCount))
       if (form.customName.trim()) fd.append('customName', form.customName.trim())
+      if (form.imageType === 'article' && form.personId) fd.append('personId', form.personId)
 
       const result = await $fetch<CatalogImage>('/api/upload/image', {
         method: 'POST',
@@ -120,6 +135,11 @@ const typeColor = computed(() => {
             v-model="form.customName"
             :placeholder="form.imageType === 'article' ? 'e.g. Miku Bunny Figure' : form.imageType === 'receipt' ? 'e.g. Day 1 purchases' : 'e.g. Phinea Miaow 2026 Catalog'"
           />
+        </UFormGroup>
+
+        <!-- Article: person assignment -->
+        <UFormGroup v-if="form.imageType === 'article' && personOptions.length > 1" label="Assign to Person">
+          <USelect v-model="form.personId" :options="personOptions" option-attribute="label" value-attribute="value" />
         </UFormGroup>
 
         <!-- Drop zone -->

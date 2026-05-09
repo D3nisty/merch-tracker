@@ -13,7 +13,7 @@ const store = useEventsStore()
 
 interface AnalyzedImage extends HallPlanImage {
   file?: File
-  status: 'pending' | 'uploading' | 'analyzing' | 'done' | 'error'
+  status: 'existing' | 'pending' | 'uploading' | 'analyzing' | 'done' | 'error'
   errorMsg?: string
   preview?: string
 }
@@ -21,6 +21,25 @@ interface AnalyzedImage extends HallPlanImage {
 const images = ref<AnalyzedImage[]>([])
 const saving = ref(false)
 const fileInput = ref<HTMLInputElement>()
+
+// Load existing layout when modal opens
+watch(() => props.modelValue, (open) => {
+  if (!open) return
+  images.value = []
+  const loc = store.currentEvent?.locations?.find(l => l.id === props.locationId)
+  if (loc?.layoutData) {
+    try {
+      const layout: HallLayoutData = JSON.parse(loc.layoutData)
+      for (const img of layout.images) {
+        images.value.push({
+          ...img,
+          status: 'existing',
+          preview: img.path,
+        })
+      }
+    } catch {}
+  }
+}, { immediate: true })
 
 // ── Booth number pattern ─────────────────────────────────────────
 // Matches: "10L13", "L13", "K24", "10N02", "10M21" etc.
@@ -69,23 +88,23 @@ function getImageDimensions(src: string): Promise<{ w: number; h: number }> {
 async function analyzeAll() {
   saving.value = true
   try {
-    // Load Tesseract once
-    const { createWorker } = await import('tesseract.js')
-    const worker = await createWorker('eng', 1, {
-      logger: () => {},
-    })
+    const pendingImages = images.value.filter(i => i.status === 'pending' && i.file)
 
-    for (const img of images.value) {
-      if (img.status === 'done' || !img.file) continue
-      await processImage(img, worker)
+    if (pendingImages.length > 0) {
+      const { createWorker } = await import('tesseract.js')
+      const worker = await createWorker('eng', 1, {
+        logger: () => {},
+      })
+      for (const img of pendingImages) {
+        await processImage(img, worker)
+      }
+      await worker.terminate()
     }
 
-    await worker.terminate()
-
-    // Save layout data
+    // Save existing + newly processed images (skip errors)
     const layoutData: HallLayoutData = {
       images: images.value
-        .filter(i => i.status === 'done')
+        .filter(i => i.status === 'existing' || i.status === 'done')
         .map(i => ({
           id: i.id,
           path: i.path,
@@ -186,6 +205,7 @@ async function processImage(img: AnalyzedImage, worker: import('tesseract.js').W
 }
 
 const totalDetected = computed(() => images.value.reduce((s, i) => s + i.booths.length, 0))
+const savedImageCount = computed(() => images.value.filter(i => i.status === 'existing' || i.status === 'done').length)
 const anyPending = computed(() => images.value.some(i => i.status === 'pending'))
 const anyProcessing = computed(() => images.value.some(i => i.status === 'uploading' || i.status === 'analyzing'))
 </script>
@@ -200,9 +220,9 @@ const anyProcessing = computed(() => images.value.some(i => i.status === 'upload
     <UCard>
       <template #header>
         <div>
-          <h3 class="font-bold text-white text-lg">Set Up Hall Plan — {{ locationName }}</h3>
+          <h3 class="font-bold text-white text-lg">Hall Plan — {{ locationName }}</h3>
           <p class="text-sm text-gray-400 mt-0.5">
-            Upload your hall plan images. OCR will automatically detect all booth numbers and their positions.
+            Add or remove floor plan images. OCR will detect booth numbers and their positions automatically.
           </p>
         </div>
       </template>
@@ -229,6 +249,7 @@ const anyProcessing = computed(() => images.value.some(i => i.status === 'upload
             v-for="img in images"
             :key="img.id"
             class="flex items-center gap-3 bg-gray-900 rounded-xl p-3"
+            :class="{ 'opacity-60': img.status === 'existing' }"
           >
             <!-- Thumbnail -->
             <div class="w-16 h-16 rounded-lg overflow-hidden bg-gray-800 shrink-0">
@@ -237,9 +258,18 @@ const anyProcessing = computed(() => images.value.some(i => i.status === 'upload
 
             <!-- Info -->
             <div class="flex-1 min-w-0">
-              <div class="text-sm font-medium text-white truncate">{{ img.file?.name }}</div>
+              <div class="text-sm font-medium text-white truncate">
+                <template v-if="img.status === 'existing'">{{ img.path.split('/').pop() }}</template>
+                <template v-else>{{ img.file?.name }}</template>
+              </div>
               <div class="text-xs text-gray-400 mt-0.5">
-                <template v-if="img.status === 'pending'">Ready to analyze</template>
+                <template v-if="img.status === 'existing'">
+                  <span class="text-gray-500">
+                    ✓ {{ img.booths.length }} booths · already saved
+                    <span v-if="img.naturalWidth" class="ml-1">({{ img.naturalWidth }}×{{ img.naturalHeight }}px)</span>
+                  </span>
+                </template>
+                <template v-else-if="img.status === 'pending'">Ready to analyze</template>
                 <template v-else-if="img.status === 'uploading'">
                   <span class="text-blue-400">Uploading...</span>
                 </template>
@@ -261,7 +291,7 @@ const anyProcessing = computed(() => images.value.some(i => i.status === 'upload
               </div>
 
               <!-- Detected booth chips (preview) -->
-              <div v-if="img.status === 'done' && img.booths.length" class="flex flex-wrap gap-1 mt-2">
+              <div v-if="(img.status === 'done' || img.status === 'existing') && img.booths.length" class="flex flex-wrap gap-1 mt-2">
                 <span
                   v-for="b in img.booths.slice(0, 20)"
                   :key="b.boothNr"
@@ -274,7 +304,7 @@ const anyProcessing = computed(() => images.value.some(i => i.status === 'upload
             </div>
 
             <!-- Status icon / remove -->
-            <div class="shrink-0">
+            <div class="shrink-0 flex items-center gap-1">
               <UIcon v-if="img.status === 'uploading' || img.status === 'analyzing'"
                 name="i-heroicons-arrow-path"
                 class="w-5 h-5 text-yellow-400 animate-spin"
@@ -288,7 +318,7 @@ const anyProcessing = computed(() => images.value.some(i => i.status === 'upload
                 class="w-5 h-5 text-red-400"
               />
               <UButton
-                v-if="img.status === 'pending' || img.status === 'error'"
+                v-if="!anyProcessing && img.status !== 'uploading' && img.status !== 'analyzing'"
                 icon="i-heroicons-x-mark"
                 variant="ghost"
                 color="red"
@@ -302,7 +332,7 @@ const anyProcessing = computed(() => images.value.some(i => i.status === 'upload
         <!-- Summary -->
         <div v-if="totalDetected > 0" class="bg-purple-500/10 border border-purple-500/30 rounded-lg p-3 text-sm text-purple-300">
           <UIcon name="i-heroicons-check-circle" class="w-4 h-4 inline mr-1" />
-          {{ totalDetected }} booth positions detected across {{ images.filter(i => i.status === 'done').length }} image(s). Ready to save.
+          {{ totalDetected }} booth positions across {{ savedImageCount }} image(s).
         </div>
 
         <UAlert
@@ -323,16 +353,17 @@ const anyProcessing = computed(() => images.value.some(i => i.status === 'upload
               color="purple"
               icon="i-heroicons-cpu-chip"
               :loading="anyProcessing || saving"
-              :disabled="!images.length || anyProcessing"
+              :disabled="anyProcessing"
               @click="analyzeAll"
             >
               Analyze & Save
             </UButton>
             <UButton
-              v-else-if="images.some(i => i.status === 'done')"
+              v-else
               color="green"
               icon="i-heroicons-check"
               :loading="saving"
+              :disabled="saving"
               @click="analyzeAll"
             >
               Save Layout

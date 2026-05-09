@@ -9,6 +9,10 @@ export interface Event {
   description: string | null
   createdAt: string
   updatedAt: string
+  locationCount?: number
+  boothCount?: number
+  totalProducts?: number
+  purchasedProducts?: number
   locations?: Location[]
 }
 
@@ -76,6 +80,8 @@ export interface CatalogImage {
   sortOrder: number
   customName: string | null
   imageType: 'catalog' | 'article' | 'receipt'
+  personId: string | null
+  parentId: string | null
   createdAt: string
 }
 
@@ -92,6 +98,7 @@ export interface Product {
   size: string | null
   category: string | null
   isPurchased: boolean
+  isPlanned: boolean
   priority: number
   notes: string | null
   website: string | null
@@ -269,8 +276,79 @@ export const useEventsStore = defineStore('events', () => {
     }
   }
 
+  async function uploadSubImage(boothId: string, parentId: string, file: File, personId?: string) {
+    const fd = new FormData()
+    fd.append('boothId', boothId)
+    fd.append('image', file)
+    fd.append('imageType', 'article')
+    fd.append('parentId', parentId)
+    if (personId) fd.append('personId', personId)
+    const created = await $fetch<CatalogImage>('/api/upload/image', { method: 'POST', body: fd })
+    if (currentEvent.value?.locations) {
+      for (const loc of currentEvent.value.locations) {
+        const booth = loc.booths?.find(b => b.id === boothId)
+        if (booth) booth.images = [...(booth.images ?? []), created]
+      }
+    }
+    return created
+  }
+
+  async function moveImage(id: string, fromBoothId: string, toBoothId: string) {
+    await $fetch(`/api/images/${id}/move`, { method: 'POST', body: { boothId: toBoothId } })
+    if (!currentEvent.value?.locations) return
+
+    let movedImage: CatalogImage | undefined
+    let movedSubImages: CatalogImage[] = []
+    let movedProducts: Product[] = []
+
+    for (const loc of currentEvent.value.locations) {
+      const fromBooth = loc.booths?.find(b => b.id === fromBoothId)
+      if (fromBooth) {
+        movedImage = fromBooth.images?.find(i => i.id === id)
+        movedSubImages = (fromBooth.images ?? []).filter(i => i.parentId === id)
+        movedProducts = (fromBooth.products ?? []).filter(p => p.catalogImageId === id)
+        fromBooth.images = (fromBooth.images ?? []).filter(i => i.id !== id && i.parentId !== id)
+        fromBooth.products = (fromBooth.products ?? []).filter(p => p.catalogImageId !== id)
+        break
+      }
+    }
+    if (!movedImage) return
+
+    for (const loc of currentEvent.value.locations) {
+      const toBooth = loc.booths?.find(b => b.id === toBoothId)
+      if (toBooth) {
+        toBooth.images = [
+          ...(toBooth.images ?? []),
+          { ...movedImage, boothId: toBoothId },
+          ...movedSubImages.map(s => ({ ...s, boothId: toBoothId })),
+        ]
+        toBooth.products = [
+          ...(toBooth.products ?? []),
+          ...movedProducts.map(p => ({ ...p, boothId: toBoothId })),
+        ]
+        break
+      }
+    }
+  }
+
+  async function replaceImage(id: string, boothId: string, file: File) {
+    const fd = new FormData()
+    fd.append('image', file)
+    const updated = await $fetch<CatalogImage>(`/api/images/${id}/replace`, { method: 'POST', body: fd })
+    if (currentEvent.value?.locations) {
+      for (const loc of currentEvent.value.locations) {
+        const booth = loc.booths?.find(b => b.id === boothId)
+        if (booth) {
+          const idx = booth.images?.findIndex(i => i.id === id) ?? -1
+          if (idx !== -1 && booth.images) booth.images[idx] = { ...booth.images[idx], ...updated }
+        }
+      }
+    }
+    return updated
+  }
+
   // Article-aware cost helpers:
-  // - article image = 1 item; only the paid source counts toward budget
+  // - root article image (no parentId) = 1 item; planned/paid source drives budget
   // - catalog products / unlinked products = each counts individually
 
   function getItemStats(personId?: string | null): { total: number; purchased: number } {
@@ -281,7 +359,7 @@ export const useEventsStore = defineStore('events', () => {
         const images = booth.images ?? []
         const products = (booth.products ?? []).filter(p => !personId || p.personId === personId)
         for (const img of images) {
-          if (img.imageType !== 'article') continue
+          if (img.imageType !== 'article' || img.parentId) continue
           total++
           if (products.some(p => p.catalogImageId === img.id && p.isPurchased)) purchased++
         }
@@ -296,7 +374,7 @@ export const useEventsStore = defineStore('events', () => {
     return { total, purchased }
   }
 
-  // Planned budget: catalog products (all) + article paid sources only
+  // Planned budget: catalog products (all) + article planned/paid source
   function getPlannedCostByCurrency(personId?: string | null): Record<string, number> {
     if (!currentEvent.value?.locations) return {}
     const map: Record<string, number> = {}
@@ -305,11 +383,13 @@ export const useEventsStore = defineStore('events', () => {
         const images = booth.images ?? []
         const products = (booth.products ?? []).filter(p => !personId || p.personId === personId)
         for (const img of images) {
-          if (img.imageType !== 'article') continue
-          const paid = products.find(p => p.catalogImageId === img.id && p.isPurchased)
-          if (paid?.price) {
-            const cur = paid.currency || 'EUR'
-            map[cur] = (map[cur] ?? 0) + paid.price * paid.quantity
+          if (img.imageType !== 'article' || img.parentId) continue
+          // Use planned source first, fall back to paid source
+          const source = products.find(p => p.catalogImageId === img.id && p.isPlanned)
+            ?? products.find(p => p.catalogImageId === img.id && p.isPurchased)
+          if (source?.price) {
+            const cur = source.currency || 'EUR'
+            map[cur] = (map[cur] ?? 0) + source.price * source.quantity
           }
         }
         for (const p of products) {
@@ -366,6 +446,9 @@ export const useEventsStore = defineStore('events', () => {
     togglePurchased,
     updateImage,
     deleteImage,
+    uploadSubImage,
+    replaceImage,
+    moveImage,
     getItemStats,
     getPlannedCostByCurrency,
     getPaidCostByCurrency,

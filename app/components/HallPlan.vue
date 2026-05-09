@@ -15,6 +15,7 @@ const emit = defineEmits<{
     imageIdx: number,
     rect: { x: number; y: number; w: number; h: number },
   ]
+  placeExistingBooth: [boothId: string, imageIdx: number, rect: { x: number; y: number; w: number; h: number }]
 }>()
 
 const authStore = useAuthStore()
@@ -134,6 +135,35 @@ const liveDraw = ref<{ x: number; y: number; w: number; h: number } | null>(null
 const pendingDraw = ref<{ x: number; y: number; w: number; h: number } | null>(null)
 const manualForm = reactive({ name: '', boothNr: '', hallNr: '', website: '', notes: '' })
 
+// ── Place existing booth mode ──────────────────────────────────────────
+const placingBooth = ref<Booth | null>(null)
+const pendingPlace = ref<{ x: number; y: number; w: number; h: number } | null>(null)
+
+function startPlacing(booth: Booth) {
+  if (placingBooth.value?.id === booth.id) {
+    cancelPlace()
+    return
+  }
+  drawMode.value = false
+  cancelManualBooth()
+  placingBooth.value = booth
+  pendingPlace.value = null
+}
+
+function cancelPlace() {
+  placingBooth.value = null
+  pendingPlace.value = null
+  liveDraw.value = null
+  drawStart.value = null
+}
+
+async function confirmPlace() {
+  if (!pendingPlace.value || !placingBooth.value) return
+  emit('placeExistingBooth', placingBooth.value.id, currentImageIdx.value, { ...pendingPlace.value })
+  pendingPlace.value = null
+  placingBooth.value = null
+}
+
 function getImageCoords(e: MouseEvent): { x: number; y: number } {
   const container = mapContainerRef.value
   if (!container) return { x: 0, y: 0 }
@@ -164,16 +194,19 @@ async function saveManualBooth() {
   Object.assign(manualForm, { name: '', boothNr: '', hallNr: '', website: '', notes: '' })
 }
 
-// ── Mouse handlers (pan + draw) ────────────────────────────────────────
+// ── Mouse handlers (pan + draw + place) ───────────────────────────────
+const isDrawing = computed(() => drawMode.value || !!placingBooth.value)
+
 function onMouseDown(e: MouseEvent) {
   if ((e.target as Element).closest('.booth-rect')) return
 
-  if (drawMode.value && authStore.isEditing) {
+  if (isDrawing.value && authStore.isEditing) {
     e.preventDefault()
     const c = getImageCoords(e)
     drawStart.value = c
     liveDraw.value = { x: c.x, y: c.y, w: 0, h: 0 }
-    pendingDraw.value = null
+    if (drawMode.value) pendingDraw.value = null
+    else pendingPlace.value = null
     return
   }
 
@@ -182,7 +215,7 @@ function onMouseDown(e: MouseEvent) {
 }
 
 function onMouseMove(e: MouseEvent) {
-  if (drawMode.value && drawStart.value) {
+  if (isDrawing.value && drawStart.value) {
     const c = getImageCoords(e)
     liveDraw.value = {
       x: Math.min(drawStart.value.x, c.x),
@@ -199,10 +232,14 @@ function onMouseMove(e: MouseEvent) {
 }
 
 function onMouseUp() {
-  if (drawMode.value && drawStart.value && liveDraw.value) {
+  if (isDrawing.value && drawStart.value && liveDraw.value) {
     if (liveDraw.value.w > 8 && liveDraw.value.h > 8) {
-      pendingDraw.value = { ...liveDraw.value }
-      Object.assign(manualForm, { name: '', boothNr: '', hallNr: '', website: '', notes: '' })
+      if (drawMode.value) {
+        pendingDraw.value = { ...liveDraw.value }
+        Object.assign(manualForm, { name: '', boothNr: '', hallNr: '', website: '', notes: '' })
+      } else {
+        pendingPlace.value = { ...liveDraw.value }
+      }
     }
     liveDraw.value = null
     drawStart.value = null
@@ -322,12 +359,20 @@ function boothBorderColor(booth: Booth): string {
           <UButton size="xs" variant="link" color="gray" class="ml-auto" @click="toggleDrawMode">Cancel</UButton>
         </div>
 
+        <!-- Place existing booth hint -->
+        <div v-if="placingBooth && !drawMode" class="px-3 py-2 bg-orange-900/30 border border-orange-700/40 rounded-lg text-xs text-orange-300 flex items-center gap-2">
+          <UIcon name="i-heroicons-map-pin" class="w-3.5 h-3.5 shrink-0" />
+          Drag a rectangle on the map to mark <span class="font-semibold text-orange-200 mx-1">{{ placingBooth.name }}</span>
+          <span v-if="placingBooth.boothNr" class="font-mono bg-orange-900/50 px-1 rounded">{{ placingBooth.boothNr }}</span>'s position.
+          <UButton size="xs" variant="link" color="gray" class="ml-auto" @click="cancelPlace">Cancel</UButton>
+        </div>
+
         <!-- Map viewport -->
         <div
           v-if="currentPlanImage"
           ref="mapContainerRef"
           class="relative bg-gray-950 rounded-xl overflow-hidden border border-gray-800 select-none"
-          :style="{ cursor: drawMode ? 'crosshair' : isPanning ? 'grabbing' : 'grab', height: '580px' }"
+          :style="{ cursor: isDrawing ? 'crosshair' : isPanning ? 'grabbing' : 'grab', height: '580px' }"
           @wheel.prevent="onWheel"
           @mousedown="onMouseDown"
           @mousemove="onMouseMove"
@@ -410,15 +455,25 @@ function boothBorderColor(booth: Booth): string {
               <rect
                 v-if="liveDraw"
                 :x="liveDraw.x" :y="liveDraw.y" :width="liveDraw.w" :height="liveDraw.h"
-                rx="3" fill="rgba(168,85,247,0.15)" stroke="#a855f7" stroke-width="2"
-                stroke-dasharray="6 3" style="pointer-events: none"
+                rx="3"
+                :fill="placingBooth ? 'rgba(249,115,22,0.15)' : 'rgba(168,85,247,0.15)'"
+                :stroke="placingBooth ? '#f97316' : '#a855f7'"
+                stroke-width="2" stroke-dasharray="6 3" style="pointer-events: none"
               />
 
-              <!-- Pending (committed) draw rect -->
+              <!-- Pending new booth rect -->
               <rect
                 v-if="pendingDraw"
                 :x="pendingDraw.x" :y="pendingDraw.y" :width="pendingDraw.w" :height="pendingDraw.h"
                 rx="3" fill="rgba(168,85,247,0.2)" stroke="#a855f7" stroke-width="2.5"
+                style="pointer-events: none"
+              />
+
+              <!-- Pending place rect -->
+              <rect
+                v-if="pendingPlace"
+                :x="pendingPlace.x" :y="pendingPlace.y" :width="pendingPlace.w" :height="pendingPlace.h"
+                rx="3" fill="rgba(249,115,22,0.2)" stroke="#f97316" stroke-width="2.5"
                 style="pointer-events: none"
               />
             </svg>
@@ -467,6 +522,32 @@ function boothBorderColor(booth: Booth): string {
             </div>
           </div>
 
+          <!-- Place existing booth confirmation overlay -->
+          <div
+            v-if="pendingPlace && placingBooth"
+            class="absolute top-3 right-3 w-64 bg-gray-900 border border-orange-600/60 rounded-xl shadow-2xl p-4 z-20 space-y-3"
+            @mousedown.stop
+          >
+            <div class="flex items-center justify-between">
+              <p class="text-sm font-semibold text-orange-300 flex items-center gap-1.5">
+                <UIcon name="i-heroicons-map-pin" class="w-4 h-4" />
+                Place here?
+              </p>
+              <UButton icon="i-heroicons-x-mark" variant="ghost" color="gray" size="xs" @click="cancelPlace" />
+            </div>
+            <div>
+              <div class="text-sm font-medium text-white">{{ placingBooth.name }}</div>
+              <div v-if="placingBooth.boothNr || placingBooth.hallNr" class="flex gap-1.5 mt-1">
+                <span v-if="placingBooth.hallNr" class="text-xs text-gray-400">Hall {{ placingBooth.hallNr }}</span>
+                <span v-if="placingBooth.boothNr" class="text-xs font-mono bg-gray-800 px-1.5 py-0.5 rounded text-purple-300">{{ placingBooth.boothNr }}</span>
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <UButton color="orange" size="sm" class="flex-1" @click="confirmPlace">Confirm</UButton>
+              <UButton variant="ghost" color="gray" size="sm" @click="cancelPlace">Cancel</UButton>
+            </div>
+          </div>
+
           <div class="absolute bottom-2 right-2 text-xs text-gray-600 pointer-events-none select-none">
             Scroll to zoom · Drag to pan · Click colored = select · Click outline = add
           </div>
@@ -474,14 +555,22 @@ function boothBorderColor(booth: Booth): string {
 
         <!-- User booths not on this map -->
         <div v-if="unmappedUserBooths.length" class="bg-gray-900 rounded-lg p-3">
-          <p class="text-xs text-gray-500 mb-2">Your booths not detected on this map page:</p>
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-xs text-gray-500">Your booths not detected on this map page:</p>
+            <p v-if="authStore.isEditing" class="text-xs text-orange-400/70">Click to place on map</p>
+          </div>
           <div class="flex flex-wrap gap-2">
             <button
               v-for="b in unmappedUserBooths" :key="b.id"
-              class="px-2 py-1 rounded text-xs font-medium transition-colors"
-              :class="selectedBoothId === b.id ? 'bg-orange-500 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'"
-              @click="emit('selectBooth', b.id === selectedBoothId ? null : b.id)"
+              class="px-2 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1"
+              :class="placingBooth?.id === b.id
+                ? 'bg-orange-500 text-white ring-2 ring-orange-400'
+                : selectedBoothId === b.id
+                  ? 'bg-orange-500 text-white'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'"
+              @click="authStore.isEditing ? startPlacing(b) : emit('selectBooth', b.id === selectedBoothId ? null : b.id)"
             >
+              <UIcon v-if="authStore.isEditing" name="i-heroicons-map-pin" class="w-3 h-3 opacity-70" />
               {{ b.name }}{{ b.boothNr ? ` (${b.boothNr})` : '' }}
             </button>
           </div>

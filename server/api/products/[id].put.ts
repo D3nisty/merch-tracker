@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
 
   const fields = [
     'name', 'description', 'price', 'currency', 'quantity',
-    'size', 'category', 'isPurchased', 'priority', 'notes', 'website',
+    'size', 'category', 'isPurchased', 'isPlanned', 'priority', 'notes', 'website',
     'catalogImageId', 'personId', 'regionX', 'regionY', 'regionW', 'regionH',
   ] as const
 

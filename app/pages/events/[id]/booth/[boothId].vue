@@ -75,11 +75,22 @@ function formatCostMap(map: Record<string, number>) {
 
 function buildCostMap(products: Product[], images: CatalogImage[], paidOnly: boolean) {
   const map: Record<string, number> = {}
+  // Track which article images have already been counted (to avoid double-counting sources)
+  const countedArticles = new Set<string>()
   for (const p of products) {
     if (!p.price) continue
     if (paidOnly && !p.isPurchased) continue
     const img = images.find(i => i.id === p.catalogImageId)
-    if (img?.imageType === 'article' && !p.isPurchased) continue
+    if (img?.imageType === 'article') {
+      if (paidOnly) {
+        if (!p.isPurchased) continue
+      } else {
+        // For planned budget: only count the planned or paid source, once per article
+        if (countedArticles.has(img.id)) continue
+        if (!p.isPlanned && !p.isPurchased) continue
+        countedArticles.add(img.id)
+      }
+    }
     const cur = p.currency || 'EUR'
     map[cur] = (map[cur] ?? 0) + p.price * p.quantity
   }
@@ -103,8 +114,24 @@ async function handleDeleteProduct() {
 }
 
 const sortedImages = computed(() =>
-  [...(booth.value?.images ?? [])].sort((a, b) => a.sortOrder - b.sortOrder),
+  [...(booth.value?.images ?? [])]
+    .filter(i => !i.parentId)
+    .sort((a, b) => a.sortOrder - b.sortOrder),
 )
+
+const filteredImages = computed(() => {
+  const pid = personsStore.currentPersonId
+  if (!pid) return sortedImages.value
+  return sortedImages.value.filter(img =>
+    img.imageType !== 'article' || !img.personId || img.personId === pid,
+  )
+})
+
+function subImagesFor(imageId: string) {
+  return [...(booth.value?.images ?? [])]
+    .filter(i => i.parentId === imageId)
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+}
 
 const groupedByImage = computed(() => {
   const groups: Record<string, Product[]> = { none: [] }
@@ -307,18 +334,29 @@ const personBreakdown = computed(() => {
 
     <!-- Catalog images with products -->
     <div :class="['space-y-8', authStore.isEditing && sortedImages.length > 1 ? 'pl-8' : '']">
-      <div v-for="(img, idx) in sortedImages" :key="img.id" class="relative group/img">
+      <!-- Person filter notice -->
+      <div
+        v-if="personsStore.currentPersonId && filteredImages.length < sortedImages.length"
+        class="flex items-center gap-2 text-xs text-gray-500 pb-2 border-b border-gray-800"
+      >
+        <UIcon name="i-heroicons-funnel" class="w-3.5 h-3.5" />
+        Showing articles for
+        <strong class="text-gray-300">{{ personsStore.persons.find(p => p.id === personsStore.currentPersonId)?.name }}</strong>
+        <span class="text-gray-600">({{ sortedImages.length - filteredImages.length }} hidden)</span>
+      </div>
+
+      <div v-for="img in filteredImages" :key="img.id" class="relative group/img">
         <!-- Reorder controls -->
         <div v-if="authStore.isEditing && sortedImages.length > 1" class="absolute -left-8 top-2 flex flex-col gap-0.5 opacity-0 group-hover/img:opacity-100 transition-opacity z-10">
           <button
-            :disabled="idx === 0"
+            :disabled="sortedImages.findIndex(i => i.id === img.id) === 0"
             class="w-6 h-6 flex items-center justify-center rounded bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 disabled:opacity-20 disabled:cursor-not-allowed"
             @click="moveImage(img.id, 'up')"
           >
             <UIcon name="i-heroicons-chevron-up" class="w-3.5 h-3.5" />
           </button>
           <button
-            :disabled="idx === sortedImages.length - 1"
+            :disabled="sortedImages.findIndex(i => i.id === img.id) === sortedImages.length - 1"
             class="w-6 h-6 flex items-center justify-center rounded bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 disabled:opacity-20 disabled:cursor-not-allowed"
             @click="moveImage(img.id, 'down')"
           >
@@ -330,6 +368,7 @@ const personBreakdown = computed(() => {
           :products="groupedByImage[img.id] ?? []"
           :presets="presets"
           :booth-products="img.imageType === 'receipt' ? booth.products : undefined"
+          :sub-images="img.imageType === 'article' ? subImagesFor(img.id) : undefined"
         />
       </div>
 

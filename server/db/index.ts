@@ -123,6 +123,10 @@ export function useDb() {
   try { sqlite.exec(`ALTER TABLE locations ADD COLUMN date_to TEXT`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE booths ADD COLUMN shop_category TEXT`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE booths ADD COLUMN person_id TEXT`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE catalog_images ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE catalog_images ADD COLUMN person_id TEXT`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE catalog_images ADD COLUMN parent_id TEXT`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE products ADD COLUMN is_planned INTEGER NOT NULL DEFAULT 0`) } catch { /* already exists */ }
 
   return _db
 }
