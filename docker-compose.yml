@@ -10,7 +10,7 @@ services:
       PORT: "3000"
       UPLOAD_DIR: /app/uploads
     volumes:
-      # SQLite database — persists across image rebuilds
-      - ./data:/app/.output/data
-      # Uploaded images — mounted outside .output so Nitro publicAssets serves them at /uploads/
+      # SQLite database — /app/data matches WORKDIR /app + runtimeConfig dbPath ./data/
+      - ./data:/app/data
+      # Uploaded images — served at /uploads/* via Nitro publicAssets in nuxt.config.ts
       - ./uploads:/app/uploads

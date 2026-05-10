@@ -25,9 +25,9 @@ export default defineNuxtConfig({
     publicAssets: [
       {
         baseURL: '/uploads',
-        // In production (Docker) UPLOAD_DIR=/app/uploads is set via docker-compose.
-        // In dev, Nuxt serves ./public/uploads/ automatically, so this entry is ignored.
-        dir: process.env.UPLOAD_DIR ?? './public/uploads',
+        // Absolute path so it works regardless of WORKDIR.
+        // In dev, Nuxt serves ./public/uploads/ automatically via the built-in static handler.
+        dir: '/app/uploads',
         maxAge: 60 * 60 * 24 * 365,
       },
     ],
