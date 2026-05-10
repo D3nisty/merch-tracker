@@ -1,4 +1,4 @@
-import { writeFile, mkdir, unlink } from 'node:fs/promises'
+import { writeFile, mkdir } from 'node:fs/promises'
 import { join, extname } from 'node:path'
 import { useDb } from '../../../db'
 import { catalogImages } from '../../../db/schema'
@@ -17,13 +17,9 @@ export default defineEventHandler(async (event) => {
   const existing = db.select().from(catalogImages).where(eq(catalogImages.id, id)).get()
   if (!existing) throw createError({ statusCode: 404, message: 'Image not found' })
 
-  try {
-    await unlink(join(process.cwd(), 'public', existing.path))
-  } catch { /* ignore if file already gone */ }
-
   const ext = extname(imageFile.filename || '.jpg') || '.jpg'
   const filename = `${generateId()}${ext}`
-  const uploadDir = join(process.cwd(), 'public', 'uploads')
+  const uploadDir = process.env.UPLOAD_DIR ?? join(process.cwd(), 'public', 'uploads')
   await mkdir(uploadDir, { recursive: true })
   await writeFile(join(uploadDir, filename), imageFile.data)
 
