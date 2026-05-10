@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { useEventsStore } from '~/stores/events'
+import { useLocale } from '~/composables/useLocale'
 
 const store = useEventsStore()
 const router = useRouter()
+const { t } = useLocale()
 
 const form = reactive({
   name: '',
@@ -17,7 +19,7 @@ const error = ref('')
 
 async function handleSubmit() {
   if (!form.name.trim()) {
-    error.value = 'Name is required'
+    error.value = t('createEvent.nameRequired')
     return
   }
   submitting.value = true
@@ -30,34 +32,34 @@ async function handleSubmit() {
       location: form.location || null,
       description: form.description || null,
     })
-    router.push(`/events/${created.id}`)
+    router.push(`/events/${created.slug ?? created.id}`)
   } catch (e: unknown) {
-    error.value = (e as Error).message || 'Failed to create event'
+    error.value = (e as Error).message || t('createEvent.failedCreate')
   } finally {
     submitting.value = false
   }
 }
 
-const typeOptions = [
-  { value: 'convention', label: 'Convention', icon: 'i-heroicons-ticket', description: 'Anime/gaming convention with halls and booths' },
-  { value: 'travel', label: 'Travel', icon: 'i-heroicons-map', description: 'Country or city shopping trip' },
-]
+const typeOptions = computed(() => [
+  { value: 'convention', label: t('createEvent.conventionLabel'), icon: 'i-heroicons-ticket', description: t('createEvent.conventionDesc') },
+  { value: 'travel', label: t('createEvent.travelLabel'), icon: 'i-heroicons-map', description: t('createEvent.travelDesc') },
+])
 </script>
 
 <template>
   <div class="max-w-lg mx-auto">
     <div class="mb-6">
       <NuxtLink to="/" class="text-gray-400 hover:text-white flex items-center gap-1 text-sm mb-4">
-        <UIcon name="i-heroicons-arrow-left" class="w-4 h-4" /> Back
+        <UIcon name="i-heroicons-arrow-left" class="w-4 h-4" /> {{ t('common.back') }}
       </NuxtLink>
-      <h1 class="text-2xl font-bold text-white">New Event</h1>
+      <h1 class="text-2xl font-bold text-white">{{ t('createEvent.title') }}</h1>
     </div>
 
     <UCard>
       <form @submit.prevent="handleSubmit" class="space-y-5">
         <!-- Type selection -->
         <div>
-          <label class="block text-sm font-medium text-gray-300 mb-2">Event Type</label>
+          <label class="block text-sm font-medium text-gray-300 mb-2">{{ t('createEvent.eventType') }}</label>
           <div class="grid grid-cols-2 gap-3">
             <button
               v-for="opt in typeOptions"
@@ -78,27 +80,27 @@ const typeOptions = [
           </div>
         </div>
 
-        <UFormGroup label="Event Name" required>
-          <UInput v-model="form.name" placeholder="e.g. Dokomi 2026" autofocus />
+        <UFormGroup :label="t('createEvent.eventName')" required>
+          <UInput v-model="form.name" :placeholder="t('createEvent.namePlaceholder')" autofocus />
         </UFormGroup>
 
-        <UFormGroup :label="form.type === 'convention' ? 'Venue / City' : 'Country / Region'">
-          <UInput v-model="form.location" :placeholder="form.type === 'convention' ? 'e.g. Düsseldorf' : 'e.g. Japan'" />
+        <UFormGroup :label="form.type === 'convention' ? t('createEvent.venueCity') : t('createEvent.countryRegion')">
+          <UInput v-model="form.location" :placeholder="form.type === 'convention' ? t('createEvent.venuePlaceholder') : t('createEvent.countryPlaceholder')" />
         </UFormGroup>
 
-        <UFormGroup label="Date">
+        <UFormGroup :label="t('common.date')">
           <UInput v-model="form.date" type="date" />
         </UFormGroup>
 
-        <UFormGroup label="Description">
-          <UTextarea v-model="form.description" placeholder="Optional notes..." rows="3" />
+        <UFormGroup :label="t('common.description')">
+          <UTextarea v-model="form.description" :placeholder="t('createEvent.descriptionPlaceholder')" rows="3" />
         </UFormGroup>
 
         <UAlert v-if="error" color="red" :description="error" />
 
         <div class="flex gap-3 justify-end">
-          <UButton variant="ghost" color="gray" to="/">Cancel</UButton>
-          <UButton type="submit" color="purple" :loading="submitting">Create Event</UButton>
+          <UButton variant="ghost" color="gray" to="/">{{ t('common.cancel') }}</UButton>
+          <UButton type="submit" color="purple" :loading="submitting">{{ t('createEvent.title') }}</UButton>
         </div>
       </form>
     </UCard>

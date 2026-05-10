@@ -1,15 +1,15 @@
 import { useDb } from '../../db'
 import { events, locations, booths, products, catalogImages } from '../../db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, or } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')!
   const db = useDb()
 
-  const eventRow = db.select().from(events).where(eq(events.id, id)).get()
+  const eventRow = db.select().from(events).where(or(eq(events.id, id), eq(events.slug, id))).get()
   if (!eventRow) throw createError({ statusCode: 404, message: 'Event not found' })
 
-  const locationRows = db.select().from(locations).where(eq(locations.eventId, id)).all()
+  const locationRows = db.select().from(locations).where(eq(locations.eventId, eventRow.id)).all()
 
   const locationIds = locationRows.map(l => l.id)
   const boothRows = locationIds.length

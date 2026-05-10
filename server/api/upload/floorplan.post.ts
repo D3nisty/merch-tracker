@@ -24,7 +24,7 @@ export default defineEventHandler(async (event) => {
 
   const ext = extname(imageFile.filename || '.jpg') || '.jpg'
   const filename = `floorplan-${generateId()}${ext}`
-  const uploadDir = join(process.cwd(), 'public', 'uploads')
+  const uploadDir = process.env.UPLOAD_DIR ?? join(process.cwd(), 'public', 'uploads')
 
   await mkdir(uploadDir, { recursive: true })
   await writeFile(join(uploadDir, filename), imageFile.data)

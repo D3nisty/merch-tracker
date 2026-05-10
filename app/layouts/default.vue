@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { useAuthStore } from '~/stores/auth'
 import { usePersonsStore } from '~/stores/persons'
+import { useLocale } from '~/composables/useLocale'
 
 const authStore = useAuthStore()
 const personsStore = usePersonsStore()
+const { t } = useLocale()
 
 const showPasswordModal = ref(false)
 const passwordInput = ref('')
@@ -57,14 +59,14 @@ const COLOR_MAP: Record<string, string> = {
             class="px-3 py-1.5 text-xs font-medium rounded border border-gray-700 text-gray-400 hover:border-gray-500 hover:text-white transition-colors"
             @click="openPasswordModal"
           >
-            Edit
+            {{ t('nav.edit') }}
           </button>
           <button
             v-else
             class="px-3 py-1.5 text-xs font-medium rounded border border-purple-500 text-purple-400 hover:bg-purple-500/10 transition-colors"
             @click="authStore.lock()"
           >
-            Editing ✓
+            {{ t('nav.editing') }}
           </button>
 
           <NuxtLink to="/" class="flex items-center gap-2 font-bold text-lg text-white hover:text-purple-400 transition-colors">
@@ -73,8 +75,10 @@ const COLOR_MAP: Record<string, string> = {
           </NuxtLink>
         </div>
 
-        <!-- Right: Person selector + nav buttons -->
+        <!-- Right: Language selector + Person selector + nav buttons -->
         <div class="flex items-center gap-2">
+          <LanguageSelector />
+
           <!-- Person selector -->
           <div class="relative">
             <button
@@ -87,7 +91,7 @@ const COLOR_MAP: Record<string, string> = {
               />
               <UIcon v-else name="i-heroicons-user-circle" class="w-4 h-4 text-gray-400" />
               <span class="text-gray-300 max-w-24 truncate">
-                {{ personsStore.currentPerson?.name ?? 'Person' }}
+                {{ personsStore.currentPerson?.name ?? t('nav.person') }}
               </span>
               <UIcon name="i-heroicons-chevron-down" class="w-3 h-3 text-gray-500" />
             </button>
@@ -97,7 +101,7 @@ const COLOR_MAP: Record<string, string> = {
               v-if="showPersonManager"
               class="absolute right-0 top-full mt-1 w-56 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 p-2"
             >
-              <div class="text-xs text-gray-500 px-2 py-1 mb-1">Select Person</div>
+              <div class="text-xs text-gray-500 px-2 py-1 mb-1">{{ t('nav.selectPerson') }}</div>
 
               <button
                 class="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm hover:bg-gray-800 transition-colors"
@@ -105,7 +109,7 @@ const COLOR_MAP: Record<string, string> = {
                 @click="personsStore.selectPerson(null); showPersonManager = false"
               >
                 <UIcon name="i-heroicons-user-circle" class="w-4 h-4" />
-                All / None
+                {{ t('nav.allNone') }}
               </button>
 
               <button
@@ -133,7 +137,7 @@ const COLOR_MAP: Record<string, string> = {
                   <UInput
                     v-model="newPersonName"
                     size="xs"
-                    placeholder="New person…"
+                    :placeholder="t('nav.newPersonPlaceholder')"
                     class="flex-1"
                     @keydown.enter="addPerson"
                   />
@@ -144,7 +148,7 @@ const COLOR_MAP: Record<string, string> = {
           </div>
 
           <UButton to="/" variant="ghost" icon="i-heroicons-home" color="gray" size="sm">
-            Events
+            {{ t('nav.events') }}
           </UButton>
           <UButton
             v-if="authStore.isEditing"
@@ -153,7 +157,7 @@ const COLOR_MAP: Record<string, string> = {
             color="purple"
             size="sm"
           >
-            New Event
+            {{ t('nav.newEvent') }}
           </UButton>
         </div>
       </div>
@@ -174,23 +178,23 @@ const COLOR_MAP: Record<string, string> = {
     <UModal v-model="showPasswordModal" :ui="{ width: 'sm:max-w-xs' }">
       <UCard>
         <template #header>
-          <h3 class="font-semibold text-white">Enter Password</h3>
+          <h3 class="font-semibold text-white">{{ t('nav.enterPassword') }}</h3>
         </template>
         <div class="space-y-3">
           <UInput
             v-model="passwordInput"
             type="password"
-            placeholder="Password"
+            :placeholder="t('nav.password')"
             autofocus
             :class="passwordError ? 'ring-2 ring-red-500' : ''"
             @keydown.enter="handleUnlock"
           />
-          <p v-if="passwordError" class="text-red-400 text-xs">Incorrect password.</p>
+          <p v-if="passwordError" class="text-red-400 text-xs">{{ t('nav.incorrectPassword') }}</p>
         </div>
         <template #footer>
           <div class="flex gap-2 justify-end">
-            <UButton variant="ghost" color="gray" @click="showPasswordModal = false">Cancel</UButton>
-            <UButton color="purple" @click="handleUnlock">Unlock</UButton>
+            <UButton variant="ghost" color="gray" @click="showPasswordModal = false">{{ t('common.cancel') }}</UButton>
+            <UButton color="purple" @click="handleUnlock">{{ t('nav.unlock') }}</UButton>
           </div>
         </template>
       </UCard>

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 
 export interface Event {
   id: string
+  slug: string | null
   name: string
   type: 'convention' | 'travel'
   date: string | null
@@ -52,6 +53,7 @@ export interface Location {
 
 export interface Booth {
   id: string
+  slug: string | null
   locationId: string
   name: string
   boothNr: string | null

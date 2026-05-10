@@ -66,7 +66,7 @@ const progress = computed(() => totalCount.value ? (purchasedCount.value / total
 </script>
 
 <template>
-  <NuxtLink :to="`/events/${route.params.id}/booth/${booth.id}`">
+  <NuxtLink :to="`/events/${route.params.slug}/booth/${booth.slug ?? booth.id}`">
     <UCard class="hover:border-purple-500/50 transition-colors cursor-pointer h-full">
       <div class="space-y-2">
         <div class="flex items-start justify-between">

@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import type { Event } from '~/stores/events'
 import { useAuthStore } from '~/stores/auth'
+import { useLocale } from '~/composables/useLocale'
 
 const props = defineProps<{ event: Event }>()
+const { t } = useLocale()
 const emit = defineEmits<{ delete: [id: string] }>()
 
 const authStore = useAuthStore()
@@ -25,15 +27,17 @@ const purchasedProducts = computed(() =>
 
 const isConvention = computed(() => props.event.type === 'convention')
 
+const eventSlug = computed(() => props.event.slug ?? props.event.id)
+
 const dropdownItems = computed(() => {
   const items = [
-    { label: 'View', icon: 'i-heroicons-eye', to: `/events/${props.event.id}` },
+    { label: t('common.view'), icon: 'i-heroicons-eye', to: `/events/${eventSlug.value}` },
   ]
   if (isConvention.value) {
-    items.push({ label: 'Hall Plan', icon: 'i-heroicons-map', to: `/events/${props.event.id}/hallplan` } as any)
+    items.push({ label: t('events.hallPlan'), icon: 'i-heroicons-map', to: `/events/${eventSlug.value}/hallplan` } as any)
   }
   if (authStore.isEditing) {
-    items.push({ label: 'Delete', icon: 'i-heroicons-trash', click: () => emit('delete', props.event.id), class: 'text-red-400' } as any)
+    items.push({ label: t('common.delete'), icon: 'i-heroicons-trash', click: () => emit('delete', props.event.id), class: 'text-red-400' } as any)
   }
   return [items]
 })
@@ -41,7 +45,7 @@ const dropdownItems = computed(() => {
 
 <template>
   <div class="relative group">
-    <NuxtLink :to="`/events/${event.id}`" class="block">
+    <NuxtLink :to="`/events/${eventSlug}`" class="block">
       <UCard class="hover:border-purple-500/50 transition-colors cursor-pointer">
         <div class="flex items-start justify-between">
           <div class="flex-1 min-w-0 pr-8">
@@ -52,7 +56,7 @@ const dropdownItems = computed(() => {
                 :class="isConvention ? 'text-purple-400' : 'text-blue-400'"
               />
               <span class="text-xs font-medium" :class="isConvention ? 'text-purple-400' : 'text-blue-400'">
-                {{ isConvention ? 'Convention' : 'Travel' }}
+                {{ isConvention ? t('events.convention') : t('events.travelType') }}
               </span>
               <span v-if="event.date" class="text-xs text-gray-500">· {{ event.date }}</span>
             </div>
@@ -65,11 +69,11 @@ const dropdownItems = computed(() => {
         <div class="flex items-center gap-4 mt-4 pt-4 border-t border-gray-800 text-xs text-gray-400">
           <span class="flex items-center gap-1">
             <UIcon name="i-heroicons-building-office" class="w-3 h-3" />
-            {{ locationCount }} {{ isConvention ? 'halls' : 'locations' }}
+            {{ locationCount }} {{ isConvention ? t('events.halls') : t('events.locations') }}
           </span>
           <span class="flex items-center gap-1">
             <UIcon name="i-heroicons-shopping-bag" class="w-3 h-3" />
-            {{ totalBooths }} {{ isConvention ? 'booths' : 'shops' }}
+            {{ totalBooths }} {{ isConvention ? t('events.booths') : t('events.shops') }}
           </span>
           <span class="flex items-center gap-1 ml-auto">
             <UIcon name="i-heroicons-check-circle" class="w-3 h-3 text-green-400" />

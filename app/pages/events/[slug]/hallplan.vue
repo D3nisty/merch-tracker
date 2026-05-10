@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { useEventsStore } from '~/stores/events'
 import { useAuthStore } from '~/stores/auth'
+import { useLocale } from '~/composables/useLocale'
 import type { Booth, HallLayoutData } from '~/stores/events'
 
 const route = useRoute()
 const store = useEventsStore()
 const authStore = useAuthStore()
+const { t } = useLocale()
 
 // ── Booth editing ──────────────────────────────────────────────────────
 const editingBooth = ref(false)
@@ -37,13 +39,13 @@ async function saveEditBooth() {
 
 async function deleteBooth() {
   if (!selectedBooth.value) return
-  if (!confirm(`Delete "${selectedBooth.value.name}"? This will also delete all its products.`)) return
+  if (!confirm(t('hallplan.deleteBooth').replace('{name}', selectedBooth.value.name))) return
   await store.deleteBooth(selectedBooth.value.id, selectedLocation.value!.id)
   selectedBoothId.value = null
 }
 
 if (!store.currentEvent) {
-  await store.fetchEvent(route.params.id as string)
+  await store.fetchEvent(route.params.slug as string)
 }
 
 const event = computed(() => store.currentEvent)
@@ -148,15 +150,15 @@ const locationStats = computed(() => {
   <div v-if="event">
     <!-- Breadcrumb -->
     <div class="flex items-center gap-1 text-sm text-gray-400 mb-6">
-      <NuxtLink to="/" class="hover:text-white">Events</NuxtLink>
+      <NuxtLink to="/" class="hover:text-white">{{ t('nav.events') }}</NuxtLink>
       <UIcon name="i-heroicons-chevron-right" class="w-4 h-4" />
-      <NuxtLink :to="`/events/${route.params.id}`" class="hover:text-white">{{ event.name }}</NuxtLink>
+      <NuxtLink :to="`/events/${route.params.slug}`" class="hover:text-white">{{ event.name }}</NuxtLink>
       <UIcon name="i-heroicons-chevron-right" class="w-4 h-4" />
-      <span class="text-white">Hall Plan</span>
+      <span class="text-white">{{ t('hallplan.title') }}</span>
     </div>
 
     <div class="flex items-center justify-between mb-4 gap-3 flex-wrap">
-      <h1 class="text-2xl font-bold text-white">Hall Plan</h1>
+      <h1 class="text-2xl font-bold text-white">{{ t('hallplan.title') }}</h1>
       <div class="flex gap-2">
         <UButton
           v-if="selectedLocation"
@@ -166,7 +168,7 @@ const locationStats = computed(() => {
           size="sm"
           @click="showHallPlanSetup = true"
         >
-          Set Up Hall Plan
+          {{ t('hallplan.setupHallPlan') }}
         </UButton>
         <UButton
           icon="i-heroicons-plus"
@@ -174,7 +176,7 @@ const locationStats = computed(() => {
           size="sm"
           @click="showAddBooth = true"
         >
-          Add Booth
+          {{ t('hallplan.addBooth') }}
         </UButton>
       </div>
     </div>
@@ -201,23 +203,23 @@ const locationStats = computed(() => {
     <div v-if="selectedLocation" class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
       <div class="bg-gray-900 rounded-lg p-3 text-center">
         <div class="text-lg font-bold text-rose-400">{{ locationStats.booths }}</div>
-        <div class="text-xs text-gray-500">Booths</div>
+        <div class="text-xs text-gray-500">{{ t('hallplan.booths') }}</div>
       </div>
       <div class="bg-gray-900 rounded-lg p-3 text-center">
         <div class="text-lg font-bold text-purple-400">{{ locationStats.products }}</div>
-        <div class="text-xs text-gray-500">Products</div>
+        <div class="text-xs text-gray-500">{{ t('hallplan.products') }}</div>
       </div>
       <div class="bg-gray-900 rounded-lg p-3 text-center">
         <div class="text-lg font-bold text-green-400">{{ locationStats.purchased }}/{{ locationStats.products }}</div>
-        <div class="text-xs text-gray-500">Purchased</div>
+        <div class="text-xs text-gray-500">{{ t('event.purchased') }}</div>
       </div>
       <div class="bg-gray-900 rounded-lg p-3 text-center">
         <div class="text-lg font-bold text-yellow-400">{{ locationStats.total.toFixed(0) }}€</div>
-        <div class="text-xs text-gray-500">Budget</div>
+        <div class="text-xs text-gray-500">{{ t('hallplan.budget') }}</div>
       </div>
       <div class="bg-gray-900 rounded-lg p-3 text-center">
         <div class="text-lg font-bold text-blue-400">{{ locationStats.spent.toFixed(0) }}€</div>
-        <div class="text-xs text-gray-500">Spent</div>
+        <div class="text-xs text-gray-500">{{ t('hallplan.spent') }}</div>
       </div>
     </div>
 
@@ -234,7 +236,7 @@ const locationStats = computed(() => {
           @place-existing-booth="onPlaceExistingBooth"
         />
         <div v-else class="bg-gray-900 rounded-xl p-10 text-center text-gray-500">
-          No halls found for this event.
+          {{ t('hallplan.noHalls') }}
         </div>
       </div>
 
@@ -246,22 +248,22 @@ const locationStats = computed(() => {
               <!-- Edit form header -->
               <div v-if="editingBooth" class="space-y-2">
                 <div class="flex items-center justify-between mb-1">
-                  <span class="text-sm font-semibold text-gray-300">Edit Booth</span>
+                  <span class="text-sm font-semibold text-gray-300">{{ t('hallplan.editBooth') }}</span>
                   <div class="flex gap-1">
                     <UButton size="xs" color="red" variant="ghost" icon="i-heroicons-trash" @click="deleteBooth" />
                     <UButton size="xs" color="gray" variant="ghost" icon="i-heroicons-x-mark" @click="editingBooth = false" />
                   </div>
                 </div>
-                <UInput v-model="editForm.name" placeholder="Booth name" size="sm" />
+                <UInput v-model="editForm.name" :placeholder="t('hallplan.boothName')" size="sm" />
                 <div class="flex gap-2">
-                  <UInput v-model="editForm.hallNr" placeholder="Hall" size="sm" class="w-20" />
-                  <UInput v-model="editForm.boothNr" placeholder="Booth #" size="sm" class="flex-1" />
+                  <UInput v-model="editForm.hallNr" :placeholder="t('hallplan.hall')" size="sm" class="w-20" />
+                  <UInput v-model="editForm.boothNr" :placeholder="t('hallplan.boothNumber')" size="sm" class="flex-1" />
                 </div>
-                <UInput v-model="editForm.website" placeholder="Website" size="sm" />
-                <UInput v-model="editForm.notes" placeholder="Notes" size="sm" />
+                <UInput v-model="editForm.website" :placeholder="t('common.website')" size="sm" />
+                <UInput v-model="editForm.notes" :placeholder="t('common.notes')" size="sm" />
                 <div class="flex gap-2 pt-1">
-                  <UButton size="sm" color="purple" block @click="saveEditBooth">Save</UButton>
-                  <UButton size="sm" color="gray" variant="outline" @click="editingBooth = false">Cancel</UButton>
+                  <UButton size="sm" color="purple" block @click="saveEditBooth">{{ t('common.save') }}</UButton>
+                  <UButton size="sm" color="gray" variant="outline" @click="editingBooth = false">{{ t('common.cancel') }}</UButton>
                 </div>
               </div>
 
@@ -270,7 +272,7 @@ const locationStats = computed(() => {
                 <div>
                   <h3 class="font-bold text-white text-lg">{{ selectedBooth.name }}</h3>
                   <div class="text-sm text-gray-400 flex gap-2 mt-0.5">
-                    <span v-if="selectedBooth.hallNr">Hall {{ selectedBooth.hallNr }}</span>
+                    <span v-if="selectedBooth.hallNr">{{ t('hallplan.hall') }} {{ selectedBooth.hallNr }}</span>
                     <span v-if="selectedBooth.boothNr" class="font-mono bg-gray-800 px-1.5 rounded text-purple-300">
                       {{ selectedBooth.boothNr }}
                     </span>
@@ -286,7 +288,7 @@ const locationStats = computed(() => {
                     @click="startEditBooth"
                   />
                   <UButton
-                    :to="`/events/${route.params.id}/booth/${selectedBooth.id}`"
+                    :to="`/events/${route.params.slug}/booth/${selectedBooth.slug ?? selectedBooth.id}`"
                     icon="i-heroicons-arrow-top-right-on-square"
                     variant="ghost"
                     size="sm"
@@ -314,7 +316,7 @@ const locationStats = computed(() => {
                 </span>
               </div>
               <p v-if="!selectedBooth.products?.length" class="text-gray-500 text-sm py-2 text-center">
-                No products yet
+                {{ t('hallplan.noProducts') }}
               </p>
             </div>
 
@@ -327,14 +329,14 @@ const locationStats = computed(() => {
                   </span>
                 </div>
                 <UButton
-                  :to="`/events/${route.params.id}/booth/${selectedBooth.id}`"
+                  :to="`/events/${route.params.slug}/booth/${selectedBooth.slug ?? selectedBooth.id}`"
                   color="purple"
                   size="sm"
                   block
                   icon="i-heroicons-arrow-right"
                   trailing
                 >
-                  View Full Details
+                  {{ t('hallplan.viewFullDetails') }}
                 </UButton>
               </div>
             </template>
@@ -343,8 +345,8 @@ const locationStats = computed(() => {
 
         <div v-else class="bg-gray-900 rounded-xl p-8 text-center text-gray-500 sticky top-24">
           <UIcon name="i-heroicons-cursor-arrow-rays" class="w-10 h-10 mx-auto mb-3 text-gray-600" />
-          <p class="font-medium text-sm">Select a booth</p>
-          <p class="text-xs mt-1">Click any highlighted booth on the map, or click an outline booth to add it</p>
+          <p class="font-medium text-sm">{{ t('hallplan.selectBooth') }}</p>
+          <p class="text-xs mt-1">{{ t('hallplan.selectBoothHint') }}</p>
         </div>
       </div>
     </div>

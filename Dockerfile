@@ -26,10 +26,10 @@ COPY --from=builder /app/.output ./.output
 ENV NODE_ENV=production
 EXPOSE 3000
 
-# Run from inside .output so that:
-#   - Nitro serves static files from ./public/ (= .output/public/)
-#   - DB path ./data/merch-tracker.db resolves to .output/data/
-#   - Uploads ./public/uploads/ resolves to .output/public/uploads/
-# Both are mounted as volumes so they survive rebuilds.
+# Create /app/uploads so the volume mount point exists before Docker mounts it.
+# Uploads are served via Nitro publicAssets (configured in nuxt.config.ts).
+RUN mkdir -p /app/uploads
+
+# Run from inside .output so DB path ./data/merch-tracker.db resolves to .output/data/
 WORKDIR /app/.output
 CMD ["node", "server/index.mjs"]

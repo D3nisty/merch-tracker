@@ -128,7 +128,7 @@ function formatDateRange(from: string | null, to: string | null) {
             variant="ghost"
             color="gray"
             size="xs"
-            :to="`/events/${route.params.id}/hallplan`"
+            :to="`/events/${route.params.slug}/hallplan`"
             title="View Hall Plan"
           />
           <template v-if="authStore.isEditing">

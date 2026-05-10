@@ -1,14 +1,14 @@
 import { useDb } from '../../db'
 import { events } from '../../db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, or } from 'drizzle-orm'
 import { now } from '../../utils/id'
 
 export default defineEventHandler(async (event) => {
-  const id = getRouterParam(event, 'id')!
+  const idOrSlug = getRouterParam(event, 'id')!
   const body = await readBody(event)
   const db = useDb()
 
-  const existing = db.select().from(events).where(eq(events.id, id)).get()
+  const existing = db.select().from(events).where(or(eq(events.id, idOrSlug), eq(events.slug, idOrSlug))).get()
   if (!existing) throw createError({ statusCode: 404, message: 'Event not found' })
 
   const updated = {
@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
     updatedAt: now(),
   }
 
-  db.update(events).set(updated).where(eq(events.id, id)).run()
+  db.update(events).set(updated).where(eq(events.id, existing.id)).run()
 
-  return { id, ...existing, ...updated }
+  return { ...existing, ...updated }
 })

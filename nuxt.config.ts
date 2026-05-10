@@ -21,6 +21,18 @@ export default defineNuxtConfig({
     dbPath: './data/merch-tracker.db',
   },
 
+  nitro: {
+    publicAssets: [
+      {
+        baseURL: '/uploads',
+        // In production (Docker) UPLOAD_DIR=/app/uploads is set via docker-compose.
+        // In dev, Nuxt serves ./public/uploads/ automatically, so this entry is ignored.
+        dir: process.env.UPLOAD_DIR ?? './public/uploads',
+        maxAge: 60 * 60 * 24 * 365,
+      },
+    ],
+  },
+
   typescript: {
     strict: true,
   },

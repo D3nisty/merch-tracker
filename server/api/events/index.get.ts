@@ -8,6 +8,7 @@ export default defineEventHandler(async () => {
   const allEvents = db
     .select({
       id: events.id,
+      slug: events.slug,
       name: events.name,
       type: events.type,
       date: events.date,

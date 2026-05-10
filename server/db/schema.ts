@@ -9,6 +9,7 @@ export const persons = sqliteTable('persons', {
 
 export const events = sqliteTable('events', {
   id: text('id').primaryKey(),
+  slug: text('slug').unique(),
   name: text('name').notNull(),
   type: text('type', { enum: ['convention', 'travel'] }).notNull(),
   date: text('date'),
@@ -35,6 +36,7 @@ export const locations = sqliteTable('locations', {
 // Booths (for conventions) or Shops/Stops (for travel)
 export const booths = sqliteTable('booths', {
   id: text('id').primaryKey(),
+  slug: text('slug'),
   locationId: text('location_id').notNull().references(() => locations.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
   boothNr: text('booth_nr'),

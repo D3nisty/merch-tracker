@@ -2,21 +2,24 @@
 import { useEventsStore } from '~/stores/events'
 import { useAuthStore } from '~/stores/auth'
 import { usePersonsStore } from '~/stores/persons'
+import { useLocale } from '~/composables/useLocale'
 import type { Booth, Product, CatalogImage, BoothPreset } from '~/stores/events'
 
 const route = useRoute()
 const store = useEventsStore()
 const authStore = useAuthStore()
 const personsStore = usePersonsStore()
+const { t } = useLocale()
 
 if (!store.currentEvent) {
-  await store.fetchEvent(route.params.id as string)
+  await store.fetchEvent(route.params.slug as string)
 }
 
 const event = computed(() => store.currentEvent)
 const booth = computed<Booth | undefined>(() => {
+  const boothSlug = route.params.boothSlug as string
   for (const loc of event.value?.locations ?? []) {
-    const found = loc.booths?.find(b => b.id === route.params.boothId)
+    const found = loc.booths?.find(b => b.slug === boothSlug || b.id === boothSlug)
     if (found) return found
   }
   return undefined
@@ -38,17 +41,18 @@ const showAddPreset = ref(false)
 const presetForm = reactive({ label: '', price: '' as string | number, currency: 'EUR' })
 const CURRENCIES = ['EUR', 'JPY', 'USD', 'GBP', 'CHF', 'KRW']
 const SIZES = ['A6', 'A5', 'A4', 'A3', 'A2', 'B2', 'B3', '90×50cm', '40×23.5cm', '25cm', '20cm', '15cm', '10cm']
-const sizeOptions = [{ value: '', label: '— Pick size —' }, ...SIZES.map(s => ({ value: s, label: s }))]
+const sizeOptions = computed(() => [{ value: '', label: t('booth.pickSize') }, ...SIZES.map(s => ({ value: s, label: s }))])
 
 async function loadPresets() {
-  presets.value = await $fetch<BoothPreset[]>(`/api/booths/${route.params.boothId}/presets`)
+  if (!booth.value) return
+  presets.value = await $fetch<BoothPreset[]>(`/api/booths/${booth.value.id}/presets`)
 }
 
 async function addPreset() {
-  if (!presetForm.label.trim() || !presetForm.price) return
+  if (!presetForm.label.trim() || !presetForm.price || !booth.value) return
   const created = await $fetch<BoothPreset>('/api/presets', {
     method: 'POST',
-    body: { boothId: route.params.boothId, label: presetForm.label, price: Number(presetForm.price), currency: presetForm.currency },
+    body: { boothId: booth.value.id, label: presetForm.label, price: Number(presetForm.price), currency: presetForm.currency },
   })
   presets.value.push(created)
   Object.assign(presetForm, { label: '', price: '', currency: 'EUR' })
@@ -75,7 +79,6 @@ function formatCostMap(map: Record<string, number>) {
 
 function buildCostMap(products: Product[], images: CatalogImage[], paidOnly: boolean) {
   const map: Record<string, number> = {}
-  // Track which article images have already been counted (to avoid double-counting sources)
   const countedArticles = new Set<string>()
   for (const p of products) {
     if (!p.price) continue
@@ -85,7 +88,6 @@ function buildCostMap(products: Product[], images: CatalogImage[], paidOnly: boo
       if (paidOnly) {
         if (!p.isPurchased) continue
       } else {
-        // For planned budget: only count the planned or paid source, once per article
         if (countedArticles.has(img.id)) continue
         if (!p.isPlanned && !p.isPurchased) continue
         countedArticles.add(img.id)
@@ -152,7 +154,6 @@ async function moveImage(imageId: string, direction: 'up' | 'down') {
   if (idx === -1) return
   const swapIdx = direction === 'up' ? idx - 1 : idx + 1
   if (swapIdx < 0 || swapIdx >= images.length) return
-  // Re-assign clean sequential orders, then swap the two
   const orders = images.map((_, i) => i * 10)
   const tmp = orders[idx]
   orders[idx] = orders[swapIdx]
@@ -163,7 +164,6 @@ async function moveImage(imageId: string, direction: 'up' | 'down') {
   ])
 }
 
-// Per-person breakdown
 const COLOR_MAP: Record<string, string> = {
   purple: 'bg-purple-500', blue: 'bg-blue-500', green: 'bg-green-500',
   yellow: 'bg-yellow-500', red: 'bg-red-500', pink: 'bg-pink-500',
@@ -189,7 +189,7 @@ const personBreakdown = computed(() => {
     const person = personId ? personsStore.persons.find(p => p.id === personId) ?? null : null
     result.push({
       person,
-      label: person?.name ?? 'Unassigned',
+      label: person?.name ?? t('booth.unassigned'),
       entries: Object.entries(map),
     })
   }
@@ -204,7 +204,7 @@ const personBreakdown = computed(() => {
       <div class="flex items-center gap-1 text-sm text-gray-400 mb-4">
         <NuxtLink to="/" class="hover:text-white">Events</NuxtLink>
         <UIcon name="i-heroicons-chevron-right" class="w-4 h-4" />
-        <NuxtLink :to="`/events/${route.params.id}`" class="hover:text-white">{{ event?.name }}</NuxtLink>
+        <NuxtLink :to="`/events/${route.params.slug}`" class="hover:text-white">{{ event?.name }}</NuxtLink>
         <UIcon name="i-heroicons-chevron-right" class="w-4 h-4" />
         <span class="text-white">{{ booth.name }}</span>
       </div>
@@ -238,7 +238,7 @@ const personBreakdown = computed(() => {
           </div>
           <div v-else class="text-xl font-bold text-yellow-400">—</div>
           <div class="text-sm text-gray-400 mt-0.5">
-            {{ formatCostMap(purchasedByCurrency) ?? '0.00' }} spent
+            {{ formatCostMap(purchasedByCurrency) ?? '0.00' }} {{ t('booth.spent') }}
           </div>
         </div>
       </div>
@@ -246,14 +246,14 @@ const personBreakdown = computed(() => {
 
     <!-- Action bar (edit mode only) -->
     <div v-if="authStore.isEditing" class="flex gap-2 mb-6">
-      <UButton icon="i-heroicons-plus" color="purple" @click="showAddProduct = true">Add Product</UButton>
-      <UButton icon="i-heroicons-photo" variant="outline" color="gray" @click="showUploadImage = true">Upload Image</UButton>
+      <UButton icon="i-heroicons-plus" color="purple" @click="showAddProduct = true">{{ t('booth.addProduct') }}</UButton>
+      <UButton icon="i-heroicons-photo" variant="outline" color="gray" @click="showUploadImage = true">{{ t('booth.uploadImage') }}</UButton>
     </div>
 
     <!-- Price presets (edit mode only) -->
     <div v-if="authStore.isEditing" class="mb-6">
       <div class="flex items-center justify-between mb-2">
-        <h3 class="text-sm font-semibold text-gray-400">Price Presets</h3>
+        <h3 class="text-sm font-semibold text-gray-400">{{ t('booth.pricePresets') }}</h3>
         <UButton
           icon="i-heroicons-plus"
           variant="ghost"
@@ -261,7 +261,7 @@ const personBreakdown = computed(() => {
           size="xs"
           @click="showAddPreset = !showAddPreset"
         >
-          Add Preset
+          {{ t('booth.addPreset') }}
         </UButton>
       </div>
 
@@ -281,10 +281,10 @@ const personBreakdown = computed(() => {
           </button>
         </div>
       </div>
-      <p v-else-if="!showAddPreset" class="text-xs text-gray-600">No presets yet. Add common prices like "A4 Print = 5 EUR".</p>
+      <p v-else-if="!showAddPreset" class="text-xs text-gray-600">{{ t('booth.noPresetsHint') }}</p>
 
       <div v-if="showAddPreset" class="flex gap-2 items-end mt-2">
-        <UFormGroup label="Size" class="w-40">
+        <UFormGroup :label="t('booth.size')" class="w-40">
           <USelect
             v-model="presetForm.label"
             :options="sizeOptions"
@@ -293,10 +293,10 @@ const personBreakdown = computed(() => {
             size="sm"
           />
         </UFormGroup>
-        <UFormGroup label="Price" class="w-28">
+        <UFormGroup :label="t('booth.price')" class="w-28">
           <UInput v-model="presetForm.price" type="number" step="0.01" min="0" placeholder="0.00" size="sm" />
         </UFormGroup>
-        <UFormGroup label="Currency" class="w-24">
+        <UFormGroup :label="t('booth.currency')" class="w-24">
           <USelect
             v-model="presetForm.currency"
             :options="CURRENCIES.map(c => ({ value: c, label: c }))"
@@ -305,14 +305,14 @@ const personBreakdown = computed(() => {
             size="sm"
           />
         </UFormGroup>
-        <UButton color="purple" size="sm" @click="addPreset">Save</UButton>
-        <UButton variant="ghost" color="gray" size="sm" @click="showAddPreset = false">Cancel</UButton>
+        <UButton color="purple" size="sm" @click="addPreset">{{ t('common.save') }}</UButton>
+        <UButton variant="ghost" color="gray" size="sm" @click="showAddPreset = false">{{ t('common.cancel') }}</UButton>
       </div>
     </div>
 
     <!-- Per-person breakdown -->
     <div v-if="personBreakdown.length > 1" class="mb-6 p-4 rounded-xl bg-gray-900 border border-gray-800">
-      <h3 class="text-sm font-semibold text-gray-400 mb-3">Cost by Person</h3>
+      <h3 class="text-sm font-semibold text-gray-400 mb-3">{{ t('booth.costByPerson') }}</h3>
       <div class="space-y-2">
         <div v-for="item in personBreakdown" :key="item.label" class="flex items-center justify-between text-sm">
           <div class="flex items-center gap-2">
@@ -340,9 +340,9 @@ const personBreakdown = computed(() => {
         class="flex items-center gap-2 text-xs text-gray-500 pb-2 border-b border-gray-800"
       >
         <UIcon name="i-heroicons-funnel" class="w-3.5 h-3.5" />
-        Showing articles for
+        {{ t('booth.showingArticlesFor') }}
         <strong class="text-gray-300">{{ personsStore.persons.find(p => p.id === personsStore.currentPersonId)?.name }}</strong>
-        <span class="text-gray-600">({{ sortedImages.length - filteredImages.length }} hidden)</span>
+        <span class="text-gray-600">({{ sortedImages.length - filteredImages.length }} {{ t('booth.hidden') }})</span>
       </div>
 
       <div v-for="img in filteredImages" :key="img.id" class="relative group/img">
@@ -375,7 +375,7 @@ const personBreakdown = computed(() => {
       <!-- Products not linked to any image -->
       <div v-if="(groupedByImage['none'] ?? []).length > 0 || booth.images?.length === 0">
         <h3 class="text-lg font-semibold text-white mb-3">
-          {{ booth.images?.length ? 'Other Products' : 'Products' }}
+          {{ booth.images?.length ? t('booth.otherProducts') : t('booth.products') }}
         </h3>
         <div class="space-y-2">
           <ProductItem
@@ -391,8 +391,8 @@ const personBreakdown = computed(() => {
       <!-- Empty state -->
       <div v-if="!booth.products?.length && !booth.images?.length" class="text-center py-12 text-gray-500">
         <UIcon name="i-heroicons-shopping-bag" class="w-12 h-12 mx-auto mb-3 text-gray-600" />
-        <p>No products or catalog images yet.</p>
-        <p v-if="authStore.isEditing" class="text-sm mt-1">Upload a catalog image to extract products, or add them manually.</p>
+        <p>{{ t('booth.noContent') }}</p>
+        <p v-if="authStore.isEditing" class="text-sm mt-1">{{ t('booth.uploadHint') }}</p>
       </div>
     </div>
 
@@ -402,12 +402,12 @@ const personBreakdown = computed(() => {
 
     <UModal v-model="showDeleteProductModal" :ui="{ width: 'sm:max-w-sm' }">
       <UCard>
-        <template #header><h3 class="font-semibold text-white">Delete Product?</h3></template>
-        <p class="text-gray-400 text-sm">This will permanently remove this item from your list.</p>
+        <template #header><h3 class="font-semibold text-white">{{ t('booth.deleteProduct') }}</h3></template>
+        <p class="text-gray-400 text-sm">{{ t('booth.deleteProductDesc') }}</p>
         <template #footer>
           <div class="flex gap-2 justify-end">
-            <UButton variant="ghost" color="gray" @click="showDeleteProductModal = false">Cancel</UButton>
-            <UButton color="red" @click="handleDeleteProduct">Delete</UButton>
+            <UButton variant="ghost" color="gray" @click="showDeleteProductModal = false">{{ t('common.cancel') }}</UButton>
+            <UButton color="red" @click="handleDeleteProduct">{{ t('common.delete') }}</UButton>
           </div>
         </template>
       </UCard>

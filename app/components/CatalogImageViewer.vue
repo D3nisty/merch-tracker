@@ -2,6 +2,7 @@
 import { useEventsStore } from '~/stores/events'
 import { useAuthStore } from '~/stores/auth'
 import { usePersonsStore } from '~/stores/persons'
+import { useLocale } from '~/composables/useLocale'
 import type { CatalogImage, Product, BoothPreset } from '~/stores/events'
 
 const props = defineProps<{
@@ -15,6 +16,7 @@ const props = defineProps<{
 const store = useEventsStore()
 const authStore = useAuthStore()
 const personsStore = usePersonsStore()
+const { t } = useLocale()
 
 const expanded = ref(true)
 const fullscreen = ref(false)
@@ -608,9 +610,9 @@ const badgeColor = computed(() => {
 })
 
 const badgeLabel = computed(() => {
-  if (props.image.imageType === 'article') return 'Article'
-  if (props.image.imageType === 'receipt') return 'Receipt'
-  return 'Catalog'
+  if (props.image.imageType === 'article') return t('catalog.article')
+  if (props.image.imageType === 'receipt') return t('catalog.receipt')
+  return t('catalog.catalog')
 })
 
 // ── Shared form fragment helpers (rendered inline in template) ────────
@@ -689,10 +691,10 @@ function openAddSource() {
             :color="annotateMode ? 'purple' : 'gray'"
             size="xs"
             @click="annotateMode = !annotateMode; if (!annotateMode) cancelAnnotation()"
-          >{{ annotateMode ? 'Done' : 'Annotate' }}</UButton>
+          >{{ annotateMode ? t('catalog.done') : t('catalog.annotate') }}</UButton>
           <USelect
             v-model="mode"
-            :options="[{ value: 'full', label: 'Full' }, { value: 'split', label: 'Split' }]"
+            :options="[{ value: 'full', label: t('catalog.full') }, { value: 'split', label: t('catalog.split') }]"
             option-attribute="label" value-attribute="value"
             size="xs" @change="updateDisplayMode"
           />
@@ -797,7 +799,7 @@ function openAddSource() {
             @click.stop="showProductsPanel = !showProductsPanel"
           >
             <UIcon :name="showProductsPanel ? 'i-heroicons-eye-slash' : 'i-heroicons-list-bullet'" class="w-3.5 h-3.5" />
-            {{ showProductsPanel ? 'Hide' : 'Products' }}
+            {{ showProductsPanel ? t('catalog.hide') : t('catalog.products') }}
           </button>
         </div>
 
@@ -812,7 +814,7 @@ function openAddSource() {
                 class="px-2 py-1 text-xs rounded bg-gray-900/90 border border-gray-700 text-gray-300 hover:text-white hover:border-gray-500 transition-colors"
                 @click="triggerReplace(image.id)"
               >
-                Replace
+                {{ t('catalog.replace') }}
               </button>
             </div>
           </div>
@@ -856,7 +858,7 @@ function openAddSource() {
         <div v-if="image.imageType === 'catalog' && showProductsPanel" class="p-4 space-y-2 bg-gray-950 max-h-[600px] overflow-y-auto">
           <div class="flex items-center justify-between mb-3">
             <div class="flex items-center gap-2">
-              <span class="text-sm font-medium text-gray-300">Products from this image</span>
+              <span class="text-sm font-medium text-gray-300">{{ t('catalog.productsFromImage') }}</span>
               <button
                 type="button"
                 class="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition-colors"
@@ -1120,13 +1122,13 @@ function openAddSource() {
                 class="text-xs px-2 py-1 rounded-full border transition-all font-medium shrink-0"
                 :class="p.isPlanned ? 'bg-orange-600 border-orange-500 text-white' : 'border-gray-700 text-gray-400 hover:border-orange-500 hover:text-orange-400'"
                 @click="markAsPlanned(p)"
-              >{{ p.isPlanned ? '★ Planned' : 'Plan?' }}</button>
+              >{{ p.isPlanned ? t('catalog.planned') : t('catalog.planQ') }}</button>
               <button
                 type="button"
                 class="text-xs px-2 py-1 rounded-full border transition-all font-medium shrink-0"
                 :class="p.isPurchased ? 'bg-green-600 border-green-500 text-white' : 'border-gray-700 text-gray-400 hover:border-green-500 hover:text-green-400'"
                 @click="markAsPaid(p)"
-              >{{ p.isPurchased ? '✓ Paid' : 'Paid?' }}</button>
+              >{{ p.isPurchased ? t('catalog.paidDone') : t('catalog.paidQ') }}</button>
               <UButton v-if="authStore.isEditing" icon="i-heroicons-trash" variant="ghost" color="red" size="xs" @click="store.deleteProduct(p.id)" />
             </div>
 
@@ -1186,7 +1188,7 @@ function openAddSource() {
         <!-- RECEIPT: booth products checklist -->
         <div v-else-if="image.imageType === 'receipt'" class="p-4 bg-gray-950 max-h-[600px] overflow-y-auto">
           <div class="mb-3">
-            <p class="text-sm font-medium text-gray-300">Mark items from this receipt as purchased</p>
+            <p class="text-sm font-medium text-gray-300">{{ t('catalog.markReceipt') }}</p>
             <p class="text-xs text-gray-500 mt-0.5">Check off products that appear on this receipt</p>
           </div>
 
@@ -1225,7 +1227,7 @@ function openAddSource() {
         @click="expanded = false"
       >
         <UIcon name="i-heroicons-chevron-up" class="w-3.5 h-3.5" />
-        Collapse
+        {{ t('catalog.collapse') }}
       </button>
     </div>
   </div>
@@ -1298,7 +1300,7 @@ function openAddSource() {
             :color="annotateMode ? 'purple' : 'gray'"
             variant="outline" size="sm"
             @click="annotateMode = !annotateMode; if (!annotateMode) cancelAnnotation()"
-          >{{ annotateMode ? 'Drawing ON' : 'Enable Drawing' }}</UButton>
+          >{{ annotateMode ? t('catalog.drawingOn') : t('catalog.enableDrawing') }}</UButton>
           <span v-if="annotateMode" class="text-xs text-purple-400 hidden sm:inline">Drag a rectangle to mark an item</span>
         </template>
         <span class="ml-auto text-xs text-gray-500 shrink-0">
@@ -1649,11 +1651,11 @@ function openAddSource() {
                   <button type="button"
                     class="text-xs px-2 py-1 rounded-full border transition-all font-medium shrink-0"
                     :class="p.isPlanned ? 'bg-orange-600 border-orange-500 text-white' : 'border-gray-600 text-gray-400 hover:border-orange-500 hover:text-orange-400'"
-                    @click="markAsPlanned(p)">{{ p.isPlanned ? '★ Planned' : 'Plan?' }}</button>
+                    @click="markAsPlanned(p)">{{ p.isPlanned ? t('catalog.planned') : t('catalog.planQ') }}</button>
                   <button type="button"
                     class="text-xs px-2 py-1 rounded-full border transition-all font-medium shrink-0"
                     :class="p.isPurchased ? 'bg-green-600 border-green-500 text-white' : 'border-gray-600 text-gray-400 hover:border-green-500 hover:text-green-400'"
-                    @click="markAsPaid(p)">{{ p.isPurchased ? '✓ Paid' : 'Paid?' }}</button>
+                    @click="markAsPaid(p)">{{ p.isPurchased ? t('catalog.paidDone') : t('catalog.paidQ') }}</button>
                   <UButton v-if="authStore.isEditing" icon="i-heroicons-trash" variant="ghost" color="red" size="xs" @click="store.deleteProduct(p.id)" />
                 </div>
                 <div v-if="expandedSourceId === p.id" class="border-t border-gray-700 px-3 py-3">

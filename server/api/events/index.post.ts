@@ -1,6 +1,6 @@
 import { useDb } from '../../db'
 import { events } from '../../db/schema'
-import { generateId, now } from '../../utils/id'
+import { generateId, now, toSlug } from '../../utils/id'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
@@ -16,8 +16,15 @@ export default defineEventHandler(async (event) => {
   const id = generateId()
   const ts = now()
 
+  const base = toSlug(body.name)
+  const takenSlugs = db.select({ slug: events.slug }).from(events).all().map(r => r.slug ?? '')
+  let slug = base
+  let i = 2
+  while (takenSlugs.includes(slug)) slug = `${base}-${i++}`
+
   const newEvent = {
     id,
+    slug,
     name: body.name,
     type: body.type as 'convention' | 'travel',
     date: body.date ?? null,

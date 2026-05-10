@@ -8,8 +8,9 @@ services:
       NODE_ENV: production
       HOST: "0.0.0.0"
       PORT: "3000"
+      UPLOAD_DIR: /app/uploads
     volumes:
       # SQLite database — persists across image rebuilds
       - ./data:/app/.output/data
-      # Uploaded images — persists across image rebuilds, served as /uploads/
-      - ./uploads:/app/.output/public/uploads
+      # Uploaded images — mounted outside .output so Nitro publicAssets serves them at /uploads/
+      - ./uploads:/app/uploads

@@ -2,13 +2,15 @@
 import { useEventsStore } from '~/stores/events'
 import { useAuthStore } from '~/stores/auth'
 import { usePersonsStore } from '~/stores/persons'
+import { useLocale } from '~/composables/useLocale'
 import type { Location } from '~/stores/events'
 
 const route = useRoute()
 const store = useEventsStore()
 const authStore = useAuthStore()
 const personsStore = usePersonsStore()
-await store.fetchEvent(route.params.id as string)
+const { t } = useLocale()
+await store.fetchEvent(route.params.slug as string)
 
 const event = computed(() => store.currentEvent)
 
@@ -56,14 +58,14 @@ function locationIcon(type: Location['type']) {
     <!-- Header -->
     <div class="mb-6">
       <NuxtLink to="/" class="text-gray-400 hover:text-white flex items-center gap-1 text-sm mb-4">
-        <UIcon name="i-heroicons-arrow-left" class="w-4 h-4" /> All Events
+        <UIcon name="i-heroicons-arrow-left" class="w-4 h-4" /> {{ t('event.allEvents') }}
       </NuxtLink>
 
       <div class="flex items-start justify-between">
         <div>
           <div class="flex items-center gap-3 mb-1">
             <UBadge
-              :label="event.type === 'convention' ? 'Convention' : 'Travel'"
+              :label="event.type === 'convention' ? t('events.convention') : t('events.travelType')"
               :color="event.type === 'convention' ? 'purple' : 'blue'"
               variant="soft"
             />
@@ -100,24 +102,24 @@ function locationIcon(type: Location['type']) {
           'bg-teal-500': personsStore.currentPerson.color === 'teal',
         }]"
       />
-      Showing budget for <span class="text-white font-medium">{{ personsStore.currentPerson.name }}</span>
+      {{ t('event.showingBudgetFor') }} <span class="text-white font-medium">{{ personsStore.currentPerson.name }}</span>
     </div>
 
     <!-- Stats bar -->
     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-8">
       <UCard class="text-center p-4">
         <div class="text-2xl font-bold text-purple-400">{{ event.locations?.length ?? 0 }}</div>
-        <div class="text-xs text-gray-400 mt-1">{{ event.type === 'convention' ? 'Halls' : 'Locations' }}</div>
+        <div class="text-xs text-gray-400 mt-1">{{ event.type === 'convention' ? t('event.halls') : t('event.locations') }}</div>
       </UCard>
       <UCard class="text-center p-4">
         <div class="text-2xl font-bold text-blue-400">
           {{ event.locations?.reduce((sum, l) => sum + (l.booths?.length ?? 0), 0) ?? 0 }}
         </div>
-        <div class="text-xs text-gray-400 mt-1">{{ event.type === 'convention' ? 'Booths' : 'Shops' }}</div>
+        <div class="text-xs text-gray-400 mt-1">{{ event.type === 'convention' ? t('event.booths') : t('event.shops') }}</div>
       </UCard>
       <UCard class="text-center p-4">
         <div class="text-2xl font-bold text-green-400">{{ itemStats.purchased }}/{{ itemStats.total }}</div>
-        <div class="text-xs text-gray-400 mt-1">Purchased</div>
+        <div class="text-xs text-gray-400 mt-1">{{ t('event.purchased') }}</div>
       </UCard>
       <UCard class="text-center p-4">
         <div v-if="plannedEntries.length" class="font-bold text-yellow-400 leading-snug">
@@ -126,7 +128,7 @@ function locationIcon(type: Location['type']) {
           </div>
         </div>
         <div v-else class="text-xl font-bold text-yellow-400">—</div>
-        <div class="text-xs text-gray-400 mt-1">Planned Budget</div>
+        <div class="text-xs text-gray-400 mt-1">{{ t('event.plannedBudget') }}</div>
       </UCard>
       <UCard class="text-center p-4">
         <div v-if="paidEntries.length" class="font-bold text-green-400 leading-snug">
@@ -135,22 +137,22 @@ function locationIcon(type: Location['type']) {
           </div>
         </div>
         <div v-else class="text-xl font-bold text-gray-600">—</div>
-        <div class="text-xs text-gray-400 mt-1">Paid</div>
+        <div class="text-xs text-gray-400 mt-1">{{ t('event.paid') }}</div>
       </UCard>
     </div>
 
     <!-- Locations/Halls -->
     <div class="flex items-center justify-between mb-4">
       <h2 class="text-xl font-bold text-white">
-        {{ event.type === 'convention' ? 'Halls' : 'Locations' }}
+        {{ event.type === 'convention' ? t('event.halls') : t('event.locations') }}
       </h2>
       <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" color="purple" size="sm" @click="showAddLocation = true">
-        Add {{ event.type === 'convention' ? 'Hall' : 'Location' }}
+        {{ event.type === 'convention' ? t('event.addHall') : t('event.addLocation') }}
       </UButton>
     </div>
 
     <div v-if="!event.locations?.length" class="text-center py-10 text-gray-500">
-      No {{ event.type === 'convention' ? 'halls' : 'locations' }} yet. Add one to start planning.
+      {{ event.type === 'convention' ? t('event.noHalls') : t('event.noLocations') }}
     </div>
 
     <div class="space-y-4">
@@ -177,12 +179,12 @@ function locationIcon(type: Location['type']) {
 
     <UModal v-model="showDeleteLocationModal" :ui="{ width: 'sm:max-w-sm' }">
       <UCard>
-        <template #header><h3 class="font-semibold text-white">Delete Location?</h3></template>
-        <p class="text-gray-400 text-sm">This will delete all booths and products in this location.</p>
+        <template #header><h3 class="font-semibold text-white">{{ t('event.deleteLocation') }}</h3></template>
+        <p class="text-gray-400 text-sm">{{ t('event.deleteLocationDesc') }}</p>
         <template #footer>
           <div class="flex gap-2 justify-end">
-            <UButton variant="ghost" color="gray" @click="showDeleteLocationModal = false">Cancel</UButton>
-            <UButton color="red" @click="handleDeleteLocation">Delete</UButton>
+            <UButton variant="ghost" color="gray" @click="showDeleteLocationModal = false">{{ t('common.cancel') }}</UButton>
+            <UButton color="red" @click="handleDeleteLocation">{{ t('common.delete') }}</UButton>
           </div>
         </template>
       </UCard>
