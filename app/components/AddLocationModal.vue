@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useEventsStore } from '~/stores/events'
+import { useLocale } from '~/composables/useLocale'
 
 const props = defineProps<{
   modelValue: boolean
@@ -9,6 +10,7 @@ const props = defineProps<{
 const emit = defineEmits<{ 'update:modelValue': [v: boolean] }>()
 
 const store = useEventsStore()
+const { t } = useLocale()
 const submitting = ref(false)
 
 const form = reactive({
@@ -21,13 +23,16 @@ const form = reactive({
 
 const typeOptions = computed(() => {
   if (props.eventType === 'convention') {
-    return [{ value: 'hall', label: 'Hall' }, { value: 'area', label: 'Area' }]
+    return [
+      { value: 'hall', label: t('event.hallType') },
+      { value: 'area', label: t('event.areaType') },
+    ]
   }
   return [
-    { value: 'country', label: 'Country' },
-    { value: 'city', label: 'City' },
-    { value: 'district', label: 'District' },
-    { value: 'area', label: 'Area' },
+    { value: 'country', label: t('event.countryType') },
+    { value: 'city', label: t('event.cityType') },
+    { value: 'district', label: t('event.districtType') },
+    { value: 'area', label: t('event.areaType') },
   ]
 })
 
@@ -59,36 +64,40 @@ async function handleSubmit() {
     <UCard>
       <template #header>
         <h3 class="font-semibold text-white">
-          Add {{ eventType === 'convention' ? 'Hall' : 'Location' }}
+          {{ eventType === 'convention' ? t('event.addHall') : t('event.addLocation') }}
         </h3>
       </template>
 
       <form @submit.prevent="handleSubmit" class="space-y-4">
-        <UFormGroup label="Type">
+        <UFormGroup :label="t('common.type')">
           <USelect v-model="form.type" :options="typeOptions" option-attribute="label" value-attribute="value" />
         </UFormGroup>
-        <UFormGroup label="Name" required>
-          <UInput v-model="form.name" :placeholder="eventType === 'convention' ? 'e.g. Halle 10' : 'e.g. Tokyo'" autofocus />
+        <UFormGroup :label="t('common.name')" required>
+          <UInput
+            v-model="form.name"
+            :placeholder="eventType === 'convention' ? t('addLocation.hallPlaceholder') : t('addLocation.travelPlaceholder')"
+            autofocus
+          />
         </UFormGroup>
         <template v-if="eventType === 'travel'">
           <div class="flex gap-3">
-            <UFormGroup label="From" class="flex-1">
+            <UFormGroup :label="t('common.from')" class="flex-1">
               <UInput v-model="form.dateFrom" type="date" />
             </UFormGroup>
-            <UFormGroup label="To" class="flex-1">
+            <UFormGroup :label="t('common.to')" class="flex-1">
               <UInput v-model="form.dateTo" type="date" />
             </UFormGroup>
           </div>
         </template>
-        <UFormGroup label="Notes">
+        <UFormGroup :label="t('common.notes')">
           <UTextarea v-model="form.notes" rows="2" />
         </UFormGroup>
       </form>
 
       <template #footer>
         <div class="flex gap-2 justify-end">
-          <UButton variant="ghost" color="gray" @click="emit('update:modelValue', false)">Cancel</UButton>
-          <UButton color="purple" :loading="submitting" @click="handleSubmit">Add</UButton>
+          <UButton variant="ghost" color="gray" @click="emit('update:modelValue', false)">{{ t('common.cancel') }}</UButton>
+          <UButton color="purple" :loading="submitting" @click="handleSubmit">{{ t('common.add') }}</UButton>
         </div>
       </template>
     </UCard>

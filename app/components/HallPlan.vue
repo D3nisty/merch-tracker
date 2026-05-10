@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Location, Booth, HallLayoutData, DetectedBooth } from '~/stores/events'
 import { useAuthStore } from '~/stores/auth'
+import { useLocale } from '~/composables/useLocale'
 
 const props = defineProps<{
   location: Location
@@ -19,6 +20,7 @@ const emit = defineEmits<{
 }>()
 
 const authStore = useAuthStore()
+const { t } = useLocale()
 
 // ── Layout data ────────────────────────────────────────────────────────
 const layoutData = computed<HallLayoutData | null>(() => {
@@ -272,8 +274,8 @@ function boothBorderColor(booth: Booth): string {
   <div class="space-y-3">
     <div v-if="!layoutData" class="bg-gray-900 rounded-xl p-10 text-center text-gray-500">
       <UIcon name="i-heroicons-map" class="w-12 h-12 mx-auto mb-3 text-gray-600" />
-      <p class="font-medium">No hall plan set up yet</p>
-      <p class="text-sm mt-1">Use <span class="text-purple-400">Set Up Hall Plan</span> to upload your floor plan images.</p>
+      <p class="font-medium">{{ t('hallplan.noSetup') }}</p>
+      <p class="text-sm mt-1">{{ t('hallplan.noSetupHintA') }} <span class="text-purple-400">{{ t('hallplan.setupHallPlan') }}</span> {{ t('hallplan.noSetupHintB') }}</p>
     </div>
 
     <div v-else class="space-y-3">
@@ -281,7 +283,7 @@ function boothBorderColor(booth: Booth): string {
       <div class="flex items-center gap-2">
         <UInput
           v-model="searchQuery"
-          placeholder="Search booth nr across all maps…"
+          :placeholder="t('hallplan.searchPlaceholder')"
           icon="i-heroicons-magnifying-glass"
           size="sm"
           class="flex-1"
@@ -296,7 +298,7 @@ function boothBorderColor(booth: Booth): string {
           :icon="viewMode === 'map' ? 'i-heroicons-list-bullet' : 'i-heroicons-map'"
           @click="viewMode = viewMode === 'map' ? 'list' : 'map'"
         >
-          {{ viewMode === 'map' ? 'List' : 'Map' }}
+          {{ viewMode === 'map' ? t('hallplan.listView') : t('hallplan.mapView') }}
         </UButton>
       </div>
 
@@ -314,20 +316,20 @@ function boothBorderColor(booth: Booth): string {
             ]"
             @click="currentImageIdx = idx"
           >
-            Map {{ idx + 1 }}
-            <span class="ml-1.5 opacity-60">{{ img.booths.length }} booths</span>
+            {{ t('hallplan.mapLabel') }} {{ idx + 1 }}
+            <span class="ml-1.5 opacity-60">{{ img.booths.length }} {{ t('events.booths') }}</span>
           </button>
         </div>
 
         <!-- Legend + controls -->
         <div class="flex items-center gap-3 text-xs text-gray-400 flex-wrap">
-          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-orange-500 inline-block" />Added</span>
-          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-violet-500 inline-block" />Planned</span>
-          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-yellow-500 inline-block" />Partial</span>
-          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-green-500 inline-block" />All bought</span>
+          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-orange-500 inline-block" />{{ t('hallplan.legendAdded') }}</span>
+          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-violet-500 inline-block" />{{ t('hallplan.legendPlanned') }}</span>
+          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-yellow-500 inline-block" />{{ t('hallplan.legendPartial') }}</span>
+          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-green-500 inline-block" />{{ t('hallplan.legendAllBought') }}</span>
           <span class="flex items-center gap-1.5">
             <span class="w-3 h-3 rounded-sm border border-gray-500 inline-block opacity-60" />
-            Detected (click to add)
+            {{ t('hallplan.legendDetected') }}
           </span>
 
           <div class="ml-auto flex items-center gap-2">
@@ -340,7 +342,7 @@ function boothBorderColor(booth: Booth): string {
               icon="i-heroicons-pencil-square"
               @click="toggleDrawMode"
             >
-              {{ drawMode ? 'Drawing — drag to place' : 'Draw Booth' }}
+              {{ drawMode ? t('hallplan.drawMode') : t('hallplan.drawBooth') }}
             </UButton>
 
             <UButton size="xs" variant="ghost" color="gray" icon="i-heroicons-magnifying-glass-minus"
@@ -355,16 +357,16 @@ function boothBorderColor(booth: Booth): string {
         <!-- Draw mode hint -->
         <div v-if="drawMode" class="px-3 py-2 bg-purple-900/30 border border-purple-700/40 rounded-lg text-xs text-purple-300 flex items-center gap-2">
           <UIcon name="i-heroicons-pencil-square" class="w-3.5 h-3.5 shrink-0" />
-          Drag a rectangle on the map to place a new booth. Pan is disabled while drawing.
-          <UButton size="xs" variant="link" color="gray" class="ml-auto" @click="toggleDrawMode">Cancel</UButton>
+          {{ t('hallplan.drawHint') }}
+          <UButton size="xs" variant="link" color="gray" class="ml-auto" @click="toggleDrawMode">{{ t('common.cancel') }}</UButton>
         </div>
 
         <!-- Place existing booth hint -->
         <div v-if="placingBooth && !drawMode" class="px-3 py-2 bg-orange-900/30 border border-orange-700/40 rounded-lg text-xs text-orange-300 flex items-center gap-2">
           <UIcon name="i-heroicons-map-pin" class="w-3.5 h-3.5 shrink-0" />
-          Drag a rectangle on the map to mark <span class="font-semibold text-orange-200 mx-1">{{ placingBooth.name }}</span>
-          <span v-if="placingBooth.boothNr" class="font-mono bg-orange-900/50 px-1 rounded">{{ placingBooth.boothNr }}</span>'s position.
-          <UButton size="xs" variant="link" color="gray" class="ml-auto" @click="cancelPlace">Cancel</UButton>
+          {{ t('hallplan.placeHintA') }} <span class="font-semibold text-orange-200 mx-1">{{ placingBooth.name }}</span>
+          <span v-if="placingBooth.boothNr" class="font-mono bg-orange-900/50 px-1 rounded">{{ placingBooth.boothNr }}</span> {{ t('hallplan.placeHintB') }}
+          <UButton size="xs" variant="link" color="gray" class="ml-auto" @click="cancelPlace">{{ t('common.cancel') }}</UButton>
         </div>
 
         <!-- Map viewport -->
@@ -488,37 +490,37 @@ function boothBorderColor(booth: Booth): string {
             <div class="flex items-center justify-between mb-1">
               <p class="text-sm font-semibold text-purple-300 flex items-center gap-1.5">
                 <UIcon name="i-heroicons-pencil-square" class="w-4 h-4" />
-                New Booth
+                {{ t('hallplan.newBooth') }}
               </p>
               <UButton icon="i-heroicons-x-mark" variant="ghost" color="gray" size="xs" @click="cancelManualBooth" />
             </div>
 
-            <UFormGroup label="Booth Name" required>
-              <UInput v-model="manualForm.name" placeholder="e.g. Phinea" size="sm" autofocus />
+            <UFormGroup :label="t('hallplan.boothName')" required>
+              <UInput v-model="manualForm.name" :placeholder="t('addBooth.namePlaceholder')" size="sm" autofocus />
             </UFormGroup>
 
             <div class="grid grid-cols-2 gap-2">
-              <UFormGroup label="Booth Nr">
-                <UInput v-model="manualForm.boothNr" placeholder="10L13" size="sm" />
+              <UFormGroup :label="t('booth.boothNrLabel')">
+                <UInput v-model="manualForm.boothNr" :placeholder="t('hallplan.boothNrPlaceholder')" size="sm" />
               </UFormGroup>
-              <UFormGroup label="Hall Nr">
-                <UInput v-model="manualForm.hallNr" placeholder="10" size="sm" />
+              <UFormGroup :label="t('booth.hallNrLabel')">
+                <UInput v-model="manualForm.hallNr" :placeholder="t('hallplan.hallNrPlaceholder')" size="sm" />
               </UFormGroup>
             </div>
 
-            <UFormGroup label="Website">
+            <UFormGroup :label="t('common.website')">
               <UInput v-model="manualForm.website" placeholder="https://…" size="sm" />
             </UFormGroup>
 
-            <UFormGroup label="Notes">
-              <UInput v-model="manualForm.notes" placeholder="Optional notes…" size="sm" />
+            <UFormGroup :label="t('common.notes')">
+              <UInput v-model="manualForm.notes" :placeholder="t('hallplan.notesPlaceholder')" size="sm" />
             </UFormGroup>
 
             <div class="flex gap-2 pt-1">
               <UButton color="purple" size="sm" :disabled="!manualForm.name.trim()" class="flex-1" @click="saveManualBooth">
-                Add Booth
+                {{ t('hallplan.addBooth') }}
               </UButton>
-              <UButton variant="ghost" color="gray" size="sm" @click="cancelManualBooth">Cancel</UButton>
+              <UButton variant="ghost" color="gray" size="sm" @click="cancelManualBooth">{{ t('common.cancel') }}</UButton>
             </div>
           </div>
 
@@ -531,33 +533,33 @@ function boothBorderColor(booth: Booth): string {
             <div class="flex items-center justify-between">
               <p class="text-sm font-semibold text-orange-300 flex items-center gap-1.5">
                 <UIcon name="i-heroicons-map-pin" class="w-4 h-4" />
-                Place here?
+                {{ t('hallplan.placeHere') }}
               </p>
               <UButton icon="i-heroicons-x-mark" variant="ghost" color="gray" size="xs" @click="cancelPlace" />
             </div>
             <div>
               <div class="text-sm font-medium text-white">{{ placingBooth.name }}</div>
               <div v-if="placingBooth.boothNr || placingBooth.hallNr" class="flex gap-1.5 mt-1">
-                <span v-if="placingBooth.hallNr" class="text-xs text-gray-400">Hall {{ placingBooth.hallNr }}</span>
+                <span v-if="placingBooth.hallNr" class="text-xs text-gray-400">{{ t('booth.hallLabel') }} {{ placingBooth.hallNr }}</span>
                 <span v-if="placingBooth.boothNr" class="text-xs font-mono bg-gray-800 px-1.5 py-0.5 rounded text-purple-300">{{ placingBooth.boothNr }}</span>
               </div>
             </div>
             <div class="flex gap-2">
-              <UButton color="orange" size="sm" class="flex-1" @click="confirmPlace">Confirm</UButton>
-              <UButton variant="ghost" color="gray" size="sm" @click="cancelPlace">Cancel</UButton>
+              <UButton color="orange" size="sm" class="flex-1" @click="confirmPlace">{{ t('common.confirm') }}</UButton>
+              <UButton variant="ghost" color="gray" size="sm" @click="cancelPlace">{{ t('common.cancel') }}</UButton>
             </div>
           </div>
 
           <div class="absolute bottom-2 right-2 text-xs text-gray-600 pointer-events-none select-none">
-            Scroll to zoom · Drag to pan · Click colored = select · Click outline = add
+            {{ t('hallplan.scrollHint') }}
           </div>
         </div>
 
         <!-- User booths not on this map -->
         <div v-if="unmappedUserBooths.length" class="bg-gray-900 rounded-lg p-3">
           <div class="flex items-center justify-between mb-2">
-            <p class="text-xs text-gray-500">Your booths not detected on this map page:</p>
-            <p v-if="authStore.isEditing" class="text-xs text-orange-400/70">Click to place on map</p>
+            <p class="text-xs text-gray-500">{{ t('hallplan.notDetectedOnMap') }}</p>
+            <p v-if="authStore.isEditing" class="text-xs text-orange-400/70">{{ t('hallplan.clickToPlace') }}</p>
           </div>
           <div class="flex flex-wrap gap-2">
             <button

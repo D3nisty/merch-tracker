@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useEventsStore } from '~/stores/events'
+import { useLocale } from '~/composables/useLocale'
 
 const props = defineProps<{
   modelValue: boolean
@@ -9,6 +10,7 @@ const props = defineProps<{
 const emit = defineEmits<{ 'update:modelValue': [v: boolean] }>()
 
 const store = useEventsStore()
+const { t } = useLocale()
 const uploading = ref(false)
 const dragOver = ref(false)
 const fileInput = ref<HTMLInputElement>()
@@ -34,7 +36,6 @@ async function handleUpload() {
       body: fd,
     })
 
-    // Update store
     await store.updateLocation(props.locationId, { floorPlanImage: result.path })
     emit('update:modelValue', false)
     preview.value = null
@@ -49,8 +50,8 @@ async function handleUpload() {
   <UModal :model-value="modelValue" @update:model-value="emit('update:modelValue', $event)" :ui="{ width: 'sm:max-w-2xl' }">
     <UCard>
       <template #header>
-        <h3 class="font-semibold text-white">Upload Floor Plan — {{ locationName }}</h3>
-        <p class="text-sm text-gray-400 mt-1">Upload a hall or venue floor plan to mark booth positions interactively.</p>
+        <h3 class="font-semibold text-white">{{ t('upload.floorPlanTitle') }} — {{ locationName }}</h3>
+        <p class="text-sm text-gray-400 mt-1">{{ t('upload.floorPlanDesc') }}</p>
       </template>
 
       <div class="space-y-4">
@@ -63,8 +64,8 @@ async function handleUpload() {
           @click="fileInput?.click()"
         >
           <UIcon name="i-heroicons-map" class="w-10 h-10 mx-auto mb-3 text-gray-500" />
-          <p class="text-white font-medium">Drop floor plan image here</p>
-          <p class="text-sm text-gray-400 mt-1">PNG, JPG — high resolution recommended</p>
+          <p class="text-white font-medium">{{ t('upload.dropFloorPlan') }}</p>
+          <p class="text-sm text-gray-400 mt-1">{{ t('upload.floorPlanFormats') }}</p>
           <input
             ref="fileInput"
             type="file"
@@ -82,7 +83,7 @@ async function handleUpload() {
 
       <template #footer>
         <div class="flex gap-2 justify-end">
-          <UButton variant="ghost" color="gray" @click="emit('update:modelValue', false)">Cancel</UButton>
+          <UButton variant="ghost" color="gray" @click="emit('update:modelValue', false)">{{ t('common.cancel') }}</UButton>
           <UButton
             color="purple"
             :loading="uploading"
@@ -90,7 +91,7 @@ async function handleUpload() {
             icon="i-heroicons-arrow-up-tray"
             @click="handleUpload"
           >
-            Upload Floor Plan
+            {{ t('upload.uploadFloorPlan') }}
           </UButton>
         </div>
       </template>

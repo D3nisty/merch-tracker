@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useEventsStore } from '~/stores/events'
 import { usePersonsStore } from '~/stores/persons'
+import { useLocale } from '~/composables/useLocale'
 
 const props = defineProps<{
   modelValue: boolean
@@ -17,6 +18,7 @@ const emit = defineEmits<{ 'update:modelValue': [v: boolean] }>()
 
 const store = useEventsStore()
 const personsStore = usePersonsStore()
+const { t } = useLocale()
 const submitting = ref(false)
 
 const CURRENCIES = [
@@ -29,7 +31,7 @@ const CURRENCIES = [
 ]
 
 const SIZES = ['A6', 'A5', 'A4', 'A3', 'A2', 'B2', 'B3', '90×50cm', '40×23.5cm', '25cm', '20cm', '15cm', '10cm']
-const sizeOptions = [{ value: '', label: '— No size —' }, ...SIZES.map(s => ({ value: s, label: s }))]
+const sizeOptions = computed(() => [{ value: '', label: '— No size —' }, ...SIZES.map(s => ({ value: s, label: s }))])
 const CATEGORIES = ['Print', 'Keychain', 'Sticker', 'Acrylic Figure', 'Figure', 'Mousepad', 'Shirt', 'Pin', 'Plush', 'Bag', 'Other']
 
 const form = reactive({
@@ -53,14 +55,14 @@ watch(() => props.modelValue, (open) => {
   }
 })
 
-const priorityOptions = [
-  { value: 0, label: 'Normal' },
-  { value: 1, label: 'Want' },
-  { value: 2, label: 'Must Have' },
-]
+const priorityOptions = computed(() => [
+  { value: 0, label: t('addProduct.priorityNormal') },
+  { value: 1, label: t('addProduct.priorityWant') },
+  { value: 2, label: t('addProduct.priorityMust') },
+])
 
 const personOptions = computed(() => [
-  { value: null, label: 'No person' },
+  { value: null, label: t('addProduct.noPerson') },
   ...personsStore.persons.map(p => ({ value: p.id, label: p.name })),
 ])
 
@@ -98,19 +100,19 @@ async function handleSubmit() {
   <UModal :model-value="modelValue" @update:model-value="emit('update:modelValue', $event)" :ui="{ width: 'sm:max-w-lg' }">
     <UCard>
       <template #header>
-        <h3 class="font-semibold text-white">Add Product</h3>
+        <h3 class="font-semibold text-white">{{ t('booth.addProduct') }}</h3>
       </template>
 
       <form @submit.prevent="handleSubmit" class="space-y-4">
-        <UFormGroup label="Name" required>
-          <UInput v-model="form.name" placeholder="e.g. A3 Print – Cherry Blossom" autofocus />
+        <UFormGroup :label="t('common.name')" required>
+          <UInput v-model="form.name" :placeholder="t('addProduct.namePlaceholder')" autofocus />
         </UFormGroup>
 
         <div class="grid grid-cols-3 gap-3">
-          <UFormGroup label="Price" class="col-span-1">
+          <UFormGroup :label="t('booth.price')" class="col-span-1">
             <UInput v-model="form.price" type="number" step="0.01" min="0" placeholder="0.00" />
           </UFormGroup>
-          <UFormGroup label="Currency" class="col-span-1">
+          <UFormGroup :label="t('booth.currency')" class="col-span-1">
             <USelect
               v-model="form.currency"
               :options="CURRENCIES"
@@ -118,13 +120,13 @@ async function handleSubmit() {
               value-attribute="value"
             />
           </UFormGroup>
-          <UFormGroup label="Qty" class="col-span-1">
+          <UFormGroup :label="t('addProduct.qty')" class="col-span-1">
             <UInput v-model.number="form.quantity" type="number" min="1" />
           </UFormGroup>
         </div>
 
         <div class="grid grid-cols-2 gap-3">
-          <UFormGroup label="Size">
+          <UFormGroup :label="t('booth.size')">
             <USelect
               v-model="form.size"
               :options="sizeOptions"
@@ -133,8 +135,8 @@ async function handleSubmit() {
             />
           </UFormGroup>
 
-          <UFormGroup label="Category">
-            <UInput v-model="form.category" placeholder="e.g. Figure, Print…" />
+          <UFormGroup :label="t('addProduct.category')">
+            <UInput v-model="form.category" :placeholder="t('addProduct.categoryPlaceholder')" />
             <div class="flex flex-wrap gap-1 mt-1.5">
               <button
                 v-for="c in CATEGORIES"
@@ -151,7 +153,7 @@ async function handleSubmit() {
         </div>
 
         <div class="grid grid-cols-2 gap-3">
-          <UFormGroup label="Priority">
+          <UFormGroup :label="t('addProduct.priority')">
             <USelect
               v-model.number="form.priority"
               :options="priorityOptions"
@@ -159,7 +161,7 @@ async function handleSubmit() {
               value-attribute="value"
             />
           </UFormGroup>
-          <UFormGroup label="Person" v-if="personsStore.persons.length">
+          <UFormGroup :label="t('nav.person')" v-if="personsStore.persons.length">
             <USelect
               v-model="form.personId"
               :options="personOptions"
@@ -169,15 +171,15 @@ async function handleSubmit() {
           </UFormGroup>
         </div>
 
-        <UFormGroup label="Description / Notes">
-          <UInput v-model="form.description" placeholder="Optional details…" />
+        <UFormGroup :label="t('addProduct.descriptionNotes')">
+          <UInput v-model="form.description" :placeholder="t('addProduct.detailsPlaceholder')" />
         </UFormGroup>
       </form>
 
       <template #footer>
         <div class="flex gap-2 justify-end">
-          <UButton variant="ghost" color="gray" @click="emit('update:modelValue', false)">Cancel</UButton>
-          <UButton color="purple" :loading="submitting" @click="handleSubmit">Add Product</UButton>
+          <UButton variant="ghost" color="gray" @click="emit('update:modelValue', false)">{{ t('common.cancel') }}</UButton>
+          <UButton color="purple" :loading="submitting" @click="handleSubmit">{{ t('booth.addProduct') }}</UButton>
         </div>
       </template>
     </UCard>

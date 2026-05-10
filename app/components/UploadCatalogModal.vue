@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useEventsStore } from '~/stores/events'
 import { usePersonsStore } from '~/stores/persons'
+import { useLocale } from '~/composables/useLocale'
 import type { CatalogImage } from '~/stores/events'
 
 const props = defineProps<{
@@ -11,6 +12,7 @@ const emit = defineEmits<{ 'update:modelValue': [v: boolean] }>()
 
 const store = useEventsStore()
 const personsStore = usePersonsStore()
+const { t } = useLocale()
 const uploading = ref(false)
 const dragOver = ref(false)
 const fileInput = ref<HTMLInputElement>()
@@ -24,12 +26,12 @@ const form = reactive({
 })
 
 const personOptions = computed(() => [
-  { value: '', label: '— Unassigned —' },
+  { value: '', label: '— ' + t('booth.unassigned') + ' —' },
   ...personsStore.persons.map(p => ({ value: p.id, label: p.name })),
 ])
 
-watch(() => form.imageType, (t) => {
-  if (t === 'article' && !form.personId) {
+watch(() => form.imageType, (type) => {
+  if (type === 'article' && !form.personId) {
     form.personId = personsStore.currentPersonId ?? ''
   }
 })
@@ -77,18 +79,35 @@ const typeColor = computed(() => {
   if (form.imageType === 'receipt') return 'green'
   return 'purple'
 })
+
+const nameLabelComputed = computed(() => {
+  if (form.imageType === 'article') return t('upload.articleName')
+  if (form.imageType === 'receipt') return t('upload.receiptLabel')
+  return t('upload.imageLabel')
+})
+
+const namePlaceholderComputed = computed(() => {
+  if (form.imageType === 'article') return t('upload.articlePlaceholder')
+  if (form.imageType === 'receipt') return t('upload.receiptPlaceholder')
+  return t('upload.catalogPlaceholder')
+})
+
+const displayModeOptions = computed(() => [
+  { value: 'full', label: t('upload.fullImage') },
+  { value: 'split', label: t('upload.splitSections') },
+])
 </script>
 
 <template>
   <UModal :model-value="modelValue" @update:model-value="emit('update:modelValue', $event)" :ui="{ width: 'sm:max-w-lg' }">
     <UCard>
       <template #header>
-        <h3 class="font-semibold text-white">Upload Image</h3>
+        <h3 class="font-semibold text-white">{{ t('booth.uploadImage') }}</h3>
       </template>
 
       <div class="space-y-4">
         <!-- Image type selection -->
-        <UFormGroup label="What is this image?">
+        <UFormGroup :label="t('upload.whatImage')">
           <div class="grid grid-cols-3 gap-2">
             <button
               type="button"
@@ -99,8 +118,8 @@ const typeColor = computed(() => {
               @click="form.imageType = 'catalog'"
             >
               <UIcon name="i-heroicons-photo" class="w-5 h-5 mb-1" :class="form.imageType === 'catalog' ? 'text-purple-400' : 'text-gray-400'" />
-              <div class="font-medium text-xs" :class="form.imageType === 'catalog' ? 'text-white' : 'text-gray-300'">Catalog</div>
-              <div class="text-xs text-gray-500 mt-0.5">Multiple items</div>
+              <div class="font-medium text-xs" :class="form.imageType === 'catalog' ? 'text-white' : 'text-gray-300'">{{ t('catalog.catalog') }}</div>
+              <div class="text-xs text-gray-500 mt-0.5">{{ t('upload.multipleItems') }}</div>
             </button>
             <button
               type="button"
@@ -111,8 +130,8 @@ const typeColor = computed(() => {
               @click="form.imageType = 'article'"
             >
               <UIcon name="i-heroicons-cube" class="w-5 h-5 mb-1" :class="form.imageType === 'article' ? 'text-orange-400' : 'text-gray-400'" />
-              <div class="font-medium text-xs" :class="form.imageType === 'article' ? 'text-white' : 'text-gray-300'">Article</div>
-              <div class="text-xs text-gray-500 mt-0.5">Single item</div>
+              <div class="font-medium text-xs" :class="form.imageType === 'article' ? 'text-white' : 'text-gray-300'">{{ t('catalog.article') }}</div>
+              <div class="text-xs text-gray-500 mt-0.5">{{ t('upload.singleItem') }}</div>
             </button>
             <button
               type="button"
@@ -123,22 +142,19 @@ const typeColor = computed(() => {
               @click="form.imageType = 'receipt'"
             >
               <UIcon name="i-heroicons-receipt-percent" class="w-5 h-5 mb-1" :class="form.imageType === 'receipt' ? 'text-green-400' : 'text-gray-400'" />
-              <div class="font-medium text-xs" :class="form.imageType === 'receipt' ? 'text-white' : 'text-gray-300'">Receipt</div>
-              <div class="text-xs text-gray-500 mt-0.5">Mark as paid</div>
+              <div class="font-medium text-xs" :class="form.imageType === 'receipt' ? 'text-white' : 'text-gray-300'">{{ t('catalog.receipt') }}</div>
+              <div class="text-xs text-gray-500 mt-0.5">{{ t('upload.markAsPaid') }}</div>
             </button>
           </div>
         </UFormGroup>
 
         <!-- Name -->
-        <UFormGroup :label="form.imageType === 'article' ? 'Article Name' : form.imageType === 'receipt' ? 'Receipt Label (optional)' : 'Label (optional)'">
-          <UInput
-            v-model="form.customName"
-            :placeholder="form.imageType === 'article' ? 'e.g. Miku Bunny Figure' : form.imageType === 'receipt' ? 'e.g. Day 1 purchases' : 'e.g. Phinea Miaow 2026 Catalog'"
-          />
+        <UFormGroup :label="nameLabelComputed">
+          <UInput v-model="form.customName" :placeholder="namePlaceholderComputed" />
         </UFormGroup>
 
         <!-- Article: person assignment -->
-        <UFormGroup v-if="form.imageType === 'article' && personOptions.length > 1" label="Assign to Person">
+        <UFormGroup v-if="form.imageType === 'article' && personOptions.length > 1" :label="t('upload.assignPerson')">
           <USelect v-model="form.personId" :options="personOptions" option-attribute="label" value-attribute="value" />
         </UFormGroup>
 
@@ -152,8 +168,8 @@ const typeColor = computed(() => {
           @click="fileInput?.click()"
         >
           <UIcon name="i-heroicons-photo" class="w-10 h-10 mx-auto mb-3 text-gray-500" />
-          <p class="text-white font-medium">Drop image here or click to browse</p>
-          <p class="text-sm text-gray-400 mt-1">PNG, JPG, WEBP · Multiple files OK</p>
+          <p class="text-white font-medium">{{ t('upload.dropImageHere') }}</p>
+          <p class="text-sm text-gray-400 mt-1">{{ t('upload.imageFormats') }}</p>
           <input
             ref="fileInput"
             type="file"
@@ -165,14 +181,14 @@ const typeColor = computed(() => {
         </div>
 
         <div v-if="form.imageType === 'catalog'" class="grid grid-cols-2 gap-3">
-          <UFormGroup label="Display Mode">
+          <UFormGroup :label="t('upload.displayMode')">
             <USelect
               v-model="form.displayMode"
-              :options="[{ value: 'full', label: 'Full Image' }, { value: 'split', label: 'Split Sections' }]"
+              :options="displayModeOptions"
               option-attribute="label" value-attribute="value"
             />
           </UFormGroup>
-          <UFormGroup v-if="form.displayMode === 'split'" label="Sections">
+          <UFormGroup v-if="form.displayMode === 'split'" :label="t('upload.sections')">
             <UInput v-model.number="form.splitCount" type="number" min="2" max="10" />
           </UFormGroup>
         </div>
@@ -180,13 +196,13 @@ const typeColor = computed(() => {
 
       <template #footer>
         <div class="flex gap-2 justify-end">
-          <UButton variant="ghost" color="gray" @click="emit('update:modelValue', false)">Close</UButton>
+          <UButton variant="ghost" color="gray" @click="emit('update:modelValue', false)">{{ t('common.close') }}</UButton>
           <UButton
             :color="typeColor"
             :loading="uploading"
             icon="i-heroicons-arrow-up-tray"
             @click="fileInput?.click()"
-          >Upload</UButton>
+          >{{ t('common.upload') }}</UButton>
         </div>
       </template>
     </UCard>

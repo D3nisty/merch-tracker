@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useEventsStore } from '~/stores/events'
 import { usePersonsStore } from '~/stores/persons'
+import { useLocale } from '~/composables/useLocale'
 
 const props = defineProps<{
   modelValue: boolean
@@ -14,6 +15,7 @@ const emit = defineEmits<{ 'update:modelValue': [v: boolean]; close: [] }>()
 
 const store = useEventsStore()
 const personsStore = usePersonsStore()
+const { t } = useLocale()
 const submitting = ref(false)
 
 const SHOP_CATEGORIES = ['Figure', 'Artbook', 'Manga', 'CD / Music', 'Camera', 'Electronics', 'Clothes', 'Accessories', 'Stationery', 'Food', 'Toy', 'Game']
@@ -71,29 +73,29 @@ async function handleSubmit() {
     <UCard>
       <template #header>
         <h3 class="font-semibold text-white">
-          Add {{ eventType === 'convention' ? 'Booth' : 'Shop / Stop' }}
+          {{ eventType === 'convention' ? t('addBooth.title') : t('addBooth.titleShop') }}
         </h3>
       </template>
 
       <form @submit.prevent="handleSubmit" class="space-y-4">
-        <UFormGroup label="Name" required>
+        <UFormGroup :label="t('common.name')" required>
           <UInput
             v-model="form.name"
-            :placeholder="eventType === 'convention' ? 'e.g. Phinea Miaow' : 'e.g. Animate Akihabara'"
+            :placeholder="eventType === 'convention' ? t('addBooth.namePlaceholder') : t('addBooth.namePlaceholderShop')"
             autofocus
           />
         </UFormGroup>
 
         <div v-if="eventType === 'convention'" class="grid grid-cols-2 gap-3">
-          <UFormGroup label="Hall Nr">
-            <UInput v-model="form.hallNr" placeholder="e.g. 10" />
+          <UFormGroup :label="t('booth.hallNrLabel')">
+            <UInput v-model="form.hallNr" :placeholder="t('addBooth.hallNrPlaceholder')" />
           </UFormGroup>
-          <UFormGroup label="Booth Nr">
-            <UInput v-model="form.boothNr" placeholder="e.g. L13" />
+          <UFormGroup :label="t('booth.boothNrLabel')">
+            <UInput v-model="form.boothNr" :placeholder="t('addBooth.boothNrPlaceholder')" />
           </UFormGroup>
         </div>
 
-        <UFormGroup v-if="eventType === 'travel'" label="Categories">
+        <UFormGroup v-if="eventType === 'travel'" :label="t('booth.categoriesLabel')">
           <div class="flex flex-wrap gap-2 mt-1">
             <button
               v-for="cat in SHOP_CATEGORIES"
@@ -112,18 +114,18 @@ async function handleSubmit() {
           </div>
         </UFormGroup>
 
-        <UFormGroup label="Website">
+        <UFormGroup :label="t('common.website')">
           <UInput v-model="form.website" placeholder="https://..." type="url" />
         </UFormGroup>
-        <UFormGroup label="Notes">
+        <UFormGroup :label="t('common.notes')">
           <UTextarea v-model="form.notes" rows="2" />
         </UFormGroup>
       </form>
 
       <template #footer>
         <div class="flex gap-2 justify-end">
-          <UButton variant="ghost" color="gray" @click="emit('update:modelValue', false)">Cancel</UButton>
-          <UButton color="purple" :loading="submitting" @click="handleSubmit">Add</UButton>
+          <UButton variant="ghost" color="gray" @click="emit('update:modelValue', false)">{{ t('common.cancel') }}</UButton>
+          <UButton color="purple" :loading="submitting" @click="handleSubmit">{{ t('common.add') }}</UButton>
         </div>
       </template>
     </UCard>

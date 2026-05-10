@@ -712,7 +712,7 @@ function openAddSource() {
           />
         </template>
         <UButton icon="i-heroicons-arrows-pointing-out" variant="ghost" color="gray" size="xs" @click="fullscreen = true" />
-        <UButton v-if="authStore.isEditing" icon="i-heroicons-arrow-right-circle" variant="ghost" color="gray" size="xs" title="Move to another booth" @click="showMoveModal = true" />
+        <UButton v-if="authStore.isEditing" icon="i-heroicons-arrow-right-circle" variant="ghost" color="gray" size="xs" :title="t('catalog.moveTitle')" @click="showMoveModal = true" />
         <UButton v-if="authStore.isEditing" icon="i-heroicons-trash" variant="ghost" color="red" size="xs" @click="showDeleteConfirm = true" />
       </div>
     </div>
@@ -721,19 +721,19 @@ function openAddSource() {
       <!-- Annotate hint -->
       <div v-if="annotateMode && image.imageType === 'catalog' && authStore.isEditing" class="px-4 py-2 bg-purple-900/30 border-b border-purple-700/40 text-xs text-purple-300 flex items-center gap-2">
         <UIcon name="i-heroicons-pencil-square" class="w-3.5 h-3.5 shrink-0" />
-        Drag or touch-drag on the image to mark an item. Fill the form below.
-        <UButton size="xs" variant="link" color="purple" @click="fullscreen = true">Full-screen ↗</UButton>
+        {{ t('catalog.dragHint') }}
+        <UButton size="xs" variant="link" color="purple" @click="fullscreen = true">{{ t('catalog.fullscreenBtn') }}</UButton>
       </div>
 
       <!-- Hidden file inputs for article gallery -->
       <input ref="subImageInput" type="file" multiple accept="image/*" class="hidden" @change="handleSubImageFiles" />
       <input ref="replaceInput" type="file" accept="image/*" class="hidden" @change="handleReplaceFile" />
 
-      <div :class="['grid gap-0', showProductsPanel && image.imageType === 'catalog' ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1']">
+      <div :class="['grid gap-0', (showProductsPanel && image.imageType === 'catalog') || image.imageType === 'article' ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1']">
         <!-- Image panel: catalog / receipt -->
         <div
           v-if="image.imageType !== 'article'"
-          class="relative bg-black select-none"
+          class="relative bg-black select-none self-start"
           :class="annotateMode && image.imageType === 'catalog' && authStore.isEditing ? 'cursor-crosshair' : ''"
           @mousedown="onImgMouseDown"
           @mousemove="onImgMouseMove"
@@ -752,7 +752,7 @@ function openAddSource() {
               <div v-for="(_, i) in splits" :key="i"
                 class="absolute left-1 text-purple-400 text-xs bg-black/50 px-1 rounded"
                 :style="{ top: `${(i / splitCount) * 100}%` }">
-                Section {{ i + 1 }}
+                {{ t('catalog.section') }} {{ i + 1 }}
               </div>
             </div>
           </template>
@@ -804,7 +804,7 @@ function openAddSource() {
         </div>
 
         <!-- Image panel: article gallery -->
-        <div v-else class="bg-black divide-y divide-gray-800">
+        <div v-else class="bg-black divide-y divide-gray-800 self-start">
           <!-- Primary image -->
           <div class="relative group/img0">
             <img :src="image.path" class="w-full h-auto block" draggable="false" />
@@ -827,14 +827,14 @@ function openAddSource() {
                 class="px-2 py-1 text-xs rounded bg-gray-900/90 border border-gray-700 text-gray-300 hover:text-white hover:border-gray-500 transition-colors"
                 @click="triggerReplace(sub.id)"
               >
-                Replace
+                {{ t('catalog.replace') }}
               </button>
               <button
                 type="button"
                 class="px-2 py-1 text-xs rounded bg-red-900/90 border border-red-700 text-red-300 hover:text-white hover:border-red-500 transition-colors"
                 @click="store.deleteImage(sub.id, sub.boothId)"
               >
-                Delete
+                {{ t('common.delete') }}
               </button>
             </div>
           </div>
@@ -849,7 +849,7 @@ function openAddSource() {
               :loading="addingSubImage"
               @click="subImageInput?.click()"
             >
-              Add Image
+              {{ t('catalog.addImage') }}
             </UButton>
           </div>
         </div>
@@ -870,7 +870,7 @@ function openAddSource() {
               </button>
             </div>
             <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="purple" variant="soft"
-              @click="openQuickAdd">Add</UButton>
+              @click="openQuickAdd">{{ t('common.add') }}</UButton>
           </div>
 
           <!-- Quick add form -->
@@ -905,8 +905,8 @@ function openAddSource() {
             </div>
             <USelect v-model="quickForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
             <div class="flex gap-2">
-              <UButton size="xs" color="purple" :disabled="!quickForm.name.trim()" @click="saveQuickAdd">Save</UButton>
-              <UButton size="xs" variant="ghost" color="gray" @click="showQuickAdd = false">Cancel</UButton>
+              <UButton size="xs" color="purple" :disabled="!quickForm.name.trim()" @click="saveQuickAdd">{{ t('common.save') }}</UButton>
+              <UButton size="xs" variant="ghost" color="gray" @click="showQuickAdd = false">{{ t('common.cancel') }}</UButton>
             </div>
           </div>
 
@@ -914,7 +914,7 @@ function openAddSource() {
           <div v-if="authStore.isEditing && pendingRect" class="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 space-y-2">
             <p class="text-xs font-medium text-yellow-400 flex items-center gap-1">
               <UIcon name="i-heroicons-pencil-square" class="w-3.5 h-3.5" />
-              Name this marked item:
+              {{ t('catalog.nameThisItem') }}
             </p>
             <UInput v-model="annotateForm.name" placeholder="e.g. Cherry Blossom A3 Print" size="sm" autofocus />
             <USelect v-model="annotateForm.currency" :options="currencyOptions" size="sm" />
@@ -946,8 +946,8 @@ function openAddSource() {
             </div>
             <USelect v-model="annotateForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
             <div class="flex gap-2">
-              <UButton size="xs" color="purple" :disabled="!annotateForm.name.trim()" @click="saveAnnotation">Save</UButton>
-              <UButton size="xs" variant="ghost" color="gray" @click="cancelAnnotation">Cancel</UButton>
+              <UButton size="xs" color="purple" :disabled="!annotateForm.name.trim()" @click="saveAnnotation">{{ t('common.save') }}</UButton>
+              <UButton size="xs" variant="ghost" color="gray" @click="cancelAnnotation">{{ t('common.cancel') }}</UButton>
             </div>
           </div>
 
@@ -976,8 +976,8 @@ function openAddSource() {
               <USelect v-model="addSizeForm.currency" :options="currencyOptions" size="sm" class="w-24" />
             </div>
             <div class="flex gap-2">
-              <UButton size="xs" color="purple" :disabled="!addSizeForm.price" @click="saveAddSize">Add</UButton>
-              <UButton size="xs" variant="ghost" color="gray" @click="selectedGroupKey = null">Cancel</UButton>
+              <UButton size="xs" color="purple" :disabled="!addSizeForm.price" @click="saveAddSize">{{ t('common.add') }}</UButton>
+              <UButton size="xs" variant="ghost" color="gray" @click="selectedGroupKey = null">{{ t('common.cancel') }}</UButton>
             </div>
           </div>
 
@@ -1005,8 +1005,8 @@ function openAddSource() {
               </div>
               <USelect v-model="editProductForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
               <div class="flex gap-2">
-                <UButton size="xs" color="purple" :disabled="!editProductForm.name.trim()" @click="saveEditProduct(product.id)">Save</UButton>
-                <UButton size="xs" variant="ghost" color="gray" @click="cancelEditProduct">Cancel</UButton>
+                <UButton size="xs" color="purple" :disabled="!editProductForm.name.trim()" @click="saveEditProduct(product.id)">{{ t('common.save') }}</UButton>
+                <UButton size="xs" variant="ghost" color="gray" @click="cancelEditProduct">{{ t('common.cancel') }}</UButton>
               </div>
             </div>
 
@@ -1034,13 +1034,13 @@ function openAddSource() {
           </template>
 
           <p v-if="!products.length && !pendingRect && !showQuickAdd" class="text-gray-600 text-sm text-center py-4">
-            No products linked yet.
-            <span v-if="authStore.isEditing"> Use <span class="text-purple-400">Annotate</span> to mark items on the image.</span>
+            {{ t('catalog.noProductsLinked') }}
+            <span v-if="authStore.isEditing"> {{ t('catalog.annotateHint') }}</span>
           </p>
 
           <div v-if="showOcr && ocrResults.length" class="mt-4 border-t border-gray-800 pt-4">
             <div class="flex items-center justify-between mb-2">
-              <span class="text-xs font-medium text-gray-400">OCR Detected Prices</span>
+              <span class="text-xs font-medium text-gray-400">{{ t('catalog.ocrPrices') }}</span>
               <UButton icon="i-heroicons-x-mark" variant="ghost" color="gray" size="xs" @click="showOcr = false" />
             </div>
             <div class="space-y-1">
@@ -1056,9 +1056,9 @@ function openAddSource() {
         <!-- ARTICLE: price sources panel -->
         <div v-else-if="image.imageType === 'article'" class="p-4 bg-gray-950 max-h-[600px] overflow-y-auto space-y-2">
           <div class="flex items-center justify-between mb-3">
-            <span class="text-sm font-medium text-gray-300">Price Sources</span>
+            <span class="text-sm font-medium text-gray-300">{{ t('catalog.priceSources') }}</span>
             <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="orange" variant="soft"
-              @click="openAddSource">Add Source</UButton>
+              @click="openAddSource">{{ t('catalog.addSource') }}</UButton>
           </div>
 
           <!-- Add source form -->
@@ -1077,8 +1077,8 @@ function openAddSource() {
             <UTextarea v-model="sourceForm.notes" placeholder="Notes (optional)…" size="sm" :rows="2" />
             <USelect v-model="sourceForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
             <div class="flex gap-2">
-              <UButton size="xs" color="orange" :disabled="!sourceForm.name.trim()" @click="saveSource">Save</UButton>
-              <UButton size="xs" variant="ghost" color="gray" @click="showAddSource = false">Cancel</UButton>
+              <UButton size="xs" color="orange" :disabled="!sourceForm.name.trim()" @click="saveSource">{{ t('common.save') }}</UButton>
+              <UButton size="xs" variant="ghost" color="gray" @click="showAddSource = false">{{ t('common.cancel') }}</UButton>
             </div>
           </div>
 
@@ -1143,8 +1143,8 @@ function openAddSource() {
                 <UTextarea v-model="editSourceForm.notes" placeholder="Notes…" size="sm" :rows="2" />
                 <USelect v-model="editSourceForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
                 <div class="flex gap-2">
-                  <UButton size="xs" color="purple" :disabled="!editSourceForm.name.trim()" @click="saveEditSource(p.id)">Save</UButton>
-                  <UButton size="xs" variant="ghost" color="gray" @click="cancelEditSource">Cancel</UButton>
+                  <UButton size="xs" color="purple" :disabled="!editSourceForm.name.trim()" @click="saveEditSource(p.id)">{{ t('common.save') }}</UButton>
+                  <UButton size="xs" variant="ghost" color="gray" @click="cancelEditSource">{{ t('common.cancel') }}</UButton>
                 </div>
               </div>
               <div v-else class="space-y-2">
@@ -1154,8 +1154,8 @@ function openAddSource() {
                   {{ p.website }}
                 </a>
                 <p v-if="p.notes" class="text-sm text-gray-400 leading-relaxed whitespace-pre-wrap">{{ p.notes }}</p>
-                <p v-if="!p.website && !p.notes" class="text-xs text-gray-600 italic">No additional info.</p>
-                <UButton v-if="authStore.isEditing" size="xs" variant="soft" color="gray" icon="i-heroicons-pencil-square" @click="startEditSource(p)">Edit</UButton>
+                <p v-if="!p.website && !p.notes" class="text-xs text-gray-600 italic">{{ t('catalog.noAdditionalInfo') }}</p>
+                <UButton v-if="authStore.isEditing" size="xs" variant="soft" color="gray" icon="i-heroicons-pencil-square" @click="startEditSource(p)">{{ t('common.edit') }}</UButton>
               </div>
             </div>
           </div>
@@ -1164,7 +1164,7 @@ function openAddSource() {
           <div class="mt-2 space-y-1.5">
             <div v-if="products.some(p => p.isPlanned)" class="p-2.5 bg-orange-900/20 border border-orange-700/30 rounded-lg flex items-center gap-2">
               <UIcon name="i-heroicons-star" class="w-4 h-4 text-orange-400 shrink-0" />
-              <span class="text-xs text-gray-400">Planned from</span>
+              <span class="text-xs text-gray-400">{{ t('catalog.plannedFrom') }}</span>
               <span class="ml-0.5 text-sm font-medium text-white">{{ products.find(p => p.isPlanned)!.name }}</span>
               <span v-if="products.find(p => p.isPlanned)!.price" class="ml-auto text-sm font-bold text-orange-400">
                 {{ products.find(p => p.isPlanned)!.price!.toFixed(2) }} {{ currencySymbol(products.find(p => p.isPlanned)!.currency) }}
@@ -1172,7 +1172,7 @@ function openAddSource() {
             </div>
             <div v-if="paidSource" class="p-2.5 bg-green-900/20 border border-green-700/30 rounded-lg flex items-center gap-2">
               <UIcon name="i-heroicons-check-circle" class="w-4 h-4 text-green-400 shrink-0" />
-              <span class="text-xs text-gray-400">Paid from</span>
+              <span class="text-xs text-gray-400">{{ t('catalog.paidFrom') }}</span>
               <span class="ml-0.5 text-sm font-medium text-white">{{ paidSource.name }}</span>
               <span v-if="paidSource.price" class="ml-auto text-sm font-bold text-green-400">
                 {{ paidSource.price.toFixed(2) }} {{ currencySymbol(paidSource.currency) }}
@@ -1181,7 +1181,7 @@ function openAddSource() {
           </div>
 
           <p v-if="!products.length && !showAddSource" class="text-gray-600 text-sm text-center py-4">
-            Add price sources to compare where to buy this item.
+            {{ t('catalog.noPriceSources') }}
           </p>
         </div>
 
@@ -1189,7 +1189,7 @@ function openAddSource() {
         <div v-else-if="image.imageType === 'receipt'" class="p-4 bg-gray-950 max-h-[600px] overflow-y-auto">
           <div class="mb-3">
             <p class="text-sm font-medium text-gray-300">{{ t('catalog.markReceipt') }}</p>
-            <p class="text-xs text-gray-500 mt-0.5">Check off products that appear on this receipt</p>
+            <p class="text-xs text-gray-500 mt-0.5">{{ t('catalog.receiptChecklist') }}</p>
           </div>
 
           <div v-if="receiptProducts.length" class="space-y-1">
@@ -1209,12 +1209,12 @@ function openAddSource() {
             </label>
           </div>
 
-          <div v-else class="text-center py-8 text-gray-600 text-sm">No products in this booth yet.</div>
+          <div v-else class="text-center py-8 text-gray-600 text-sm">{{ t('catalog.noProductsInBooth') }}</div>
 
           <div v-if="receiptProducts.some(p => p.isPurchased)" class="mt-4 pt-4 border-t border-gray-800">
             <div class="flex items-center gap-2 text-sm">
               <UIcon name="i-heroicons-check-circle" class="w-4 h-4 text-green-400" />
-              <span class="text-gray-400">{{ receiptProducts.filter(p => p.isPurchased).length }} of {{ receiptProducts.length }} marked as purchased</span>
+              <span class="text-gray-400">{{ receiptProducts.filter(p => p.isPurchased).length }} / {{ receiptProducts.length }} {{ t('catalog.markedAsPurchased') }}</span>
             </div>
           </div>
         </div>
@@ -1235,12 +1235,12 @@ function openAddSource() {
   <!-- Delete image confirmation -->
   <UModal v-model="showDeleteConfirm" :ui="{ width: 'sm:max-w-sm' }">
     <UCard>
-      <template #header><h3 class="font-semibold text-white">Delete Image?</h3></template>
-      <p class="text-gray-400 text-sm">This will permanently remove the image and all linked products.</p>
+      <template #header><h3 class="font-semibold text-white">{{ t('catalog.deleteTitle') }}</h3></template>
+      <p class="text-gray-400 text-sm">{{ t('catalog.deleteDesc') }}</p>
       <template #footer>
         <div class="flex gap-2 justify-end">
-          <UButton variant="ghost" color="gray" @click="showDeleteConfirm = false">Cancel</UButton>
-          <UButton color="red" @click="handleDeleteImage">Delete</UButton>
+          <UButton variant="ghost" color="gray" @click="showDeleteConfirm = false">{{ t('common.cancel') }}</UButton>
+          <UButton color="red" @click="handleDeleteImage">{{ t('common.delete') }}</UButton>
         </div>
       </template>
     </UCard>
@@ -1250,8 +1250,8 @@ function openAddSource() {
   <UModal v-model="showMoveModal" :ui="{ width: 'sm:max-w-sm' }">
     <UCard>
       <template #header>
-        <h3 class="font-semibold text-white">Move to Another Booth</h3>
-        <p class="text-xs text-gray-400 mt-0.5">All linked products will move with it.</p>
+        <h3 class="font-semibold text-white">{{ t('catalog.moveTitle') }}</h3>
+        <p class="text-xs text-gray-400 mt-0.5">{{ t('catalog.moveDesc') }}</p>
       </template>
       <div class="space-y-3 max-h-72 overflow-y-auto">
         <div v-for="group in moveBoothOptions" :key="group.locName">
@@ -1271,12 +1271,12 @@ function openAddSource() {
             </button>
           </div>
         </div>
-        <p v-if="!moveBoothOptions.length" class="text-gray-500 text-sm text-center py-4">No other booths available.</p>
+        <p v-if="!moveBoothOptions.length" class="text-gray-500 text-sm text-center py-4">{{ t('catalog.noOtherBooths') }}</p>
       </div>
       <template #footer>
         <div class="flex gap-2 justify-end">
-          <UButton variant="ghost" color="gray" @click="showMoveModal = false; moveTargetBoothId = ''">Cancel</UButton>
-          <UButton color="purple" :disabled="!moveTargetBoothId" :loading="moving" @click="confirmMove">Move</UButton>
+          <UButton variant="ghost" color="gray" @click="showMoveModal = false; moveTargetBoothId = ''">{{ t('common.cancel') }}</UButton>
+          <UButton color="purple" :disabled="!moveTargetBoothId" :loading="moving" @click="confirmMove">{{ t('common.move') }}</UButton>
         </div>
       </template>
     </UCard>
@@ -1286,12 +1286,12 @@ function openAddSource() {
   <Teleport to="body">
     <div
       v-if="fullscreen"
-      class="fixed inset-0 z-50 bg-gray-950 flex flex-col"
+      class="fixed inset-0 z-[9999] bg-gray-950 flex flex-col"
       style="overscroll-behavior: none"
     >
       <!-- Toolbar -->
       <div class="flex items-center gap-3 px-4 py-3 bg-gray-900 border-b border-gray-800 shrink-0">
-        <UButton icon="i-heroicons-x-mark" variant="ghost" color="gray" size="sm" @click="closeFullscreen">Close</UButton>
+        <UButton icon="i-heroicons-x-mark" variant="ghost" color="gray" size="sm" @click="closeFullscreen">{{ t('common.close') }}</UButton>
         <span class="text-white font-medium text-sm truncate">{{ displayName }}</span>
         <UBadge :label="badgeLabel" :color="badgeColor" variant="soft" size="sm" class="shrink-0" />
         <template v-if="image.imageType === 'catalog' && authStore.isEditing">
@@ -1301,10 +1301,10 @@ function openAddSource() {
             variant="outline" size="sm"
             @click="annotateMode = !annotateMode; if (!annotateMode) cancelAnnotation()"
           >{{ annotateMode ? t('catalog.drawingOn') : t('catalog.enableDrawing') }}</UButton>
-          <span v-if="annotateMode" class="text-xs text-purple-400 hidden sm:inline">Drag a rectangle to mark an item</span>
+          <span v-if="annotateMode" class="text-xs text-purple-400 hidden sm:inline">{{ t('catalog.dragRectHint') }}</span>
         </template>
         <span class="ml-auto text-xs text-gray-500 shrink-0">
-          {{ products.length }} {{ image.imageType === 'article' ? 'sources' : 'products' }}
+          {{ products.length }} {{ image.imageType === 'article' ? t('catalog.sources') : t('catalog.products') }}
         </span>
       </div>
 
@@ -1316,7 +1316,7 @@ function openAddSource() {
             <div v-if="authStore.isEditing" class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/img0:opacity-100 transition-opacity">
               <button type="button"
                 class="px-2 py-1 text-xs rounded bg-gray-900/90 border border-gray-700 text-gray-300 hover:text-white transition-colors"
-                @click="triggerReplace(image.id)">Replace</button>
+                @click="triggerReplace(image.id)">{{ t('catalog.replace') }}</button>
             </div>
           </div>
           <div v-for="sub in subImages" :key="`fs-sub-${sub.id}`" class="relative group/subfs">
@@ -1324,15 +1324,15 @@ function openAddSource() {
             <div v-if="authStore.isEditing" class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/subfs:opacity-100 transition-opacity">
               <button type="button"
                 class="px-2 py-1 text-xs rounded bg-gray-900/90 border border-gray-700 text-gray-300 hover:text-white transition-colors"
-                @click="triggerReplace(sub.id)">Replace</button>
+                @click="triggerReplace(sub.id)">{{ t('catalog.replace') }}</button>
               <button type="button"
                 class="px-2 py-1 text-xs rounded bg-red-900/90 border border-red-700 text-red-300 hover:text-white transition-colors"
-                @click="store.deleteImage(sub.id, sub.boothId)">Delete</button>
+                @click="store.deleteImage(sub.id, sub.boothId)">{{ t('common.delete') }}</button>
             </div>
           </div>
           <div v-if="authStore.isEditing" class="p-4">
             <UButton icon="i-heroicons-plus" variant="ghost" color="gray" block :loading="addingSubImage" @click="subImageInput?.click()">
-              Add Image
+              {{ t('catalog.addImage') }}
             </UButton>
           </div>
         </div>
@@ -1395,7 +1395,7 @@ function openAddSource() {
           <template v-if="image.imageType === 'catalog'">
             <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800">
               <div class="flex items-center gap-2">
-                <span class="text-sm font-medium text-white">Products</span>
+                <span class="text-sm font-medium text-white">{{ t('catalog.products') }}</span>
                 <button
                   type="button"
                   class="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition-colors"
@@ -1407,12 +1407,12 @@ function openAddSource() {
                 </button>
               </div>
               <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="purple" variant="soft"
-                @click="openQuickAdd">Add</UButton>
+                @click="openQuickAdd">{{ t('common.add') }}</UButton>
             </div>
             <div class="flex-1 overflow-y-auto p-3 space-y-2">
               <!-- Annotate form -->
               <div v-if="authStore.isEditing && pendingRect" class="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 space-y-2">
-                <p class="text-xs font-medium text-yellow-400">Name this item:</p>
+                <p class="text-xs font-medium text-yellow-400">{{ t('catalog.nameThisItem') }}</p>
                 <UInput v-model="annotateForm.name" placeholder="e.g. A3 Print" size="sm" autofocus />
                 <USelect v-model="annotateForm.currency" :options="currencyOptions" size="sm" />
                 <UInput v-if="!annotateForm.sizes.length" v-model="annotateForm.noSizePrice" type="number" step="0.01" placeholder="Price (no specific size)" size="sm" />
@@ -1443,8 +1443,8 @@ function openAddSource() {
                 </div>
                 <USelect v-model="annotateForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
                 <div class="flex gap-2">
-                  <UButton size="xs" color="purple" :disabled="!annotateForm.name.trim()" @click="saveAnnotation">Save</UButton>
-                  <UButton size="xs" variant="ghost" color="gray" @click="cancelAnnotation">Cancel</UButton>
+                  <UButton size="xs" color="purple" :disabled="!annotateForm.name.trim()" @click="saveAnnotation">{{ t('common.save') }}</UButton>
+                  <UButton size="xs" variant="ghost" color="gray" @click="cancelAnnotation">{{ t('common.cancel') }}</UButton>
                 </div>
               </div>
               <!-- Quick add form -->
@@ -1479,8 +1479,8 @@ function openAddSource() {
                 </div>
                 <USelect v-model="quickForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
                 <div class="flex gap-2">
-                  <UButton size="xs" color="purple" :disabled="!quickForm.name.trim()" @click="saveQuickAdd">Save</UButton>
-                  <UButton size="xs" variant="ghost" color="gray" @click="showQuickAdd = false">Cancel</UButton>
+                  <UButton size="xs" color="purple" :disabled="!quickForm.name.trim()" @click="saveQuickAdd">{{ t('common.save') }}</UButton>
+                  <UButton size="xs" variant="ghost" color="gray" @click="showQuickAdd = false">{{ t('common.cancel') }}</UButton>
                 </div>
               </div>
 
@@ -1488,7 +1488,7 @@ function openAddSource() {
               <div v-if="selectedGroupKey && authStore.isEditing" class="bg-purple-900/20 border border-purple-600/40 rounded-lg p-3 space-y-2">
                 <div class="flex items-center justify-between">
                   <p class="text-xs font-medium text-purple-300 truncate">
-                    Add size · {{ regionGroups.find(g => groupKey(g[0]) === selectedGroupKey)?.[0]?.name }}
+                    {{ t('catalog.addSize') }} · {{ regionGroups.find(g => groupKey(g[0]) === selectedGroupKey)?.[0]?.name }}
                   </p>
                   <UButton icon="i-heroicons-x-mark" variant="ghost" color="gray" size="xs" @click="selectedGroupKey = null" />
                 </div>
@@ -1509,8 +1509,8 @@ function openAddSource() {
                   <USelect v-model="addSizeForm.currency" :options="currencyOptions" size="sm" class="w-24" />
                 </div>
                 <div class="flex gap-2">
-                  <UButton size="xs" color="purple" :disabled="!addSizeForm.price" @click="saveAddSize">Add</UButton>
-                  <UButton size="xs" variant="ghost" color="gray" @click="selectedGroupKey = null">Cancel</UButton>
+                  <UButton size="xs" color="purple" :disabled="!addSizeForm.price" @click="saveAddSize">{{ t('common.add') }}</UButton>
+                  <UButton size="xs" variant="ghost" color="gray" @click="selectedGroupKey = null">{{ t('common.cancel') }}</UButton>
                 </div>
               </div>
 
@@ -1537,8 +1537,8 @@ function openAddSource() {
                   </div>
                   <USelect v-model="editProductForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
                   <div class="flex gap-2">
-                    <UButton size="xs" color="purple" :disabled="!editProductForm.name.trim()" @click="saveEditProduct(product.id)">Save</UButton>
-                    <UButton size="xs" variant="ghost" color="gray" @click="cancelEditProduct">Cancel</UButton>
+                    <UButton size="xs" color="purple" :disabled="!editProductForm.name.trim()" @click="saveEditProduct(product.id)">{{ t('common.save') }}</UButton>
+                    <UButton size="xs" variant="ghost" color="gray" @click="cancelEditProduct">{{ t('common.cancel') }}</UButton>
                   </div>
                 </div>
                 <div v-else
@@ -1564,8 +1564,8 @@ function openAddSource() {
               </template>
 
               <p v-if="!products.length && !pendingRect && !showQuickAdd" class="text-gray-600 text-sm text-center py-8">
-                <span v-if="authStore.isEditing">Enable Drawing and drag to mark items</span>
-                <span v-else>No products linked</span>
+                <span v-if="authStore.isEditing">{{ t('catalog.annotateHint') }}</span>
+                <span v-else>{{ t('catalog.noProductsLinked') }}</span>
               </p>
             </div>
           </template>
@@ -1574,7 +1574,7 @@ function openAddSource() {
           <template v-else-if="image.imageType === 'article'">
             <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800">
               <div class="flex items-center gap-2">
-                <span class="text-sm font-medium text-white">Price Sources</span>
+                <span class="text-sm font-medium text-white">{{ t('catalog.priceSources') }}</span>
                 <template v-if="image.imageType === 'article'">
                   <USelect
                     v-if="authStore.isEditing"
@@ -1593,7 +1593,7 @@ function openAddSource() {
                 </template>
               </div>
               <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="orange" variant="soft"
-                @click="openAddSource">Add</UButton>
+                @click="openAddSource">{{ t('common.add') }}</UButton>
             </div>
             <div class="flex-1 overflow-y-auto p-3 space-y-2">
               <div v-if="authStore.isEditing && showAddSource" class="bg-gray-800 rounded-lg p-3 space-y-2">
@@ -1611,8 +1611,8 @@ function openAddSource() {
                 <UTextarea v-model="sourceForm.notes" placeholder="Notes (optional)…" size="sm" :rows="2" />
                 <USelect v-model="sourceForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
                 <div class="flex gap-2">
-                  <UButton size="xs" color="orange" :disabled="!sourceForm.name.trim()" @click="saveSource">Save</UButton>
-                  <UButton size="xs" variant="ghost" color="gray" @click="showAddSource = false">Cancel</UButton>
+                  <UButton size="xs" color="orange" :disabled="!sourceForm.name.trim()" @click="saveSource">{{ t('common.save') }}</UButton>
+                  <UButton size="xs" variant="ghost" color="gray" @click="showAddSource = false">{{ t('common.cancel') }}</UButton>
                 </div>
               </div>
 
@@ -1669,8 +1669,8 @@ function openAddSource() {
                     <UTextarea v-model="editSourceForm.notes" placeholder="Notes…" size="sm" :rows="2" />
                     <USelect v-model="editSourceForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
                     <div class="flex gap-2">
-                      <UButton size="xs" color="purple" :disabled="!editSourceForm.name.trim()" @click="saveEditSource(p.id)">Save</UButton>
-                      <UButton size="xs" variant="ghost" color="gray" @click="cancelEditSource">Cancel</UButton>
+                      <UButton size="xs" color="purple" :disabled="!editSourceForm.name.trim()" @click="saveEditSource(p.id)">{{ t('common.save') }}</UButton>
+                      <UButton size="xs" variant="ghost" color="gray" @click="cancelEditSource">{{ t('common.cancel') }}</UButton>
                     </div>
                   </div>
                   <div v-else class="space-y-2">
@@ -1681,7 +1681,7 @@ function openAddSource() {
                     </a>
                     <p v-if="p.notes" class="text-sm text-gray-400 leading-relaxed whitespace-pre-wrap">{{ p.notes }}</p>
                     <p v-if="!p.website && !p.notes" class="text-xs text-gray-600 italic">No additional info.</p>
-                    <UButton v-if="authStore.isEditing" size="xs" variant="soft" color="gray" icon="i-heroicons-pencil-square" @click="startEditSource(p)">Edit</UButton>
+                    <UButton v-if="authStore.isEditing" size="xs" variant="soft" color="gray" icon="i-heroicons-pencil-square" @click="startEditSource(p)">{{ t('common.edit') }}</UButton>
                   </div>
                 </div>
               </div>
@@ -1690,7 +1690,7 @@ function openAddSource() {
                 <div v-if="products.some(p => p.isPlanned)" class="p-2 bg-orange-900/20 border border-orange-700/30 rounded-lg flex items-center gap-2">
                   <UIcon name="i-heroicons-star" class="w-3.5 h-3.5 text-orange-400 shrink-0" />
                   <div class="flex-1 min-w-0">
-                    <span class="text-xs text-gray-400">Planned: </span>
+                    <span class="text-xs text-gray-400">{{ t('catalog.plannedFrom') }}: </span>
                     <span class="text-sm text-white">{{ products.find(p => p.isPlanned)!.name }}</span>
                   </div>
                   <span v-if="products.find(p => p.isPlanned)!.price" class="text-sm font-bold text-orange-400 shrink-0">
@@ -1700,7 +1700,7 @@ function openAddSource() {
                 <div v-if="paidSource" class="p-2 bg-green-900/20 border border-green-700/30 rounded-lg flex items-center gap-2">
                   <UIcon name="i-heroicons-check-circle" class="w-3.5 h-3.5 text-green-400 shrink-0" />
                   <div class="flex-1 min-w-0">
-                    <span class="text-xs text-gray-400">Paid: </span>
+                    <span class="text-xs text-gray-400">{{ t('catalog.paidFrom') }}: </span>
                     <span class="text-sm text-white">{{ paidSource.name }}</span>
                   </div>
                   <span v-if="paidSource.price" class="text-sm font-bold text-green-400 shrink-0">
@@ -1709,7 +1709,7 @@ function openAddSource() {
                 </div>
               </div>
               <p v-if="!products.length && !showAddSource" class="text-gray-600 text-sm text-center py-8">
-                Add price sources to compare
+                {{ t('catalog.noPriceSources') }}
               </p>
             </div>
           </template>
@@ -1717,7 +1717,7 @@ function openAddSource() {
           <!-- RECEIPT (fullscreen) -->
           <template v-else>
             <div class="px-4 py-3 border-b border-gray-800">
-              <span class="text-sm font-medium text-white">Mark as Purchased</span>
+              <span class="text-sm font-medium text-white">{{ t('catalog.markReceipt') }}</span>
             </div>
             <div class="flex-1 overflow-y-auto p-3 space-y-1">
               <label v-for="p in receiptProducts" :key="`fs-receipt-${p.id}`"
@@ -1730,7 +1730,7 @@ function openAddSource() {
                   {{ (p.price * p.quantity).toFixed(2) }} {{ p.currency }}
                 </span>
               </label>
-              <p v-if="!receiptProducts.length" class="text-gray-600 text-sm text-center py-8">No products in this booth</p>
+              <p v-if="!receiptProducts.length" class="text-gray-600 text-sm text-center py-8">{{ t('catalog.noProductsInBooth') }}</p>
             </div>
           </template>
         </div>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Booth, Product, CatalogImage } from '~/stores/events'
 import { usePersonsStore } from '~/stores/persons'
+import { useLocale } from '~/composables/useLocale'
 
 const props = defineProps<{
   booth: Booth
@@ -9,6 +10,7 @@ const props = defineProps<{
 
 const route = useRoute()
 const personsStore = usePersonsStore()
+const { t } = useLocale()
 
 const COLOR_MAP: Record<string, string> = {
   purple: 'bg-purple-500', blue: 'bg-blue-500', green: 'bg-green-500',
@@ -29,7 +31,7 @@ const costByCurrency = computed(() => {
   const map: Record<string, number> = {}
   for (const p of props.booth.products ?? []) {
     if (!p.price) continue
-    if (isArticleSource(p, images) && !p.isPurchased) continue // only count paid article source
+    if (isArticleSource(p, images) && !p.isPurchased) continue
     const cur = p.currency || 'EUR'
     map[cur] = (map[cur] ?? 0) + p.price * p.quantity
   }
@@ -73,9 +75,9 @@ const progress = computed(() => totalCount.value ? (purchasedCount.value / total
           <div class="flex-1 min-w-0">
             <h4 class="font-semibold text-white text-sm">{{ booth.name }}</h4>
             <div class="text-xs text-gray-500 mt-0.5">
-              <span v-if="booth.hallNr">Hall {{ booth.hallNr }}</span>
+              <span v-if="booth.hallNr">{{ t('booth.hallLabel') }} {{ booth.hallNr }}</span>
               <span v-if="booth.hallNr && booth.boothNr"> · </span>
-              <span v-if="booth.boothNr">Booth {{ booth.boothNr }}</span>
+              <span v-if="booth.boothNr">{{ t('booth.boothOf') }} {{ booth.boothNr }}</span>
             </div>
             <div v-if="booth.shopCategory" class="flex flex-wrap gap-1 mt-1.5">
               <span
@@ -114,7 +116,7 @@ const progress = computed(() => totalCount.value ? (purchasedCount.value / total
           </div>
         </div>
 
-        <div v-if="!totalCount" class="text-xs text-gray-600">No products yet</div>
+        <div v-if="!totalCount" class="text-xs text-gray-600">{{ t('booth.noProductsYet') }}</div>
       </div>
     </UCard>
   </NuxtLink>

@@ -2,6 +2,7 @@
 import type { Location, Product, CatalogImage } from '~/stores/events'
 import { useEventsStore } from '~/stores/events'
 import { useAuthStore } from '~/stores/auth'
+import { useLocale } from '~/composables/useLocale'
 
 const props = defineProps<{
   location: Location
@@ -13,6 +14,7 @@ const emit = defineEmits<{ delete: [id: string] }>()
 const route = useRoute()
 const store = useEventsStore()
 const authStore = useAuthStore()
+const { t } = useLocale()
 const showAddBooth = ref(false)
 const expanded = ref(true)
 
@@ -42,10 +44,14 @@ const purchasedProducts = computed(() =>
 )
 
 const typeLabel = computed(() => {
-  const labels: Record<string, string> = {
-    hall: 'Hall', city: 'City', country: 'Country', area: 'Area', district: 'District',
+  const map: Record<string, string> = {
+    hall: t('event.hallType'),
+    city: t('event.cityType'),
+    country: t('event.countryType'),
+    area: t('event.areaType'),
+    district: t('event.districtType'),
   }
-  return labels[props.location.type] ?? props.location.type
+  return map[props.location.type] ?? props.location.type
 })
 
 const editingDates = ref(false)
@@ -68,8 +74,8 @@ function formatDateRange(from: string | null, to: string | null) {
   if (!from && !to) return null
   const fmt = (d: string) => new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
   if (from && to) return `${fmt(from)} – ${fmt(to)}`
-  if (from) return `From ${fmt(from)}`
-  return `Until ${fmt(to!)}`
+  if (from) return `${t('common.from')} ${fmt(from)}`
+  return `${t('common.to')} ${fmt(to!)}`
 }
 </script>
 
@@ -89,8 +95,8 @@ function formatDateRange(from: string | null, to: string | null) {
             </div>
             <div class="text-xs text-gray-400 mt-0.5 flex items-center gap-2 flex-wrap">
               <span>
-                {{ location.booths?.length ?? 0 }} {{ eventType === 'convention' ? 'booths' : 'shops' }} ·
-                {{ purchasedProducts }}/{{ totalProducts }} purchased
+                {{ location.booths?.length ?? 0 }} {{ eventType === 'convention' ? t('events.booths') : t('events.shops') }} ·
+                {{ purchasedProducts }}/{{ totalProducts }} {{ t('event.purchased') }}
               </span>
               <template v-if="eventType === 'travel'">
                 <span v-if="!editingDates && formatDateRange(location.dateFrom, location.dateTo)" class="text-blue-400 flex items-center gap-1">
@@ -106,7 +112,7 @@ function formatDateRange(from: string | null, to: string | null) {
                   @click.stop="editingDates = true"
                 >
                   <UIcon name="i-heroicons-calendar-days" class="w-3 h-3" />
-                  Add dates
+                  {{ t('event.addDates') }}
                 </button>
               </template>
             </div>
@@ -115,7 +121,7 @@ function formatDateRange(from: string | null, to: string | null) {
               <UInput v-model="dateForm.dateFrom" type="date" size="xs" class="w-36" />
               <span class="text-gray-500 text-xs">–</span>
               <UInput v-model="dateForm.dateTo" type="date" size="xs" class="w-36" />
-              <UButton size="xs" color="purple" @click.stop="saveDates">Save</UButton>
+              <UButton size="xs" color="purple" @click.stop="saveDates">{{ t('common.save') }}</UButton>
               <UButton size="xs" color="gray" variant="ghost" @click.stop="editingDates = false">✕</UButton>
             </div>
           </div>
@@ -129,7 +135,7 @@ function formatDateRange(from: string | null, to: string | null) {
             color="gray"
             size="xs"
             :to="`/events/${route.params.slug}/hallplan`"
-            title="View Hall Plan"
+            :title="t('booth.viewHallPlan')"
           />
           <template v-if="authStore.isEditing">
             <UButton
@@ -152,18 +158,18 @@ function formatDateRange(from: string | null, to: string | null) {
     </template>
 
     <div v-show="expanded">
-        <div v-if="!location.booths?.length" class="text-center py-6 text-gray-500 text-sm">
-          No {{ eventType === 'convention' ? 'booths' : 'shops' }} added yet.
-        </div>
+      <div v-if="!location.booths?.length" class="text-center py-6 text-gray-500 text-sm">
+        {{ eventType === 'convention' ? t('event.noBoothsYet') : t('event.noShopsYet') }}
+      </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <BoothCard
-            v-for="booth in location.booths"
-            :key="booth.id"
-            :booth="booth"
-            :event-type="eventType"
-          />
-        </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <BoothCard
+          v-for="booth in location.booths"
+          :key="booth.id"
+          :booth="booth"
+          :event-type="eventType"
+        />
+      </div>
     </div>
 
     <AddBoothModal v-model="showAddBooth" :location-id="location.id" :event-type="eventType" />

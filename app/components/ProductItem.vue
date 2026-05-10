@@ -3,6 +3,7 @@ import type { Product } from '~/stores/events'
 import { useEventsStore } from '~/stores/events'
 import { useAuthStore } from '~/stores/auth'
 import { usePersonsStore } from '~/stores/persons'
+import { useLocale } from '~/composables/useLocale'
 
 const props = defineProps<{ product: Product }>()
 const emit = defineEmits<{ toggle: []; delete: [id: string] }>()
@@ -10,6 +11,7 @@ const emit = defineEmits<{ toggle: []; delete: [id: string] }>()
 const store = useEventsStore()
 const authStore = useAuthStore()
 const personsStore = usePersonsStore()
+const { t } = useLocale()
 
 const editing = ref(false)
 const editPrice = ref(props.product.price ?? 0)
@@ -67,8 +69,8 @@ const priorityColors: Record<number, string> = {
         <UBadge v-if="product.size" :label="product.size" size="xs" variant="soft" color="gray" />
         <UBadge v-if="product.category" :label="product.category" size="xs" variant="soft" color="blue" />
         <UBadge v-if="product.quantity > 1" :label="`×${product.quantity}`" size="xs" variant="soft" color="purple" />
-        <UBadge v-if="product.priority === 1" label="Want" size="xs" variant="soft" color="yellow" />
-        <UBadge v-if="product.priority === 2" label="Must" size="xs" variant="soft" color="red" />
+        <UBadge v-if="product.priority === 1" :label="t('product.want')" size="xs" variant="soft" color="yellow" />
+        <UBadge v-if="product.priority === 2" :label="t('product.must')" size="xs" variant="soft" color="red" />
       </div>
       <p v-if="product.description" class="text-xs text-gray-500 truncate">{{ product.description }}</p>
     </div>

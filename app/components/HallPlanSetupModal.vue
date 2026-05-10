@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useEventsStore } from '~/stores/events'
 import type { HallPlanImage, HallLayoutData, DetectedBooth } from '~/stores/events'
+import { useLocale } from '~/composables/useLocale'
 
 const props = defineProps<{
   modelValue: boolean
@@ -10,6 +11,7 @@ const props = defineProps<{
 const emit = defineEmits<{ 'update:modelValue': [v: boolean] }>()
 
 const store = useEventsStore()
+const { t } = useLocale()
 
 interface AnalyzedImage extends HallPlanImage {
   file?: File
@@ -220,10 +222,8 @@ const anyProcessing = computed(() => images.value.some(i => i.status === 'upload
     <UCard>
       <template #header>
         <div>
-          <h3 class="font-bold text-white text-lg">Hall Plan — {{ locationName }}</h3>
-          <p class="text-sm text-gray-400 mt-0.5">
-            Add or remove floor plan images. OCR will detect booth numbers and their positions automatically.
-          </p>
+          <h3 class="font-bold text-white text-lg">{{ t('hallSetup.title') }} — {{ locationName }}</h3>
+          <p class="text-sm text-gray-400 mt-0.5">{{ t('hallSetup.description') }}</p>
         </div>
       </template>
 
@@ -237,8 +237,8 @@ const anyProcessing = computed(() => images.value.some(i => i.status === 'upload
           @click="fileInput?.click()"
         >
           <UIcon name="i-heroicons-map" class="w-8 h-8 mx-auto mb-2 text-gray-500" />
-          <p class="text-white font-medium text-sm">Drop hall plan images here</p>
-          <p class="text-xs text-gray-400 mt-1">Upload as many detail pages as you have (PNG, JPG). OCR reads booth IDs automatically.</p>
+          <p class="text-white font-medium text-sm">{{ t('hallSetup.dropHere') }}</p>
+          <p class="text-xs text-gray-400 mt-1">{{ t('hallSetup.dropHint') }}</p>
           <input ref="fileInput" type="file" accept="image/*" multiple class="hidden"
             @change="onFilesSelected(($event.target as HTMLInputElement).files)" />
         </div>
@@ -265,23 +265,23 @@ const anyProcessing = computed(() => images.value.some(i => i.status === 'upload
               <div class="text-xs text-gray-400 mt-0.5">
                 <template v-if="img.status === 'existing'">
                   <span class="text-gray-500">
-                    ✓ {{ img.booths.length }} booths · already saved
+                    ✓ {{ img.booths.length }} {{ t('hallSetup.detected') }} · {{ t('hallSetup.alreadySaved') }}
                     <span v-if="img.naturalWidth" class="ml-1">({{ img.naturalWidth }}×{{ img.naturalHeight }}px)</span>
                   </span>
                 </template>
-                <template v-else-if="img.status === 'pending'">Ready to analyze</template>
+                <template v-else-if="img.status === 'pending'">{{ t('hallSetup.readyToAnalyze') }}</template>
                 <template v-else-if="img.status === 'uploading'">
-                  <span class="text-blue-400">Uploading...</span>
+                  <span class="text-blue-400">{{ t('hallSetup.uploading') }}</span>
                 </template>
                 <template v-else-if="img.status === 'analyzing'">
                   <span class="text-yellow-400 flex items-center gap-1">
                     <UIcon name="i-heroicons-cpu-chip" class="w-3 h-3 animate-pulse" />
-                    Running OCR — detecting booth positions...
+                    {{ t('hallSetup.runningOcr') }}
                   </span>
                 </template>
                 <template v-else-if="img.status === 'done'">
                   <span class="text-green-400">
-                    ✓ {{ img.booths.length }} booths detected
+                    ✓ {{ img.booths.length }} {{ t('hallSetup.detected') }}
                     <span v-if="img.naturalWidth" class="text-gray-500 ml-1">({{ img.naturalWidth }}×{{ img.naturalHeight }}px)</span>
                   </span>
                 </template>
@@ -332,20 +332,20 @@ const anyProcessing = computed(() => images.value.some(i => i.status === 'upload
         <!-- Summary -->
         <div v-if="totalDetected > 0" class="bg-purple-500/10 border border-purple-500/30 rounded-lg p-3 text-sm text-purple-300">
           <UIcon name="i-heroicons-check-circle" class="w-4 h-4 inline mr-1" />
-          {{ totalDetected }} booth positions across {{ savedImageCount }} image(s).
+          {{ totalDetected }} {{ t('hallSetup.detected') }} ({{ savedImageCount }})
         </div>
 
         <UAlert
           color="blue"
-          title="How it works"
-          description="OCR reads all text in your uploaded hall plan images and finds booth numbers (e.g. 10L13, K24). Their pixel positions in the image are stored so we can create interactive overlays. Your added booths will appear red on the map."
+          :title="t('hallSetup.howItWorks')"
+          :description="t('hallSetup.howItWorksDesc')"
         />
       </div>
 
       <template #footer>
         <div class="flex gap-2 justify-between items-center">
           <UButton variant="ghost" color="gray" @click="emit('update:modelValue', false)" :disabled="anyProcessing || saving">
-            Cancel
+            {{ t('common.cancel') }}
           </UButton>
           <div class="flex gap-2">
             <UButton
@@ -356,7 +356,7 @@ const anyProcessing = computed(() => images.value.some(i => i.status === 'upload
               :disabled="anyProcessing"
               @click="analyzeAll"
             >
-              Analyze & Save
+              {{ t('hallSetup.analyzeAndSave') }}
             </UButton>
             <UButton
               v-else
@@ -366,7 +366,7 @@ const anyProcessing = computed(() => images.value.some(i => i.status === 'upload
               :disabled="saving"
               @click="analyzeAll"
             >
-              Save Layout
+              {{ t('hallSetup.saveLayout') }}
             </UButton>
           </div>
         </div>
