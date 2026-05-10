@@ -56,22 +56,26 @@ const COLOR_MAP: Record<string, string> = {
         <div class="flex items-center gap-3">
           <button
             v-if="!authStore.isEditing"
-            class="px-3 py-1.5 text-xs font-medium rounded border border-gray-700 text-gray-400 hover:border-gray-500 hover:text-white transition-colors"
+            class="px-2 sm:px-3 py-1.5 text-xs font-medium rounded border border-gray-700 text-gray-400 hover:border-gray-500 hover:text-white transition-colors flex items-center gap-1"
+            :title="t('nav.edit')"
             @click="openPasswordModal"
           >
-            {{ t('nav.edit') }}
+            <UIcon name="i-heroicons-pencil-square" class="w-4 h-4 sm:hidden" />
+            <span class="hidden sm:inline">{{ t('nav.edit') }}</span>
           </button>
           <button
             v-else
-            class="px-3 py-1.5 text-xs font-medium rounded border border-purple-500 text-purple-400 hover:bg-purple-500/10 transition-colors"
+            class="px-2 sm:px-3 py-1.5 text-xs font-medium rounded border border-purple-500 text-purple-400 hover:bg-purple-500/10 transition-colors flex items-center gap-1"
+            :title="t('nav.editing')"
             @click="authStore.lock()"
           >
-            {{ t('nav.editing') }}
+            <UIcon name="i-heroicons-lock-closed" class="w-4 h-4 sm:hidden" />
+            <span class="hidden sm:inline">{{ t('nav.editing') }}</span>
           </button>
 
           <NuxtLink to="/" class="flex items-center gap-2 font-bold text-lg text-white hover:text-purple-400 transition-colors">
             <UIcon name="i-heroicons-shopping-bag" class="w-6 h-6 text-purple-400" />
-            MerchTracker
+            <span class="hidden sm:inline">MerchTracker</span>
           </NuxtLink>
         </div>
 
@@ -147,15 +151,26 @@ const COLOR_MAP: Record<string, string> = {
             </div>
           </div>
 
-          <UButton to="/" variant="ghost" icon="i-heroicons-home" color="gray" size="sm">
+          <UButton to="/" variant="ghost" icon="i-heroicons-home" color="gray" size="sm" class="sm:hidden" />
+          <UButton to="/" variant="ghost" icon="i-heroicons-home" color="gray" size="sm" class="hidden sm:flex">
             {{ t('nav.events') }}
           </UButton>
+          
           <UButton
             v-if="authStore.isEditing"
             to="/events/create"
             icon="i-heroicons-plus"
             color="purple"
             size="sm"
+            class="sm:hidden"
+          />
+          <UButton
+            v-if="authStore.isEditing"
+            to="/events/create"
+            icon="i-heroicons-plus"
+            color="purple"
+            size="sm"
+            class="hidden sm:flex"
           >
             {{ t('nav.newEvent') }}
           </UButton>

@@ -22,7 +22,7 @@ const options: { value: Locale; flag: string; label: string }[] = [
       @click="setLocale(opt.value)"
     >
       <span>{{ opt.flag }}</span>
-      <span>{{ opt.label }}</span>
+      <span class="hidden sm:inline">{{ opt.label }}</span>
     </button>
   </div>
 </template>
