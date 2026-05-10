@@ -632,58 +632,59 @@ function openAddSource() {
 <template>
   <div class="border border-gray-800 rounded-xl overflow-hidden">
     <!-- Header -->
-    <div class="flex items-center gap-2 px-4 py-3 bg-gray-900">
-      <UButton
-        :icon="expanded ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'"
-        variant="ghost" color="gray" size="xs" class="shrink-0"
-        @click="expanded = !expanded"
-      />
-
-      <!-- Editable name -->
-      <input
-        v-if="editingName"
-        ref="nameInputEl"
-        v-model="nameInput"
-        class="bg-gray-800 border border-purple-500 rounded px-2 py-0.5 text-sm text-white focus:outline-none flex-1 min-w-0"
-        @blur="saveName"
-        @keydown.enter="saveName"
-        @keydown.escape.stop="editingName = false"
-      />
-      <button
-        v-else
-        type="button"
-        class="font-medium text-white text-sm text-left truncate flex-1 min-w-0"
-        :class="authStore.isEditing ? 'hover:text-purple-300' : 'cursor-default'"
-        :title="displayName"
-        @click="startEditName"
-      >
-        {{ displayName }}
-      </button>
-
-      <UBadge :label="badgeLabel" :color="badgeColor" variant="soft" size="xs" class="shrink-0" />
-      <UBadge v-if="image.imageType === 'catalog'" :label="`${products.length}`" variant="soft" color="gray" size="xs" class="shrink-0" />
-      <UBadge v-if="image.imageType === 'article' && (subImages?.length ?? 0) > 0" :label="`${1 + (subImages?.length ?? 0)} photos`" variant="soft" color="orange" size="xs" class="shrink-0" />
-      <UBadge v-if="image.imageType === 'receipt'" :label="`${receiptProducts.filter(p=>p.isPurchased).length}/${receiptProducts.length}`" variant="soft" color="green" size="xs" class="shrink-0" />
-
-      <!-- Article: person assignment -->
-      <template v-if="image.imageType === 'article'">
-        <USelect
-          v-if="authStore.isEditing"
-          v-model="imagePersonId"
-          :options="personOptions"
-          option-attribute="label"
-          value-attribute="value"
-          size="xs"
-          class="w-32 shrink-0"
-          @change="saveImagePerson"
+    <div class="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-2 px-4 py-3 bg-gray-900">
+      <div class="flex items-center gap-2 flex-1 min-w-0 w-full sm:w-auto">
+        <UButton
+          :icon="expanded ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'"
+          variant="ghost" color="gray" size="xs" class="shrink-0"
+          @click="expanded = !expanded"
         />
-        <div v-else-if="personById(image.personId)" class="flex items-center gap-1 shrink-0">
-          <span :class="['w-2 h-2 rounded-full', COLOR_MAP[personById(image.personId)!.color] ?? 'bg-purple-500']" />
-          <span class="text-xs text-gray-400">{{ personById(image.personId)!.name }}</span>
-        </div>
-      </template>
 
-      <div class="flex items-center gap-1 shrink-0">
+        <!-- Editable name -->
+        <input
+          v-if="editingName"
+          ref="nameInputEl"
+          v-model="nameInput"
+          class="bg-gray-800 border border-purple-500 rounded px-2 py-0.5 text-sm text-white focus:outline-none flex-1 min-w-0"
+          @blur="saveName"
+          @keydown.enter="saveName"
+          @keydown.escape.stop="editingName = false"
+        />
+        <button
+          v-else
+          type="button"
+          class="font-medium text-white text-sm text-left truncate flex-1 min-w-0"
+          :class="authStore.isEditing ? 'hover:text-purple-300' : 'cursor-default'"
+          :title="displayName"
+          @click="startEditName"
+        >
+          {{ displayName }}
+        </button>
+
+        <UBadge :label="badgeLabel" :color="badgeColor" variant="soft" size="xs" class="shrink-0" />
+        <UBadge v-if="image.imageType === 'catalog'" :label="`${products.length}`" variant="soft" color="gray" size="xs" class="shrink-0" />
+        <UBadge v-if="image.imageType === 'article' && (subImages?.length ?? 0) > 0" :label="`${1 + (subImages?.length ?? 0)} photos`" variant="soft" color="orange" size="xs" class="shrink-0" />
+        <UBadge v-if="image.imageType === 'receipt'" :label="`${receiptProducts.filter(p=>p.isPurchased).length}/${receiptProducts.length}`" variant="soft" color="green" size="xs" class="shrink-0" />
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2 shrink-0">
+        <!-- Article: person assignment -->
+        <template v-if="image.imageType === 'article'">
+          <USelect
+            v-if="authStore.isEditing"
+            v-model="imagePersonId"
+            :options="personOptions"
+            option-attribute="label"
+            value-attribute="value"
+            size="xs"
+            class="w-32 shrink-0"
+            @change="saveImagePerson"
+          />
+          <div v-else-if="personById(image.personId)" class="flex items-center gap-1 shrink-0">
+            <span :class="['w-2 h-2 rounded-full', COLOR_MAP[personById(image.personId)!.color] ?? 'bg-purple-500']" />
+            <span class="text-xs text-gray-400">{{ personById(image.personId)!.name }}</span>
+          </div>
+        </template>
         <template v-if="image.imageType === 'catalog' && authStore.isEditing">
           <UButton
             icon="i-heroicons-pencil-square"
