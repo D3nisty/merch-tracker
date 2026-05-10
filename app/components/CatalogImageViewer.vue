@@ -729,7 +729,7 @@ function openAddSource() {
       <input ref="subImageInput" type="file" multiple accept="image/*" class="hidden" @change="handleSubImageFiles" />
       <input ref="replaceInput" type="file" accept="image/*" class="hidden" @change="handleReplaceFile" />
 
-      <div :class="['grid gap-0', (showProductsPanel && image.imageType === 'catalog') || image.imageType === 'article' ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1']">
+      <div :class="['grid gap-0', showProductsPanel && (image.imageType === 'catalog' || image.imageType === 'article') ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1']">
         <!-- Image panel: catalog / receipt -->
         <div
           v-if="image.imageType !== 'article'"
@@ -817,6 +817,16 @@ function openAddSource() {
                 {{ t('catalog.replace') }}
               </button>
             </div>
+            <!-- Toggle sources panel button -->
+            <button
+              v-if="!showProductsPanel"
+              type="button"
+              class="absolute bottom-2 right-2 flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-gray-900/80 border border-gray-700 text-gray-300 hover:text-white hover:border-gray-500 transition-colors backdrop-blur-sm pointer-events-auto"
+              @click.stop="showProductsPanel = true"
+            >
+              <UIcon name="i-heroicons-list-bullet" class="w-3.5 h-3.5" />
+              {{ t('catalog.sources') }}
+            </button>
           </div>
           <!-- Sub-images -->
           <div v-for="sub in subImages" :key="sub.id" class="relative group/subimg">
@@ -858,7 +868,7 @@ function openAddSource() {
         <div v-if="image.imageType === 'catalog' && showProductsPanel" class="p-4 space-y-2 bg-gray-950 max-h-[600px] overflow-y-auto">
           <div class="flex items-center justify-between mb-3">
             <div class="flex items-center gap-2">
-              <span class="text-sm font-medium text-gray-300">{{ t('catalog.productsFromImage') }}</span>
+              <span class="text-sm font-medium text-gray-300">{{ t('catalog.products') }}</span>
               <button
                 type="button"
                 class="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition-colors"
@@ -869,8 +879,11 @@ function openAddSource() {
                 <UIcon :name="showBoxLabels ? 'i-heroicons-eye' : 'i-heroicons-eye-slash'" class="w-3.5 h-3.5" />
               </button>
             </div>
-            <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="purple" variant="soft"
-              @click="openQuickAdd">{{ t('common.add') }}</UButton>
+            <div class="flex items-center gap-2">
+              <UButton icon="i-heroicons-chevron-right" size="xs" color="gray" variant="ghost" :title="t('catalog.collapse')" @click="showProductsPanel = false" />
+              <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="purple" variant="soft"
+                @click="openQuickAdd">{{ t('common.add') }}</UButton>
+            </div>
           </div>
 
           <!-- Quick add form -->
@@ -1054,11 +1067,14 @@ function openAddSource() {
         </div>
 
         <!-- ARTICLE: price sources panel -->
-        <div v-else-if="image.imageType === 'article'" class="p-4 bg-gray-950 max-h-[600px] overflow-y-auto space-y-2">
+        <div v-else-if="image.imageType === 'article' && showProductsPanel" class="p-4 bg-gray-950 max-h-[600px] overflow-y-auto space-y-2">
           <div class="flex items-center justify-between mb-3">
             <span class="text-sm font-medium text-gray-300">{{ t('catalog.priceSources') }}</span>
-            <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="orange" variant="soft"
-              @click="openAddSource">{{ t('catalog.addSource') }}</UButton>
+            <div class="flex items-center gap-2">
+              <UButton icon="i-heroicons-chevron-right" size="xs" color="gray" variant="ghost" :title="t('catalog.collapse')" @click="showProductsPanel = false" />
+              <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="orange" variant="soft"
+                @click="openAddSource">{{ t('catalog.addSource') }}</UButton>
+            </div>
           </div>
 
           <!-- Add source form -->
@@ -1308,7 +1324,7 @@ function openAddSource() {
         </span>
       </div>
 
-      <div class="flex flex-1 min-h-0">
+      <div class="flex flex-1 min-h-0 relative">
         <!-- Image: article gallery (fullscreen) -->
         <div v-if="image.imageType === 'article'" class="flex-1 overflow-auto bg-black divide-y divide-gray-800">
           <div class="relative group/img0">
@@ -1389,8 +1405,19 @@ function openAddSource() {
           </div>
         </div>
 
+        <!-- Restore button when collapsed (fullscreen) -->
+        <button
+          v-if="!showProductsPanel"
+          type="button"
+          class="absolute bottom-4 right-4 z-50 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-gray-900/90 border border-gray-700 text-gray-300 hover:text-white hover:border-gray-500 transition-colors backdrop-blur-sm shadow-xl"
+          @click.stop="showProductsPanel = true"
+        >
+          <UIcon name="i-heroicons-list-bullet" class="w-4 h-4" />
+          {{ image.imageType === 'article' ? t('catalog.sources') : t('catalog.products') }}
+        </button>
+
         <!-- Right panel (full-screen) -->
-        <div class="w-96 shrink-0 flex flex-col bg-gray-900 border-l border-gray-800">
+        <div v-show="showProductsPanel" class="w-96 shrink-0 flex flex-col bg-gray-900 border-l border-gray-800">
           <!-- CATALOG (fullscreen) -->
           <template v-if="image.imageType === 'catalog'">
             <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800">
@@ -1406,8 +1433,11 @@ function openAddSource() {
                   <UIcon :name="showBoxLabels ? 'i-heroicons-eye' : 'i-heroicons-eye-slash'" class="w-3.5 h-3.5" />
                 </button>
               </div>
-              <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="purple" variant="soft"
-                @click="openQuickAdd">{{ t('common.add') }}</UButton>
+              <div class="flex items-center gap-2">
+                <UButton icon="i-heroicons-chevron-right" size="xs" color="gray" variant="ghost" :title="t('catalog.collapse')" @click="showProductsPanel = false" />
+                <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="purple" variant="soft"
+                  @click="openQuickAdd">{{ t('common.add') }}</UButton>
+              </div>
             </div>
             <div class="flex-1 overflow-y-auto p-3 space-y-2">
               <!-- Annotate form -->
@@ -1592,8 +1622,11 @@ function openAddSource() {
                   </div>
                 </template>
               </div>
-              <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="orange" variant="soft"
-                @click="openAddSource">{{ t('common.add') }}</UButton>
+              <div class="flex items-center gap-2">
+                <UButton icon="i-heroicons-chevron-right" size="xs" color="gray" variant="ghost" :title="t('catalog.collapse')" @click="showProductsPanel = false" />
+                <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="orange" variant="soft"
+                  @click="openAddSource">{{ t('common.add') }}</UButton>
+              </div>
             </div>
             <div class="flex-1 overflow-y-auto p-3 space-y-2">
               <div v-if="authStore.isEditing && showAddSource" class="bg-gray-800 rounded-lg p-3 space-y-2">
