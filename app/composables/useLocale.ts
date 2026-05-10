@@ -604,15 +604,20 @@ const de: typeof en = {
 
 const translations: Record<Locale, typeof en> = { en, de }
 
+let _isLocaleInitialized = false
+
 export function useLocale() {
   const locale = useState<Locale>('locale', () => 'en')
 
-  // Restore from localStorage on client (runs once on first composable use)
-  if (import.meta.client) {
-    const stored = localStorage.getItem('locale') as Locale | null
-    if (stored && stored !== locale.value && (stored === 'en' || stored === 'de')) {
-      locale.value = stored
-    }
+  // Restore from localStorage on client AFTER hydration to prevent class attribute mismatches
+  if (import.meta.client && !_isLocaleInitialized) {
+    _isLocaleInitialized = true
+    onNuxtReady(() => {
+      const stored = localStorage.getItem('locale') as Locale | null
+      if (stored && stored !== locale.value && (stored === 'en' || stored === 'de')) {
+        locale.value = stored
+      }
+    })
   }
 
   function setLocale(l: Locale) {
