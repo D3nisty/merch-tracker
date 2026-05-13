@@ -119,15 +119,31 @@ docker compose up -d --build
 
 ### Reset just the admin password
 
-If you forget the admin password:
+Non-destructive — keeps all your events/booths/products, only rewrites the admin password hash and clears active sessions.
+
+Local:
+
+```bash
+npm run reset-admin
+```
+
+Docker:
+
+```bash
+docker compose stop merch-tracker
+npm run reset-admin                  # writes to ./data/merch-tracker.db via the bind mount
+docker compose start merch-tracker
+```
+
+The script reads `ADMIN_DEFAULT_USERNAME` / `ADMIN_DEFAULT_PASSWORD` from `.env`. Change those first if you want a different value.
+
+If you'd rather wipe the database entirely (loses everything):
 
 ```bash
 docker compose down
-rm data/merch-tracker.db data/merch-tracker.db-shm data/merch-tracker.db-wal   # ⚠ wipes ALL data
+rm data/merch-tracker.db data/merch-tracker.db-shm data/merch-tracker.db-wal
 docker compose up -d --build
 ```
-
-Or, less destructively, open the DB file with `sqlite3` and `UPDATE users SET password_hash = ...` — the format is `scryptSalt:scryptHashHex` (16-byte salt, 64-byte hash). Easier path: deploy a one-off script that calls `hashPassword` from `server/utils/auth.ts`.
 
 ### Behind a reverse proxy (Caddy / nginx / Traefik)
 
