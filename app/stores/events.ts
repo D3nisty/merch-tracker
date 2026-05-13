@@ -295,6 +295,26 @@ export const useEventsStore = defineStore('events', () => {
     return created
   }
 
+  async function createImageFromUrl(data: {
+    boothId: string
+    url: string
+    customName?: string
+    imageType?: 'catalog' | 'article' | 'receipt'
+    displayMode?: 'full' | 'split'
+    splitCount?: number
+    personId?: string
+    parentId?: string
+  }) {
+    const created = await $fetch<CatalogImage>('/api/images/from-url', { method: 'POST', body: data })
+    if (currentEvent.value?.locations) {
+      for (const loc of currentEvent.value.locations) {
+        const booth = loc.booths?.find(b => b.id === data.boothId)
+        if (booth) booth.images = [...(booth.images ?? []), created]
+      }
+    }
+    return created
+  }
+
   async function moveImage(id: string, fromBoothId: string, toBoothId: string) {
     await $fetch(`/api/images/${id}/move`, { method: 'POST', body: { boothId: toBoothId } })
     if (!currentEvent.value?.locations) return
@@ -449,6 +469,7 @@ export const useEventsStore = defineStore('events', () => {
     updateImage,
     deleteImage,
     uploadSubImage,
+    createImageFromUrl,
     replaceImage,
     moveImage,
     getItemStats,
