@@ -23,6 +23,11 @@ WORKDIR /app
 
 COPY --from=builder /app/.output ./.output
 
+# Maintenance scripts (admin password reset, etc.). Run them with
+# `docker compose exec -w /app/.output/server merch-tracker node /app/scripts/<name>.mjs`
+# so Node resolves bundled deps (better-sqlite3) from the .output runtime.
+COPY scripts ./scripts
+
 # Pre-create the directories that will be bind-mounted at runtime so Docker
 # doesn't create them as root-owned directories before the mount happens.
 RUN mkdir -p /app/uploads /app/data
