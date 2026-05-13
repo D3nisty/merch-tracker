@@ -11,6 +11,8 @@ const authStore = useAuthStore()
 const { t } = useLocale()
 const router = useRouter()
 
+useHead({ title: 'Users' })
+
 const users = ref<AdminUser[]>([])
 const loading = ref(false)
 const error = ref('')

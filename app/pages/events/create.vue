@@ -6,6 +6,8 @@ const store = useEventsStore()
 const router = useRouter()
 const { t } = useLocale()
 
+useHead({ title: 'New event' })
+
 const form = reactive({
   name: '',
   type: 'convention' as 'convention' | 'travel',

@@ -11,6 +11,8 @@ const authStore = useAuthStore()
 const { t } = useLocale()
 const router = useRouter()
 
+useHead({ title: 'Groups' })
+
 const groups = ref<Group[]>([])
 const allUsers = ref<BasicUser[]>([])
 const loading = ref(false)

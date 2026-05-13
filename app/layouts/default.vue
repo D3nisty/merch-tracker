@@ -119,9 +119,10 @@ const COLOR_MAP: Record<string, string> = {
             <span class="hidden sm:inline">{{ t('nav.login') }}</span>
           </NuxtLink>
 
-          <NuxtLink to="/" class="flex items-center gap-2 font-bold text-lg text-white hover:text-purple-400 transition-colors">
+          <!-- Brand: desktop only. On mobile the Home button on the right handles "go home". -->
+          <NuxtLink to="/" class="hidden sm:flex items-center gap-2 font-bold text-lg text-white hover:text-purple-400 transition-colors">
             <UIcon name="i-heroicons-shopping-bag" class="w-6 h-6 text-purple-400" />
-            <span class="hidden sm:inline">MerchTracker</span>
+            <span>MerchTracker</span>
           </NuxtLink>
         </div>
 

@@ -8,6 +8,8 @@ const authStore = useAuthStore()
 const { t } = useLocale()
 const router = useRouter()
 
+useHead({ title: 'Account' })
+
 const currentPassword = ref('')
 const newPassword = ref('')
 const error = ref('')

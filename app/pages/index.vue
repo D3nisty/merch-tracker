@@ -8,6 +8,8 @@ const authStore = useAuthStore()
 const { t } = useLocale()
 await store.fetchEvents()
 
+useHead({ title: 'Events' })
+
 const conventionEvents = computed(() => store.events.filter(e => e.type === 'convention'))
 const travelEvents = computed(() => store.events.filter(e => e.type === 'travel'))
 

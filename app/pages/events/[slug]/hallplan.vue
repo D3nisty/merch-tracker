@@ -9,6 +9,8 @@ const store = useEventsStore()
 const authStore = useAuthStore()
 const { t } = useLocale()
 
+useHead({ title: () => store.currentEvent?.name ? `Hall plan — ${store.currentEvent.name}` : 'Hall plan' })
+
 // ── Booth editing ──────────────────────────────────────────────────────
 const editingBooth = ref(false)
 const editForm = reactive({ name: '', boothNr: '', hallNr: '', website: '', notes: '' })

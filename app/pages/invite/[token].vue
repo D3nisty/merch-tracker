@@ -12,6 +12,8 @@ const store = useEventsStore()
 const authStore = useAuthStore()
 const { t } = useLocale()
 
+useHead({ title: 'Invite' })
+
 const token = computed(() => String(route.params.token))
 
 const intro = ref<InviteIntrospection | null>(null)

@@ -9,6 +9,8 @@ const { t } = useLocale()
 const router = useRouter()
 const route = useRoute()
 
+useHead({ title: 'Sign in' })
+
 const username = ref('')
 const password = ref('')
 const error = ref('')

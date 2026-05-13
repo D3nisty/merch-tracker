@@ -29,6 +29,8 @@ if (!booth.value) {
   throw createError({ statusCode: 404, message: 'Booth not found' })
 }
 
+useHead({ title: () => booth.value?.name ?? 'Booth' })
+
 const showAddProduct = ref(false)
 const showUploadImage = ref(false)
 const selectedImageId = ref<string | null>(null)

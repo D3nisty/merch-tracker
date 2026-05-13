@@ -18,6 +18,8 @@ if (!event.value) {
   throw createError({ statusCode: 404, message: 'Event not found' })
 }
 
+useHead({ title: () => event.value?.name ?? 'Event' })
+
 const showAddLocation = ref(false)
 const showEditEvent = ref(false)
 const showShareEvent = ref(false)
