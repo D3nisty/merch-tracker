@@ -135,11 +135,11 @@ npm run reset-admin                  # writes to ./data/merch-tracker.db via the
 docker compose start merch-tracker
 ```
 
-Docker (host has no Node — run the script inside the container, which has Node + the bundled better-sqlite3):
+Docker (host has no Node — run the script inside the container):
 
 ```bash
-docker compose up -d --build         # only the first time, to bake scripts/ into the image
-docker compose exec -w /app/.output/server merch-tracker \
+docker compose up -d --build         # rebuild once to bake scripts/ and better-sqlite3 into the image
+docker compose exec merch-tracker \
   node /app/scripts/reset-admin.mjs /app/data/merch-tracker.db
 ```
 

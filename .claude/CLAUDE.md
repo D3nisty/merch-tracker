@@ -132,7 +132,7 @@ All IDs are UUIDs. SQLite with WAL mode + foreign keys enabled.
 
 **Reset admin password without losing data**: `npm run reset-admin` (script in [`scripts/reset-admin.mjs`](../scripts/reset-admin.mjs)) — rewrites the admin user's password hash from `ADMIN_DEFAULT_*` env vars and clears all sessions. Operates directly on the SQLite file, so for Docker either:
 - Stop the container first (`docker compose stop merch-tracker`) and run from the host, OR
-- Run inside the container (the Dockerfile bakes in `scripts/`): `docker compose exec -w /app/.output/server merch-tracker node /app/scripts/reset-admin.mjs /app/data/merch-tracker.db` — the `-w` flag puts cwd where the bundled `better-sqlite3` lives so the script can resolve it.
+- Run inside the container (the Dockerfile bakes in `scripts/` and installs `better-sqlite3` at `/app/node_modules` for this purpose): `docker compose exec merch-tracker node /app/scripts/reset-admin.mjs /app/data/merch-tracker.db`.
 
 ## Key Features
 - **Hall Plan**: Upload a floor plan image, click to place booths as percentage-positioned overlays. Drag to reposition. Color-coded by purchase status.

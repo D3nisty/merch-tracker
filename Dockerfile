@@ -23,10 +23,13 @@ WORKDIR /app
 
 COPY --from=builder /app/.output ./.output
 
-# Maintenance scripts (admin password reset, etc.). Run them with
-# `docker compose exec -w /app/.output/server merch-tracker node /app/scripts/<name>.mjs`
-# so Node resolves bundled deps (better-sqlite3) from the .output runtime.
+# Maintenance scripts (admin password reset, etc.). They import `better-sqlite3`
+# as a normal package so we install it at /app/node_modules — separate from
+# the bundled deps in .output. Native binding is compiled here against this
+# stage's Node version.
 COPY scripts ./scripts
+RUN npm init -y >/dev/null 2>&1 \
+ && npm install better-sqlite3 --omit=dev --no-fund --no-audit --no-package-lock --silent
 
 # Pre-create the directories that will be bind-mounted at runtime so Docker
 # doesn't create them as root-owned directories before the mount happens.
