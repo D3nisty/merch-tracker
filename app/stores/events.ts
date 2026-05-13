@@ -8,6 +8,8 @@ export interface Event {
   date: string | null
   location: string | null
   description: string | null
+  isPublic: boolean
+  ownerId: string | null
   createdAt: string
   updatedAt: string
   locationCount?: number
@@ -15,6 +17,71 @@ export interface Event {
   totalProducts?: number
   purchasedProducts?: number
   locations?: Location[]
+}
+
+export interface AdminUser {
+  id: string
+  username: string
+  role: 'admin' | 'editor' | 'user'
+  createdAt: string
+}
+
+export interface BasicUser {
+  id: string
+  username: string
+  role: 'admin' | 'editor' | 'user'
+}
+
+export interface Group {
+  id: string
+  name: string
+  ownerId: string | null
+  createdAt: string
+  memberCount: number
+}
+
+export interface GroupMember {
+  id: string
+  userId: string
+  username: string
+  role: 'admin' | 'editor' | 'user'
+  createdAt: string
+}
+
+export interface EventUserShare {
+  id: string
+  level: 'view' | 'edit'
+  createdAt: string
+  userId: string
+  username: string
+}
+
+export interface EventGroupShare {
+  id: string
+  level: 'view' | 'edit'
+  createdAt: string
+  groupId: string
+  groupName: string
+}
+
+export interface EventShares {
+  users: EventUserShare[]
+  groups: EventGroupShare[]
+}
+
+export interface EventInvite {
+  id: string
+  eventId: string
+  token: string
+  level: 'view' | 'edit'
+  createdBy: string | null
+  createdAt: string
+  expiresAt: string | null
+}
+
+export interface InviteIntrospection {
+  level: 'view' | 'edit'
+  event: { id: string; slug: string | null; name: string; type: 'convention' | 'travel'; location: string | null }
 }
 
 export interface DetectedBooth {
@@ -92,6 +159,7 @@ export interface Product {
   boothId: string
   catalogImageId: string | null
   personId: string | null
+  ownerId: string | null
   name: string
   description: string | null
   price: number | null
@@ -443,9 +511,102 @@ export const useEventsStore = defineStore('events', () => {
     return map
   }
 
-  // Keep old names pointing to article-aware versions for backwards compat
-  function getTotalCostByCurrency() { return getPlannedCostByCurrency() }
-  function getPurchasedCostByCurrency() { return getPaidCostByCurrency() }
+  // ── Sharing / groups / admin users ─────────────────────────────────────
+  async function fetchUsers(): Promise<BasicUser[]> {
+    return await $fetch<BasicUser[]>('/api/users')
+  }
+
+  async function fetchEventShares(eventIdOrSlug: string): Promise<EventShares> {
+    return await $fetch<EventShares>(`/api/events/${eventIdOrSlug}/shares`)
+  }
+
+  async function shareEventWithUser(eventIdOrSlug: string, userId: string, level: 'view' | 'edit') {
+    return await $fetch(`/api/events/${eventIdOrSlug}/shares`, {
+      method: 'POST',
+      body: { userId, level },
+    })
+  }
+
+  async function shareEventWithGroup(eventIdOrSlug: string, groupId: string, level: 'view' | 'edit') {
+    return await $fetch(`/api/events/${eventIdOrSlug}/shares`, {
+      method: 'POST',
+      body: { groupId, level },
+    })
+  }
+
+  async function removeShare(eventIdOrSlug: string, shareId: string) {
+    return await $fetch(`/api/events/${eventIdOrSlug}/shares/${shareId}`, { method: 'DELETE' })
+  }
+
+  async function fetchEventInvites(eventIdOrSlug: string): Promise<EventInvite[]> {
+    return await $fetch<EventInvite[]>(`/api/events/${eventIdOrSlug}/invites`)
+  }
+
+  async function createInvite(eventIdOrSlug: string, level: 'view' | 'edit', expiresInHours?: number): Promise<EventInvite> {
+    return await $fetch<EventInvite>(`/api/events/${eventIdOrSlug}/invites`, {
+      method: 'POST',
+      body: { level, expiresInHours },
+    })
+  }
+
+  async function revokeInvite(eventIdOrSlug: string, inviteId: string) {
+    return await $fetch(`/api/events/${eventIdOrSlug}/invites/${inviteId}`, { method: 'DELETE' })
+  }
+
+  async function introspectInvite(token: string): Promise<InviteIntrospection> {
+    return await $fetch<InviteIntrospection>(`/api/invites/${token}`)
+  }
+
+  async function acceptInvite(token: string, body?: { username?: string; password?: string }) {
+    return await $fetch<{ eventId: string; level: 'view' | 'edit'; user: BasicUser }>(`/api/invites/${token}/accept`, {
+      method: 'POST',
+      body: body ?? {},
+    })
+  }
+
+  async function fetchGroups(): Promise<Group[]> {
+    return await $fetch<Group[]>('/api/groups')
+  }
+
+  async function createGroup(name: string): Promise<Group> {
+    return await $fetch<Group>('/api/groups', { method: 'POST', body: { name } })
+  }
+
+  async function updateGroup(id: string, name: string): Promise<Group> {
+    return await $fetch<Group>(`/api/groups/${id}`, { method: 'PUT', body: { name } })
+  }
+
+  async function deleteGroup(id: string) {
+    return await $fetch(`/api/groups/${id}`, { method: 'DELETE' })
+  }
+
+  async function fetchGroupMembers(groupId: string): Promise<GroupMember[]> {
+    return await $fetch<GroupMember[]>(`/api/groups/${groupId}/members`)
+  }
+
+  async function addGroupMember(groupId: string, userId: string) {
+    return await $fetch(`/api/groups/${groupId}/members`, { method: 'POST', body: { userId } })
+  }
+
+  async function removeGroupMember(groupId: string, memberId: string) {
+    return await $fetch(`/api/groups/${groupId}/members/${memberId}`, { method: 'DELETE' })
+  }
+
+  async function fetchAdminUsers(): Promise<AdminUser[]> {
+    return await $fetch<AdminUser[]>('/api/admin/users')
+  }
+
+  async function createAdminUser(data: { username: string; password: string; role?: 'admin' | 'editor' | 'user' }): Promise<AdminUser> {
+    return await $fetch<AdminUser>('/api/admin/users', { method: 'POST', body: data })
+  }
+
+  async function updateAdminUser(id: string, data: { role?: 'admin' | 'editor' | 'user'; password?: string }) {
+    return await $fetch(`/api/admin/users/${id}`, { method: 'PUT', body: data })
+  }
+
+  async function deleteAdminUser(id: string) {
+    return await $fetch(`/api/admin/users/${id}`, { method: 'DELETE' })
+  }
 
   return {
     events,
@@ -475,7 +636,26 @@ export const useEventsStore = defineStore('events', () => {
     getItemStats,
     getPlannedCostByCurrency,
     getPaidCostByCurrency,
-    getTotalCostByCurrency,
-    getPurchasedCostByCurrency,
+    fetchUsers,
+    fetchEventShares,
+    shareEventWithUser,
+    shareEventWithGroup,
+    removeShare,
+    fetchEventInvites,
+    createInvite,
+    revokeInvite,
+    introspectInvite,
+    acceptInvite,
+    fetchGroups,
+    createGroup,
+    updateGroup,
+    deleteGroup,
+    fetchGroupMembers,
+    addGroupMember,
+    removeGroupMember,
+    fetchAdminUsers,
+    createAdminUser,
+    updateAdminUser,
+    deleteAdminUser,
   }
 })

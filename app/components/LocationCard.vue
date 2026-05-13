@@ -82,16 +82,16 @@ function formatDateRange(from: string | null, to: string | null) {
 <template>
   <UCard>
     <template #header>
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-3 cursor-pointer" @click="expanded = !expanded">
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex items-center gap-3 cursor-pointer min-w-0 flex-1" @click="expanded = !expanded">
           <UIcon
             :name="expanded ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'"
-            class="w-4 h-4 text-gray-400"
+            class="w-4 h-4 text-gray-400 shrink-0"
           />
-          <div>
-            <div class="flex items-center gap-2">
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2 flex-wrap">
               <UBadge :label="typeLabel" variant="soft" color="gray" size="xs" />
-              <span class="font-semibold text-white">{{ location.name }}</span>
+              <span class="font-semibold text-white break-words">{{ location.name }}</span>
             </div>
             <div class="text-xs text-gray-400 mt-0.5 flex items-center gap-2 flex-wrap">
               <span>
@@ -117,17 +117,17 @@ function formatDateRange(from: string | null, to: string | null) {
               </template>
             </div>
             <!-- Inline date editor -->
-            <div v-if="editingDates" class="flex items-center gap-2 mt-2" @click.stop>
-              <UInput v-model="dateForm.dateFrom" type="date" size="xs" class="w-36" />
+            <div v-if="editingDates" class="flex items-center gap-2 mt-2 flex-wrap" @click.stop>
+              <UInput v-model="dateForm.dateFrom" type="date" size="xs" class="w-32 sm:w-36" />
               <span class="text-gray-500 text-xs">–</span>
-              <UInput v-model="dateForm.dateTo" type="date" size="xs" class="w-36" />
+              <UInput v-model="dateForm.dateTo" type="date" size="xs" class="w-32 sm:w-36" />
               <UButton size="xs" color="purple" @click.stop="saveDates">{{ t('common.save') }}</UButton>
               <UButton size="xs" color="gray" variant="ghost" @click.stop="editingDates = false">✕</UButton>
             </div>
           </div>
         </div>
 
-        <div class="flex items-center gap-1">
+        <div class="flex items-center gap-1 shrink-0">
           <UButton
             v-if="eventType === 'convention'"
             icon="i-heroicons-map"

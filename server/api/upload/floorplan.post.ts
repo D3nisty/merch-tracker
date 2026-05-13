@@ -4,10 +4,9 @@ import { useDb } from '../../db'
 import { locations } from '../../db/schema'
 import { eq } from 'drizzle-orm'
 import { generateId } from '../../utils/id'
-import { requireRole } from '../../utils/auth'
+import { requireEventEdit, eventIdForLocation } from '../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
-  await requireRole(event, ['admin', 'editor'])
   const formData = await readMultipartFormData(event)
   if (!formData) throw createError({ statusCode: 400, message: 'No form data' })
 
@@ -19,6 +18,9 @@ export default defineEventHandler(async (event) => {
   }
 
   const locationId = locationIdField.data.toString()
+  const eventId = await eventIdForLocation(locationId)
+  if (!eventId) throw createError({ statusCode: 404, message: 'Location not found' })
+  await requireEventEdit(event, eventId)
   const db = useDb()
 
   const existing = db.select().from(locations).where(eq(locations.id, locationId)).get()

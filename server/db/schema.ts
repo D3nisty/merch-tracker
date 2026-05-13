@@ -15,6 +15,46 @@ export const sessions = sqliteTable('sessions', {
   createdAt: text('created_at').notNull(),
 })
 
+export const groups = sqliteTable('groups', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  ownerId: text('owner_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: text('created_at').notNull(),
+})
+
+export const groupMembers = sqliteTable('group_members', {
+  id: text('id').primaryKey(),
+  groupId: text('group_id').notNull().references(() => groups.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: text('created_at').notNull(),
+})
+
+export const eventShares = sqliteTable('event_shares', {
+  id: text('id').primaryKey(),
+  eventId: text('event_id').notNull(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  level: text('level', { enum: ['view', 'edit'] }).notNull().default('view'),
+  createdAt: text('created_at').notNull(),
+})
+
+export const eventGroupShares = sqliteTable('event_group_shares', {
+  id: text('id').primaryKey(),
+  eventId: text('event_id').notNull(),
+  groupId: text('group_id').notNull().references(() => groups.id, { onDelete: 'cascade' }),
+  level: text('level', { enum: ['view', 'edit'] }).notNull().default('view'),
+  createdAt: text('created_at').notNull(),
+})
+
+export const eventInvites = sqliteTable('event_invites', {
+  id: text('id').primaryKey(),
+  eventId: text('event_id').notNull(),
+  token: text('token').notNull().unique(),
+  level: text('level', { enum: ['view', 'edit'] }).notNull().default('view'),
+  createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: text('created_at').notNull(),
+  expiresAt: text('expires_at'),
+})
+
 export const persons = sqliteTable('persons', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
@@ -30,6 +70,8 @@ export const events = sqliteTable('events', {
   date: text('date'),
   location: text('location'),
   description: text('description'),
+  isPublic: integer('is_public', { mode: 'boolean' }).notNull().default(false),
+  ownerId: text('owner_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 })
@@ -112,6 +154,7 @@ export const products = sqliteTable('products', {
   website: text('website'),
   // Region within catalog image (percentage 0-100)
   personId: text('person_id').references(() => persons.id, { onDelete: 'set null' }),
+  ownerId: text('owner_id').references(() => users.id, { onDelete: 'set null' }),
   regionX: real('region_x'),
   regionY: real('region_y'),
   regionW: real('region_w'),
@@ -124,6 +167,15 @@ export type User = typeof users.$inferSelect
 export type NewUser = typeof users.$inferInsert
 export type Session = typeof sessions.$inferSelect
 export type NewSession = typeof sessions.$inferInsert
+export type Group = typeof groups.$inferSelect
+export type NewGroup = typeof groups.$inferInsert
+export type GroupMember = typeof groupMembers.$inferSelect
+export type EventShare = typeof eventShares.$inferSelect
+export type NewEventShare = typeof eventShares.$inferInsert
+export type EventGroupShare = typeof eventGroupShares.$inferSelect
+export type NewEventGroupShare = typeof eventGroupShares.$inferInsert
+export type EventInvite = typeof eventInvites.$inferSelect
+export type NewEventInvite = typeof eventInvites.$inferInsert
 export type Person = typeof persons.$inferSelect
 export type NewPerson = typeof persons.$inferInsert
 export type BoothPricePreset = typeof boothPricePresets.$inferSelect

@@ -2,7 +2,7 @@ import { useDb } from '../../db'
 import { catalogImages } from '../../db/schema'
 import { eq, max } from 'drizzle-orm'
 import { generateId, now } from '../../utils/id'
-import { requireRole } from '../../utils/auth'
+import { requireEventEdit, eventIdForBooth } from '../../utils/permissions'
 
 /**
  * Create a catalog image record that points at an external URL instead of an
@@ -10,7 +10,6 @@ import { requireRole } from '../../utils/auth'
  * directly. `filename` stays empty so it's clear nothing local is owned.
  */
 export default defineEventHandler(async (event) => {
-  await requireRole(event, ['admin', 'editor'])
   const body = await readBody(event)
 
   if (!body.boothId || !body.url) {
@@ -19,6 +18,10 @@ export default defineEventHandler(async (event) => {
   if (!/^https?:\/\/.+/i.test(String(body.url))) {
     throw createError({ statusCode: 400, message: 'url must start with http:// or https://' })
   }
+
+  const eventId = await eventIdForBooth(String(body.boothId))
+  if (!eventId) throw createError({ statusCode: 404, message: 'Booth not found' })
+  await requireEventEdit(event, eventId)
 
   const db = useDb()
 

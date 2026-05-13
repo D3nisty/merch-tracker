@@ -1,16 +1,19 @@
 import { useDb } from '../../db'
 import { booths } from '../../db/schema'
 import { eq } from 'drizzle-orm'
-import { requireRole } from '../../utils/auth'
+import { requireEventEdit, eventIdForBooth } from '../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
-  await requireRole(event, ['admin', 'editor'])
   const id = getRouterParam(event, 'id')!
-  const body = await readBody(event)
   const db = useDb()
 
   const existing = db.select().from(booths).where(eq(booths.id, id)).get()
   if (!existing) throw createError({ statusCode: 404, message: 'Booth not found' })
+
+  const eventId = await eventIdForBooth(existing.id)
+  if (!eventId) throw createError({ statusCode: 404, message: 'Booth not found' })
+  await requireEventEdit(event, eventId)
+  const body = await readBody(event)
 
   const updated = {
     name: body.name ?? existing.name,

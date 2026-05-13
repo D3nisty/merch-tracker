@@ -1,12 +1,15 @@
 import { useDb } from '../../db'
 import { boothPricePresets } from '../../db/schema'
 import { generateId, now } from '../../utils/id'
-import { requireRole } from '../../utils/auth'
+import { requireEventEdit, eventIdForBooth } from '../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
-  await requireRole(event, ['admin', 'editor'])
   const body = await readBody(event)
   if (!body.boothId || !body.label) throw createError({ statusCode: 400, message: 'boothId and label are required' })
+
+  const eventId = await eventIdForBooth(String(body.boothId))
+  if (!eventId) throw createError({ statusCode: 404, message: 'Booth not found' })
+  await requireEventEdit(event, eventId)
 
   const db = useDb()
   const preset = {

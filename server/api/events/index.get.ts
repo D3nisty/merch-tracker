@@ -1,12 +1,37 @@
 import { useDb } from '../../db'
 import { events, locations, booths, products } from '../../db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
+import { getOptionalUser } from '../../utils/auth'
+import { accessibleEventIds } from '../../utils/permissions'
 
-export default defineEventHandler(async () => {
+export default defineEventHandler(async (event) => {
   const db = useDb()
+  const user = await getOptionalUser(event)
+  const allowedIds = await accessibleEventIds(user)
 
-  const allEvents = db
-    .select({
+  const baseSelect = db.select({
+    id: events.id,
+    slug: events.slug,
+    name: events.name,
+    type: events.type,
+    date: events.date,
+    location: events.location,
+    description: events.description,
+    isPublic: events.isPublic,
+    ownerId: events.ownerId,
+    createdAt: events.createdAt,
+    updatedAt: events.updatedAt,
+  }).from(events).orderBy(events.createdAt)
+
+  // allowedIds === null means "admin, no filter". Otherwise an empty array means
+  // the user can see nothing — short-circuit to skip the IN () empty-set quirk.
+  let allEvents
+  if (allowedIds === null) {
+    allEvents = baseSelect.all()
+  } else if (allowedIds.length === 0) {
+    return []
+  } else {
+    allEvents = db.select({
       id: events.id,
       slug: events.slug,
       name: events.name,
@@ -14,16 +39,16 @@ export default defineEventHandler(async () => {
       date: events.date,
       location: events.location,
       description: events.description,
+      isPublic: events.isPublic,
+      ownerId: events.ownerId,
       createdAt: events.createdAt,
       updatedAt: events.updatedAt,
-    })
-    .from(events)
-    .orderBy(events.createdAt)
-    .all()
+    }).from(events).where(inArray(events.id, allowedIds)).orderBy(events.createdAt).all()
+  }
 
   // Attach summary counts for each event
-  return allEvents.map((event) => {
-    const eventLocations = db.select({ id: locations.id }).from(locations).where(eq(locations.eventId, event.id)).all()
+  return allEvents.map((ev) => {
+    const eventLocations = db.select({ id: locations.id }).from(locations).where(eq(locations.eventId, ev.id)).all()
     const locationIds = eventLocations.map(l => l.id)
 
     let locationCount = locationIds.length
@@ -42,7 +67,7 @@ export default defineEventHandler(async () => {
     }
 
     return {
-      ...event,
+      ...ev,
       locationCount,
       boothCount,
       totalProducts,

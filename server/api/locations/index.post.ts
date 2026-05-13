@@ -1,11 +1,11 @@
 import { useDb } from '../../db'
 import { locations } from '../../db/schema'
 import { generateId, now } from '../../utils/id'
-import { requireRole } from '../../utils/auth'
+import { requireEventEdit } from '../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
-  await requireRole(event, ['admin', 'editor'])
   const body = await readBody(event)
+  if (body.eventId) await requireEventEdit(event, body.eventId)
 
   if (!body.eventId || !body.name || !body.type) {
     throw createError({ statusCode: 400, message: 'eventId, name and type are required' })

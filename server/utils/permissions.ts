@@ -1,0 +1,204 @@
+import type { H3Event } from 'h3'
+import { createError } from 'h3'
+import { eq, and, inArray } from 'drizzle-orm'
+import { useDb } from '../db'
+import {
+  events,
+  locations,
+  booths,
+  catalogImages,
+  products,
+  boothPricePresets,
+  eventShares,
+  eventGroupShares,
+  groupMembers,
+  type User,
+} from '../db/schema'
+import { requireUser } from './auth'
+
+/**
+ * Event-level access model
+ * ───────────────────────────────────────────────────────────────────────────
+ * View (`canViewEvent`):
+ *   - admin role
+ *   - event.isPublic
+ *   - event.ownerId === user.id
+ *   - direct user share (any level)
+ *   - share via any group the user belongs to (any level)
+ *
+ * Edit (`canEditEvent`):
+ *   - admin role
+ *   - editor role (legacy "global editor", treated as admin for content)
+ *   - event.ownerId === user.id
+ *   - direct user share with level='edit'
+ *   - share via any group the user belongs to with level='edit'
+ *
+ * Nested resources (locations, booths, products, images, presets) inherit from
+ * their parent event — `*ForResource` helpers walk up the FK chain to find it.
+ */
+
+type EventLike = { id: string; isPublic: boolean; ownerId: string | null }
+
+async function findEvent(eventId: string): Promise<EventLike | null> {
+  const db = useDb()
+  const row = await db
+    .select({ id: events.id, isPublic: events.isPublic, ownerId: events.ownerId })
+    .from(events)
+    .where(eq(events.id, eventId))
+    .get()
+  return row ?? null
+}
+
+async function userGroupIds(userId: string): Promise<string[]> {
+  const db = useDb()
+  const rows = await db.select({ groupId: groupMembers.groupId }).from(groupMembers).where(eq(groupMembers.userId, userId)).all()
+  return rows.map(r => r.groupId)
+}
+
+async function shareLevel(eventId: string, user: User): Promise<'view' | 'edit' | null> {
+  const db = useDb()
+  const levels: ('view' | 'edit')[] = []
+
+  const direct = await db.select({ level: eventShares.level })
+    .from(eventShares)
+    .where(and(eq(eventShares.eventId, eventId), eq(eventShares.userId, user.id)))
+    .get()
+  if (direct) levels.push(direct.level)
+
+  const groupIds = await userGroupIds(user.id)
+  if (groupIds.length > 0) {
+    const groupRows = await db.select({ level: eventGroupShares.level })
+      .from(eventGroupShares)
+      .where(and(eq(eventGroupShares.eventId, eventId), inArray(eventGroupShares.groupId, groupIds)))
+      .all()
+    for (const r of groupRows) levels.push(r.level)
+  }
+
+  if (levels.includes('edit')) return 'edit'
+  if (levels.includes('view')) return 'view'
+  return null
+}
+
+export async function canViewEvent(user: User | null, eventId: string): Promise<boolean> {
+  const evt = await findEvent(eventId)
+  if (!evt) return false
+  if (evt.isPublic) return true
+  if (!user) return false
+  if (user.role === 'admin') return true
+  if (evt.ownerId === user.id) return true
+  const level = await shareLevel(eventId, user)
+  return level !== null
+}
+
+export async function canEditEvent(user: User | null, eventId: string): Promise<boolean> {
+  if (!user) return false
+  if (user.role === 'admin' || user.role === 'editor') return true
+  const evt = await findEvent(eventId)
+  if (!evt) return false
+  if (evt.ownerId === user.id) return true
+  const level = await shareLevel(eventId, user)
+  return level === 'edit'
+}
+
+export async function requireEventView(event: H3Event, eventId: string): Promise<User | null> {
+  const evt = await findEvent(eventId)
+  if (!evt) throw createError({ statusCode: 404, message: 'Event not found' })
+  if (evt.isPublic) {
+    // Guests allowed; return user if logged in
+    try { return await requireUser(event) } catch { return null }
+  }
+  const user = await requireUser(event)
+  const ok = await canViewEvent(user, eventId)
+  if (!ok) throw createError({ statusCode: 403, message: 'Forbidden' })
+  return user
+}
+
+export async function requireEventEdit(event: H3Event, eventId: string): Promise<User> {
+  const user = await requireUser(event)
+  const ok = await canEditEvent(user, eventId)
+  if (!ok) throw createError({ statusCode: 403, message: 'Forbidden' })
+  return user
+}
+
+// ── Resource → event lookup helpers ─────────────────────────────────────────
+// Each returns the eventId that owns the given resource, or null if the
+// resource doesn't exist. Used by mutation endpoints to gate access.
+
+export async function eventIdForLocation(locationId: string): Promise<string | null> {
+  const db = useDb()
+  const row = await db.select({ eventId: locations.eventId }).from(locations).where(eq(locations.id, locationId)).get()
+  return row?.eventId ?? null
+}
+
+export async function eventIdForBooth(boothId: string): Promise<string | null> {
+  const db = useDb()
+  const row = await db
+    .select({ eventId: locations.eventId })
+    .from(booths)
+    .innerJoin(locations, eq(booths.locationId, locations.id))
+    .where(eq(booths.id, boothId))
+    .get()
+  return row?.eventId ?? null
+}
+
+export async function eventIdForImage(imageId: string): Promise<string | null> {
+  const db = useDb()
+  const row = await db
+    .select({ eventId: locations.eventId })
+    .from(catalogImages)
+    .innerJoin(booths, eq(catalogImages.boothId, booths.id))
+    .innerJoin(locations, eq(booths.locationId, locations.id))
+    .where(eq(catalogImages.id, imageId))
+    .get()
+  return row?.eventId ?? null
+}
+
+export async function eventIdForProduct(productId: string): Promise<string | null> {
+  const db = useDb()
+  const row = await db
+    .select({ eventId: locations.eventId })
+    .from(products)
+    .innerJoin(booths, eq(products.boothId, booths.id))
+    .innerJoin(locations, eq(booths.locationId, locations.id))
+    .where(eq(products.id, productId))
+    .get()
+  return row?.eventId ?? null
+}
+
+export async function eventIdForPreset(presetId: string): Promise<string | null> {
+  const db = useDb()
+  const row = await db
+    .select({ eventId: locations.eventId })
+    .from(boothPricePresets)
+    .innerJoin(booths, eq(boothPricePresets.boothId, booths.id))
+    .innerJoin(locations, eq(booths.locationId, locations.id))
+    .where(eq(boothPricePresets.id, presetId))
+    .get()
+  return row?.eventId ?? null
+}
+
+// ── List filtering ──────────────────────────────────────────────────────────
+// Returns the set of event IDs the given user can view. Used by GET /api/events.
+// For admins, returns null (meaning "no filter, see all"). For nulls users
+// (logged out), returns only public events.
+
+export async function accessibleEventIds(user: User | null): Promise<string[] | null> {
+  const db = useDb()
+  if (user?.role === 'admin') return null
+  const publicRows = await db.select({ id: events.id }).from(events).where(eq(events.isPublic, true)).all()
+  const ids = new Set<string>(publicRows.map(r => r.id))
+  if (!user) return Array.from(ids)
+  // Owned
+  const ownedRows = await db.select({ id: events.id }).from(events).where(eq(events.ownerId, user.id)).all()
+  for (const r of ownedRows) ids.add(r.id)
+  // Direct shares
+  const directRows = await db.select({ id: eventShares.eventId }).from(eventShares).where(eq(eventShares.userId, user.id)).all()
+  for (const r of directRows) ids.add(r.id)
+  // Group shares
+  const groupIds = await userGroupIds(user.id)
+  if (groupIds.length > 0) {
+    const groupRows = await db.select({ id: eventGroupShares.eventId }).from(eventGroupShares).where(inArray(eventGroupShares.groupId, groupIds)).all()
+    for (const r of groupRows) ids.add(r.id)
+  }
+  return Array.from(ids)
+}

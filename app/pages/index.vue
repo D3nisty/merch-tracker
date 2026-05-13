@@ -29,12 +29,12 @@ async function handleDelete() {
 
 <template>
   <div>
-    <div class="flex items-center justify-between mb-8">
-      <div>
-        <h1 class="text-3xl font-bold text-white">{{ t('events.title') }}</h1>
+    <div class="flex items-center justify-between mb-8 gap-3 flex-wrap">
+      <div class="min-w-0">
+        <h1 class="text-2xl sm:text-3xl font-bold text-white">{{ t('events.title') }}</h1>
         <p class="text-gray-400 mt-1">{{ t('events.subtitle') }}</p>
       </div>
-      <UButton v-if="authStore.isEditing" to="/events/create" icon="i-heroicons-plus" color="purple" size="lg">
+      <UButton v-if="authStore.isLoggedIn" to="/events/create" icon="i-heroicons-plus" color="purple" size="lg">
         {{ t('nav.newEvent') }}
       </UButton>
     </div>
@@ -44,7 +44,8 @@ async function handleDelete() {
       <UIcon name="i-heroicons-shopping-bag" class="w-16 h-16 text-gray-600 mx-auto mb-4" />
       <h2 class="text-xl font-semibold text-gray-400 mb-2">{{ t('events.noEvents') }}</h2>
       <p class="text-gray-500 mb-6">{{ t('events.noEventsDesc') }}</p>
-      <UButton to="/events/create" icon="i-heroicons-plus" color="purple">{{ t('events.createEvent') }}</UButton>
+      <UButton v-if="authStore.isLoggedIn" to="/events/create" icon="i-heroicons-plus" color="purple">{{ t('events.createEvent') }}</UButton>
+      <UButton v-else to="/login" icon="i-heroicons-arrow-left-on-rectangle" color="purple">{{ t('nav.login') }}</UButton>
     </div>
 
     <!-- Conventions -->
@@ -59,8 +60,8 @@ async function handleDelete() {
       </div>
     </section>
 
-    <!-- Travel (hidden for guests) -->
-    <section v-if="travelEvents.length > 0 && authStore.isEditing">
+    <!-- Travel events (API already filters to events the caller can see) -->
+    <section v-if="travelEvents.length > 0">
       <div class="flex items-center gap-2 mb-4">
         <UIcon name="i-heroicons-map" class="w-5 h-5 text-blue-400" />
         <h2 class="text-xl font-bold text-white">{{ t('events.travel') }}</h2>

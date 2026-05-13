@@ -1317,9 +1317,11 @@ function openAddSource() {
       style="overscroll-behavior: none"
     >
       <!-- Toolbar -->
-      <div class="flex items-center gap-3 px-4 py-3 bg-gray-900 border-b border-gray-800 shrink-0">
-        <UButton icon="i-heroicons-x-mark" variant="ghost" color="gray" size="sm" @click="closeFullscreen">{{ t('common.close') }}</UButton>
-        <span class="text-white font-medium text-sm truncate">{{ displayName }}</span>
+      <div class="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 bg-gray-900 border-b border-gray-800 shrink-0 flex-wrap">
+        <UButton icon="i-heroicons-x-mark" variant="ghost" color="gray" size="sm" @click="closeFullscreen">
+          <span class="hidden sm:inline">{{ t('common.close') }}</span>
+        </UButton>
+        <span class="text-white font-medium text-sm truncate min-w-0 flex-1 sm:flex-initial">{{ displayName }}</span>
         <UBadge :label="badgeLabel" :color="badgeColor" variant="soft" size="sm" class="shrink-0" />
         <template v-if="image.imageType === 'catalog' && authStore.isEditing">
           <UButton
@@ -1335,7 +1337,7 @@ function openAddSource() {
         </span>
       </div>
 
-      <div class="flex flex-1 min-h-0 relative">
+      <div class="flex flex-col sm:flex-row flex-1 min-h-0 relative">
         <!-- Image: article gallery (fullscreen) -->
         <div v-if="image.imageType === 'article'" class="flex-1 overflow-auto bg-black divide-y divide-gray-800">
           <div class="relative group/img0">
@@ -1427,8 +1429,8 @@ function openAddSource() {
           {{ image.imageType === 'article' ? t('catalog.sources') : t('catalog.products') }}
         </button>
 
-        <!-- Right panel (full-screen) -->
-        <div v-show="showProductsPanel" class="w-96 shrink-0 flex flex-col bg-gray-900 border-l border-gray-800">
+        <!-- Right panel (full-screen). On mobile takes full width and stacks below the image. -->
+        <div v-show="showProductsPanel" class="w-full sm:w-96 shrink-0 flex flex-col bg-gray-900 border-l border-gray-800">
           <!-- CATALOG (fullscreen) -->
           <template v-if="image.imageType === 'catalog'">
             <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800">

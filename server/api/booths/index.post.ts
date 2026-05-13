@@ -2,28 +2,27 @@ import { useDb } from '../../db'
 import { booths, locations } from '../../db/schema'
 import { generateId, now, toSlug } from '../../utils/id'
 import { eq } from 'drizzle-orm'
-import { requireRole } from '../../utils/auth'
+import { requireEventEdit, eventIdForLocation } from '../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
-  await requireRole(event, ['admin', 'editor'])
   const body = await readBody(event)
 
   if (!body.locationId || !body.name) {
     throw createError({ statusCode: 400, message: 'locationId and name are required' })
   }
 
+  const eventId = await eventIdForLocation(body.locationId)
+  if (!eventId) throw createError({ statusCode: 404, message: 'Location not found' })
+  await requireEventEdit(event, eventId)
+
   const db = useDb()
   const id = generateId()
 
-  // Generate slug unique within the event
-  const location = db.select({ eventId: locations.eventId }).from(locations).where(eq(locations.id, body.locationId)).get()
-  const eventId = location?.eventId ?? ''
-  const existingSlugs = eventId
-    ? db.select({ slug: booths.slug }).from(booths)
-        .innerJoin(locations, eq(booths.locationId, locations.id))
-        .where(eq(locations.eventId, eventId)).all()
-        .map(r => r.slug ?? '')
-    : []
+  // Generate slug unique within the event (eventId already resolved above)
+  const existingSlugs = db.select({ slug: booths.slug }).from(booths)
+    .innerJoin(locations, eq(booths.locationId, locations.id))
+    .where(eq(locations.eventId, eventId)).all()
+    .map(r => r.slug ?? '')
 
   const base = toSlug(body.name)
   let slug = base

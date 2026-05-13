@@ -20,7 +20,13 @@ Plan your merch purchases for anime conventions and travel destinations. Upload 
 - **Receipt mode**: Tick off purchases against a checklist while standing at the booth
 - **Cost tracking**: Per-booth, per-event, per-currency totals
 - **User accounts**: Admin / editor / regular-user roles, scrypt-hashed passwords, httpOnly session cookies
-- **Guest view**: Browse public conventions without an account — personal info, paid status, and spent totals are hidden
+- **Public / private events**: Mark an event public for anyone-can-view, or keep it private to you and people you invite
+- **Per-event sharing**: Invite individual users or whole groups to view or edit specific events
+- **Magic-link invites**: Generate a shareable URL — the recipient signs up (or signs in) and is auto-added to the event with the level you chose
+- **Groups**: Create named groups, add members, share events with the whole group at once
+- **Per-product privacy**: Products you add to a shared event are visible only to you + the event owner + edit-share collaborators — other view-share users don't see your "wishlist" items
+- **Admin user management**: Admins can create users, change roles, reset passwords from `/admin/users`
+- **Guest view**: Browse public events without an account — personal info, paid status, and spent totals are hidden
 - **i18n**: English + German throughout
 
 ---
@@ -215,13 +221,21 @@ For deeper details — schema, auth design, file-server architecture, known quir
 
 ---
 
-## Security notes
+## Permission model
 
-Every mutation endpoint (`POST`/`PUT`/`DELETE`) requires an authenticated session with role `admin` or `editor`. Reads (`GET`) are public so guests can browse public conventions. If a session expires mid-action the client auto-redirects to `/login` with a `?redirect=` back-link.
+| Action | Who can do it |
+|---|---|
+| View a public event | Anyone, even logged out |
+| View a private event | Admin, event owner, any user who has been shared with directly, any member of a group the event is shared with, or anyone holding a valid invite link |
+| See another collaborator's products on a shared event | Only the product creator + event owner + admin + edit-share collaborators. View-only shares see the event owner's products plus their own |
+| Edit content in an event (add booths/products/upload images, mark items purchased) | Admin, `editor` role, event owner, any user with an `edit`-level share |
+| Toggle public/private, share/unshare, mint/revoke invite links, delete the event | Admin or event owner only |
+| Create a new event | Any logged-in user (they become the owner) |
+| Manage users (create/delete/change role/reset password) | Admin only — `/admin/users` |
+| Manage groups | Group owner or admin — `/admin/groups` |
+| Add/remove members of a group | Group owner or admin; members can remove themselves (leave) |
 
-Sessions are httpOnly, SameSite=Lax, 30-day TTL, and `Secure` in production. Passwords are scrypt-hashed with random per-user salts. No third-party auth service is involved.
-
-⚠️ The default role for any future user is `user`, which currently cannot mutate anything (same as a guest). Per-user ownership and per-event sharing land in the next phase.
+Sessions are httpOnly, SameSite=Lax, 30-day TTL, and `Secure` in production. Passwords are scrypt-hashed with random per-user salts. No third-party auth service is involved. If a session expires mid-action, the client auto-redirects to `/login` with a `?redirect=` back-link.
 
 ---
 

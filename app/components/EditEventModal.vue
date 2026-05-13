@@ -18,6 +18,7 @@ const form = reactive({
   date: props.event.date ?? '',
   location: props.event.location ?? '',
   description: props.event.description ?? '',
+  isPublic: props.event.isPublic ?? false,
 })
 
 watch(() => props.event, (e) => {
@@ -25,6 +26,7 @@ watch(() => props.event, (e) => {
   form.date = e.date ?? ''
   form.location = e.location ?? ''
   form.description = e.description ?? ''
+  form.isPublic = e.isPublic ?? false
 })
 
 async function handleSubmit() {
@@ -36,6 +38,7 @@ async function handleSubmit() {
       date: form.date || null,
       location: form.location || null,
       description: form.description || null,
+      isPublic: form.isPublic,
     })
     emit('update:modelValue', false)
   } finally {
@@ -64,6 +67,19 @@ async function handleSubmit() {
         <UFormGroup :label="t('common.description')">
           <UTextarea v-model="form.description" :rows="3" />
         </UFormGroup>
+
+        <!-- Public/Private toggle -->
+        <div class="flex items-start gap-3 p-3 rounded-lg border"
+          :class="form.isPublic ? 'border-green-500/40 bg-green-500/5' : 'border-gray-700 bg-gray-900'">
+          <UToggle v-model="form.isPublic" color="green" class="mt-0.5" />
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-medium text-white flex items-center gap-2">
+              <UIcon :name="form.isPublic ? 'i-heroicons-globe-alt' : 'i-heroicons-lock-closed'" class="w-4 h-4" />
+              {{ form.isPublic ? t('sharing.publicEvent') : t('sharing.private') }}
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">{{ t('sharing.publicDesc') }}</p>
+          </div>
+        </div>
       </form>
 
       <template #footer>

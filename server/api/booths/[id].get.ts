@@ -1,6 +1,7 @@
 import { useDb } from '../../db'
 import { booths, products, catalogImages } from '../../db/schema'
 import { eq } from 'drizzle-orm'
+import { requireEventView, eventIdForBooth } from '../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')!
@@ -8,6 +9,10 @@ export default defineEventHandler(async (event) => {
 
   const booth = db.select().from(booths).where(eq(booths.id, id)).get()
   if (!booth) throw createError({ statusCode: 404, message: 'Booth not found' })
+
+  const eventId = await eventIdForBooth(booth.id)
+  if (!eventId) throw createError({ statusCode: 404, message: 'Booth not found' })
+  await requireEventView(event, eventId)
 
   const boothProducts = db.select().from(products).where(eq(products.boothId, id)).all()
   const images = db

@@ -81,6 +81,23 @@ const COLOR_MAP: Record<string, string> = {
                 <UIcon name="i-heroicons-cog-6-tooth" class="w-4 h-4" />
                 {{ t('nav.account') }}
               </NuxtLink>
+              <NuxtLink
+                to="/admin/groups"
+                class="flex items-center gap-2 px-2 py-1.5 rounded text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+                @click="showUserMenu = false"
+              >
+                <UIcon name="i-heroicons-user-group" class="w-4 h-4" />
+                {{ t('nav.adminGroups') }}
+              </NuxtLink>
+              <NuxtLink
+                v-if="authStore.isAdmin"
+                to="/admin/users"
+                class="flex items-center gap-2 px-2 py-1.5 rounded text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+                @click="showUserMenu = false"
+              >
+                <UIcon name="i-heroicons-user-circle" class="w-4 h-4" />
+                {{ t('nav.adminUsers') }}
+              </NuxtLink>
               <button
                 class="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
                 @click="handleLogout"
@@ -186,7 +203,7 @@ const COLOR_MAP: Record<string, string> = {
           </UButton>
 
           <UButton
-            v-if="authStore.isEditing"
+            v-if="authStore.isLoggedIn"
             to="/events/create"
             icon="i-heroicons-plus"
             color="purple"
@@ -194,7 +211,7 @@ const COLOR_MAP: Record<string, string> = {
             class="sm:hidden"
           />
           <UButton
-            v-if="authStore.isEditing"
+            v-if="authStore.isLoggedIn"
             to="/events/create"
             icon="i-heroicons-plus"
             color="purple"

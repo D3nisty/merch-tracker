@@ -4,11 +4,15 @@ import { useDb } from '../../../db'
 import { catalogImages } from '../../../db/schema'
 import { eq } from 'drizzle-orm'
 import { generateId } from '../../../utils/id'
-import { requireRole } from '../../../utils/auth'
+import { requireEventEdit, eventIdForImage } from '../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
-  await requireRole(event, ['admin', 'editor'])
   const id = getRouterParam(event, 'id')!
+
+  const eventId = await eventIdForImage(id)
+  if (!eventId) throw createError({ statusCode: 404, message: 'Image not found' })
+  await requireEventEdit(event, eventId)
+
   const formData = await readMultipartFormData(event)
   if (!formData) throw createError({ statusCode: 400, message: 'No form data' })
 

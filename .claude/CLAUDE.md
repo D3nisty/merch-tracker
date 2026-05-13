@@ -25,6 +25,11 @@ app/
     index.vue            # Event dashboard
     login.vue            # Username + password sign-in
     account.vue          # Change password / view role
+    admin/
+      users.vue          # Admin-only: create/edit/delete users, change roles
+      groups.vue         # Group management (owner or admin per row)
+    invite/
+      [token].vue        # Magic-link landing page: introspect token, signup or accept
     events/
       create.vue         # New event form
       [slug]/
@@ -45,7 +50,8 @@ app/
     AddProductModal.vue
     UploadCatalogModal.vue
     UploadFloorPlanModal.vue
-    EditEventModal.vue
+    EditEventModal.vue       # Edit name/date/location + public/private toggle
+    ShareEventModal.vue      # Per-event sharing UI (users + groups, view/edit levels)
     LanguageSelector.vue
   composables/
     useLocale.ts            # i18n composable, en/de with typeof-enforced parity
@@ -92,12 +98,17 @@ public/uploads/      # Uploaded images when UPLOAD_DIR isn't set (auto-created, 
 |-------|---------|
 | `users` | Account records (username, scrypt-hashed password, role: admin/editor/user) |
 | `sessions` | Session tokens with `expires_at` (30-day TTL) |
+| `groups` | Named collections of users; `ownerId` is who manages it |
+| `group_members` | Many-to-many between groups and users (UNIQUE on `group_id, user_id`) |
+| `event_shares` | Per-user share of an event with `level` of `view` or `edit` |
+| `event_group_shares` | Per-group share of an event with `level` of `view` or `edit` |
+| `event_invites` | Magic-link invite tokens. Multi-use until expired/revoked; redeeming creates an `event_shares` row |
 | `persons` | Colored labels for tagging items (NOT auth subjects) |
-| `events` | Top-level events (convention or travel) |
+| `events` | Top-level events. `isPublic` flag and `ownerId` drive permissions |
 | `locations` | Halls (convention) or cities/areas (travel) |
 | `booths` | Individual vendor booths or shops, with optional map coordinates |
 | `catalog_images` | Uploaded product catalog pages per booth (catalog / article / receipt) |
-| `products` | Items to buy, with price, size, category, purchased flag, optional region overlay |
+| `products` | Items to buy, with price, size, category, purchased flag, optional region overlay, `ownerId` (creator) for visibility filtering |
 | `booth_price_presets` | Per-booth quick-fill price chips |
 
 All IDs are UUIDs. SQLite with WAL mode + foreign keys enabled.
@@ -121,12 +132,37 @@ All IDs are UUIDs. SQLite with WAL mode + foreign keys enabled.
 - Product + receipt checkboxes disabled
 - Listed prices still visible
 
-**API enforcement** (Phase 3 — done):
-- Every mutation endpoint (`POST`/`PUT`/`DELETE` under `events/`, `locations/`, `booths/`, `products/`, `persons/`, `presets/`, `images/`, `upload/`) calls `await requireRole(event, ['admin', 'editor'])` as the first line.
-- Reads (`GET`) stay public so guests can browse.
-- Auth endpoints: `login`/`logout`/`me` are public; `change-password` uses `requireUser` (any logged-in role).
-- Client-side: [`app/plugins/auth-redirect.client.ts`](../app/plugins/auth-redirect.client.ts) wraps `$fetch` to catch 401 on any mutation, clear `authStore.user`, and `navigateTo('/login?redirect=…')`. Skips redirect on `/api/auth/me` and `/api/auth/login` so they can return 401 normally.
-- **Phase 4** will add per-resource ownership (each event/product has an `ownerId`) so a `role: 'user'` account can mutate their own stuff.
+**API enforcement** (Phase 3 + Phase 4 — done):
+- **Per-event permissions** live in [`server/utils/permissions.ts`](../server/utils/permissions.ts):
+  - `canViewEvent(user, eventId)` — admin OR public OR owner OR direct share OR group share (any level)
+  - `canEditEvent(user, eventId)` — admin OR editor role OR owner OR direct share `edit` OR group share `edit`
+  - Helpers `requireEventView` / `requireEventEdit` throw 401/403/404 appropriately
+  - Resource-to-event walkers: `eventIdForLocation`, `eventIdForBooth`, `eventIdForProduct`, `eventIdForImage`, `eventIdForPreset` — every nested mutation looks up the parent event and gates on it
+  - `accessibleEventIds(user)` — used by `GET /api/events` to filter the list
+- **Event delete** + **share management** require owner-or-admin specifically (edit-shared collaborators cannot delete the event or change shares).
+- **`persons` mutations** stay on `requireRole(['admin','editor'])` — they're global tags, not per-event.
+- **Auth endpoints**: `login`/`logout`/`me` public; `change-password` uses `requireUser`.
+- **Admin endpoints**: `/api/admin/users/*` uses `requireRole(['admin'])`. Last-admin and self-demotion safety rails enforced.
+- **Sharing endpoints**: `/api/events/[id]/shares` (GET = any viewer; POST/DELETE = owner-or-admin). `/api/groups/*` membership managed by group owner or admin; members can leave their own group.
+- **Client-side 401 handler**: [`app/plugins/auth-redirect.client.ts`](../app/plugins/auth-redirect.client.ts) wraps `$fetch`, on 401 clears `authStore.user` and `navigateTo('/login?redirect=…')`. Skips `/api/auth/me` and `/api/auth/login` so they can return 401 normally.
+
+**Event creation**: any logged-in user can `POST /api/events`. They become the `ownerId` and immediately have full edit rights via the ownership rule.
+
+**Legacy events backfill**: on first boot after Phase 4, any event with `NULL` owner_id is reassigned to the first admin so it remains visible (otherwise no one would qualify under the new rules).
+
+**Per-product visibility (Phase 5)**:
+- Every `products.ownerId` is set to the creator (`requireUser` runs on `POST /api/products` after the edit check).
+- `GET /api/events/[id]` filters the returned product tree: viewers without edit access only see products where `ownerId IS NULL` (legacy), or matches `event.ownerId`, or matches the requesting user. Edit-access viewers (admin / event owner / edit-share) see everything.
+- Mutation rules unchanged: `POST/PUT/DELETE` on products still requires `requireEventEdit`. View-share users cannot yet add their own products — that's a future refinement.
+
+**Magic-link invites (Phase 5)**:
+- Stored in `event_invites`. Multi-use (anyone with the URL can redeem) until revoked or expired.
+- `POST/GET/DELETE /api/events/[id]/invites` — owner/admin only. Body `{ level, expiresInHours? }`.
+- `GET /api/invites/[token]` — public introspection so the `/invite/<token>` landing page can show event name + level before signup.
+- `POST /api/invites/[token]/accept`:
+  - Logged-in: creates (or upgrades view→edit on) an `event_shares` row.
+  - Logged-out: body provides `{ username, password }`, creates a new user with role `user`, opens a session, then shares.
+- Frontend: invite-link section in [ShareEventModal](../app/components/ShareEventModal.vue); landing page at [pages/invite/[token].vue](../app/pages/invite/[token].vue).
 
 **Default admin seed**: On first DB creation, if `users` is empty, seed an admin from `ADMIN_DEFAULT_USERNAME` (default `admin`) and `ADMIN_DEFAULT_PASSWORD`. If `ADMIN_DEFAULT_PASSWORD` is unset, a random one is generated and printed once to stdout. **Never hardcode the password in source.**
 
@@ -184,8 +220,9 @@ See [`README.md`](../README.md) for full deployment instructions.
 
 ## Roadmap
 - ~~**Phase 3** — `requireRole` middleware on every mutation endpoint.~~ Done.
-- **Phase 4** — Per-resource ownership (`ownerId` columns), `isPublic` flag on events, dashboard filtering by accessible events. Per-resource API checks (an editor can edit anything; a `user` can edit only what they own).
-- **Phase 5** — Groups + invite-link tokens (no email service needed).
+- ~~**Phase 4** — Per-event ownership + public/private + per-user + per-group sharing + admin user/group management.~~ Done.
+- ~~**Phase 5** — Magic-link invite tokens + per-product ownership with visibility filtering.~~ Done.
+- **Phase 6 candidates** — View-share users adding their own products (contribute permission level between view and edit). Per-product invitation / sharing (let a `user` invite specific people to see THEIR products on an event without exposing them globally). Email-based magic-link delivery for invites.
 
 ## Future Ideas
 - Multiple currency support with conversion rates

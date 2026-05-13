@@ -209,9 +209,9 @@ const personBreakdown = computed(() => {
         <span class="text-white">{{ booth.name }}</span>
       </div>
 
-      <div class="flex items-start justify-between">
-        <div>
-          <h1 class="text-2xl font-bold text-white">{{ booth.name }}</h1>
+      <div class="flex items-start justify-between gap-3 flex-wrap">
+        <div class="min-w-0 flex-1">
+          <h1 class="text-2xl font-bold text-white break-words">{{ booth.name }}</h1>
           <div class="flex items-center gap-3 mt-1 text-gray-400 text-sm">
             <span v-if="booth.hallNr">Hall {{ booth.hallNr }}</span>
             <span v-if="booth.boothNr">Booth {{ booth.boothNr }}</span>
@@ -245,7 +245,7 @@ const personBreakdown = computed(() => {
     </div>
 
     <!-- Action bar (edit mode only) -->
-    <div v-if="authStore.isEditing" class="flex gap-2 mb-6">
+    <div v-if="authStore.isEditing" class="flex gap-2 mb-6 flex-wrap">
       <UButton icon="i-heroicons-plus" color="purple" @click="showAddProduct = true">{{ t('booth.addProduct') }}</UButton>
       <UButton icon="i-heroicons-photo" variant="outline" color="gray" @click="showUploadImage = true">{{ t('booth.uploadImage') }}</UButton>
     </div>

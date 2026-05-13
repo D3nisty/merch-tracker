@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Reset the admin user back to ADMIN_DEFAULT_USERNAME / ADMIN_DEFAULT_PASSWORD
- * from the environment (falling back to admin / Fichs if unset).
+ * from the environment. If no password env var is set, a random one is
+ * generated and printed once so the source carries no real credential.
  *
  * Usage:
  *   node --env-file=.env scripts/reset-admin.mjs
@@ -34,7 +35,12 @@ if (!existsSync(dbPath)) {
 }
 
 const username = process.env.ADMIN_DEFAULT_USERNAME ?? 'admin'
-const password = process.env.ADMIN_DEFAULT_PASSWORD ?? 'Fichs'
+let password = process.env.ADMIN_DEFAULT_PASSWORD
+let generated = false
+if (!password) {
+  password = randomBytes(9).toString('base64url')
+  generated = true
+}
 
 const salt = randomBytes(16).toString('hex')
 const hash = scryptSync(password, salt, 64).toString('hex')
@@ -58,7 +64,7 @@ if (existing) {
   console.log(`✓ Created admin user "${username}"`)
 }
 
-console.log(`  password: ${password}`)
+console.log(`  password: ${password}${generated ? '  (auto-generated, set ADMIN_DEFAULT_PASSWORD to control)' : ''}`)
 console.log(`  sessions cleared: ${sessionsDeleted}`)
 console.log(``)
 console.log(`Now log in at /login.`)

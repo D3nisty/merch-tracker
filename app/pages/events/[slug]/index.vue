@@ -20,8 +20,13 @@ if (!event.value) {
 
 const showAddLocation = ref(false)
 const showEditEvent = ref(false)
+const showShareEvent = ref(false)
 const showDeleteLocationModal = ref(false)
 const deleteLocationId = ref<string | null>(null)
+
+const canShare = computed(() =>
+  authStore.isAdmin || event.value?.ownerId === authStore.user?.id,
+)
 
 // Totals — article-aware, filtered by selected person
 const pid = computed(() => personsStore.currentPersonId)
@@ -61,9 +66,9 @@ function locationIcon(type: Location['type']) {
         <UIcon name="i-heroicons-arrow-left" class="w-4 h-4" /> {{ t('event.allEvents') }}
       </NuxtLink>
 
-      <div class="flex items-start justify-between">
-        <div>
-          <div class="flex items-center gap-3 mb-1">
+      <div class="flex items-start justify-between gap-3 flex-wrap">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-3 mb-1 flex-wrap">
             <UBadge
               :label="event.type === 'convention' ? t('events.convention') : t('events.travelType')"
               :color="event.type === 'convention' ? 'purple' : 'blue'"
@@ -71,11 +76,29 @@ function locationIcon(type: Location['type']) {
             />
             <span v-if="event.date" class="text-gray-400 text-sm">{{ event.date }}</span>
           </div>
-          <h1 class="text-3xl font-bold text-white">{{ event.name }}</h1>
+          <h1 class="text-2xl sm:text-3xl font-bold text-white break-words">{{ event.name }}</h1>
           <p v-if="event.location" class="text-gray-400 mt-1">{{ event.location }}</p>
           <p v-if="event.description" class="text-gray-500 text-sm mt-2">{{ event.description }}</p>
         </div>
-        <div class="flex gap-2">
+        <div class="flex gap-2 items-start shrink-0 flex-wrap">
+          <UBadge
+            v-if="event.isPublic"
+            :label="t('sharing.public')"
+            color="green"
+            variant="soft"
+            size="xs"
+            icon="i-heroicons-globe-alt"
+          />
+          <UButton
+            v-if="canShare"
+            icon="i-heroicons-share"
+            variant="outline"
+            color="purple"
+            size="sm"
+            @click="showShareEvent = true"
+          >
+            {{ t('sharing.share') }}
+          </UButton>
           <UButton
             v-if="authStore.isEditing"
             icon="i-heroicons-pencil"
@@ -174,6 +197,11 @@ function locationIcon(type: Location['type']) {
 
     <EditEventModal
       v-model="showEditEvent"
+      :event="event"
+    />
+
+    <ShareEventModal
+      v-model="showShareEvent"
       :event="event"
     />
 

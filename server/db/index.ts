@@ -1,6 +1,5 @@
 import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
-import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import * as schema from './schema'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -38,6 +37,49 @@ export function useDb() {
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       expires_at TEXT NOT NULL,
       created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS groups (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      owner_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS group_members (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL,
+      UNIQUE(group_id, user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS event_shares (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      level TEXT NOT NULL DEFAULT 'view' CHECK(level IN ('view','edit')),
+      created_at TEXT NOT NULL,
+      UNIQUE(event_id, user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS event_group_shares (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL,
+      group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+      level TEXT NOT NULL DEFAULT 'view' CHECK(level IN ('view','edit')),
+      created_at TEXT NOT NULL,
+      UNIQUE(event_id, group_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS event_invites (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL,
+      token TEXT NOT NULL UNIQUE,
+      level TEXT NOT NULL DEFAULT 'view' CHECK(level IN ('view','edit')),
+      created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS persons (
@@ -148,6 +190,9 @@ export function useDb() {
   try { sqlite.exec(`ALTER TABLE products ADD COLUMN is_planned INTEGER NOT NULL DEFAULT 0`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE events ADD COLUMN slug TEXT`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE booths ADD COLUMN slug TEXT`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE events ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE events ADD COLUMN owner_id TEXT REFERENCES users(id) ON DELETE SET NULL`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE products ADD COLUMN owner_id TEXT REFERENCES users(id) ON DELETE SET NULL`) } catch { /* already exists */ }
 
   // Backfill slugs for existing events that don't have one
   const needsSlug = sqlite.prepare('SELECT id, name FROM events WHERE slug IS NULL').all() as { id: string; name: string }[]
@@ -219,6 +264,18 @@ export function useDb() {
       console.log(`│ password: ${password}`)
       console.log(`└────────────────────────────────────────────┘`)
       console.log(`(Set ADMIN_DEFAULT_PASSWORD in .env to control this. Change after first login.)\n`)
+    }
+  }
+
+  // Backfill ownerId on legacy events: any event with NULL owner_id is reassigned
+  // to the first admin so it remains accessible after Phase 4 permission rules
+  // come online (otherwise nobody but other admins could see it).
+  const orphanEvents = (sqlite.prepare('SELECT COUNT(*) as c FROM events WHERE owner_id IS NULL').get() as { c: number }).c
+  if (orphanEvents > 0) {
+    const firstAdmin = sqlite.prepare(`SELECT id FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1`).get() as { id: string } | undefined
+    if (firstAdmin) {
+      sqlite.prepare(`UPDATE events SET owner_id = ? WHERE owner_id IS NULL`).run(firstAdmin.id)
+      console.log(`Backfilled owner_id on ${orphanEvents} legacy event(s) → admin user ${firstAdmin.id}`)
     }
   }
 

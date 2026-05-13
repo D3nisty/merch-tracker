@@ -1,10 +1,14 @@
 import { useDb } from '../../db'
 import { events } from '../../db/schema'
 import { generateId, now, toSlug } from '../../utils/id'
-import { requireRole } from '../../utils/auth'
+import { requireUser } from '../../utils/auth'
 
+/**
+ * Any logged-in user can create an event. They become the owner and get
+ * implicit full edit rights via the ownership rule in canEditEvent().
+ */
 export default defineEventHandler(async (event) => {
-  await requireRole(event, ['admin', 'editor'])
+  const user = await requireUser(event)
   const body = await readBody(event)
 
   if (!body.name || !body.type) {
@@ -32,6 +36,8 @@ export default defineEventHandler(async (event) => {
     date: body.date ?? null,
     location: body.location ?? null,
     description: body.description ?? null,
+    isPublic: Boolean(body.isPublic),
+    ownerId: user.id,
     createdAt: ts,
     updatedAt: ts,
   }

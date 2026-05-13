@@ -1,16 +1,19 @@
 import { useDb } from '../../db'
 import { catalogImages } from '../../db/schema'
 import { eq } from 'drizzle-orm'
-import { requireRole } from '../../utils/auth'
+import { requireEventEdit, eventIdForImage } from '../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
-  await requireRole(event, ['admin', 'editor'])
   const id = getRouterParam(event, 'id')!
-  const body = await readBody(event)
   const db = useDb()
 
   const existing = db.select().from(catalogImages).where(eq(catalogImages.id, id)).get()
   if (!existing) throw createError({ statusCode: 404, message: 'Image not found' })
+
+  const eventId = await eventIdForImage(existing.id)
+  if (!eventId) throw createError({ statusCode: 404, message: 'Image not found' })
+  await requireEventEdit(event, eventId)
+  const body = await readBody(event)
 
   const updated: Record<string, unknown> = {}
   if (body.displayMode !== undefined) updated.displayMode = body.displayMode

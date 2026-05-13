@@ -1,15 +1,20 @@
 import { useDb } from '../../db'
 import { products } from '../../db/schema'
 import { generateId, now } from '../../utils/id'
-import { requireRole } from '../../utils/auth'
+import { requireEventEdit, eventIdForBooth } from '../../utils/permissions'
+import { requireUser } from '../../utils/auth'
 
 export default defineEventHandler(async (event) => {
-  await requireRole(event, ['admin', 'editor'])
   const body = await readBody(event)
 
   if (!body.boothId || !body.name) {
     throw createError({ statusCode: 400, message: 'boothId and name are required' })
   }
+
+  const eventId = await eventIdForBooth(body.boothId)
+  if (!eventId) throw createError({ statusCode: 404, message: 'Booth not found' })
+  await requireEventEdit(event, eventId)
+  const me = await requireUser(event)
 
   const db = useDb()
   const id = generateId()
@@ -20,6 +25,7 @@ export default defineEventHandler(async (event) => {
     boothId: body.boothId,
     catalogImageId: body.catalogImageId ?? null,
     personId: body.personId ?? null,
+    ownerId: me.id,
     name: body.name,
     description: body.description ?? null,
     price: body.price ?? null,

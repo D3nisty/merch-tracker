@@ -1,6 +1,7 @@
 import { useDb } from '../../db'
 import { events, locations, booths, products, catalogImages } from '../../db/schema'
 import { eq, or } from 'drizzle-orm'
+import { requireEventView, canEditEvent } from '../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')!
@@ -8,6 +9,9 @@ export default defineEventHandler(async (event) => {
 
   const eventRow = db.select().from(events).where(or(eq(events.id, id), eq(events.slug, id))).get()
   if (!eventRow) throw createError({ statusCode: 404, message: 'Event not found' })
+
+  const viewer = await requireEventView(event, eventRow.id)
+  const canEdit = await canEditEvent(viewer, eventRow.id)
 
   const locationRows = db.select().from(locations).where(eq(locations.eventId, eventRow.id)).all()
 
@@ -18,9 +22,23 @@ export default defineEventHandler(async (event) => {
 
   const boothIds = boothRows.map(b => b.id)
 
-  const productRows = boothIds.length
+  let productRows = boothIds.length
     ? db.select().from(products).all().filter(p => boothIds.includes(p.boothId))
     : []
+
+  // Per-product visibility filter:
+  //   - admin / event owner / edit-shared (canEdit === true): see everything
+  //   - view-only: only see products with no owner (legacy), the event owner's,
+  //     or the viewer's own. Prevents one shared collaborator from seeing
+  //     another collaborator's private wishlist.
+  if (!canEdit) {
+    const viewerId = viewer?.id ?? null
+    productRows = productRows.filter(p =>
+      p.ownerId === null ||
+      p.ownerId === eventRow.ownerId ||
+      (viewerId !== null && p.ownerId === viewerId)
+    )
+  }
 
   const imageRows = boothIds.length
     ? db.select().from(catalogImages).all().filter(i => boothIds.includes(i.boothId))
