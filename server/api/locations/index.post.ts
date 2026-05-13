@@ -1,8 +1,10 @@
 import { useDb } from '../../db'
 import { locations } from '../../db/schema'
 import { generateId, now } from '../../utils/id'
+import { requireRole } from '../../utils/auth'
 
 export default defineEventHandler(async (event) => {
+  await requireRole(event, ['admin', 'editor'])
   const body = await readBody(event)
 
   if (!body.eventId || !body.name || !body.type) {

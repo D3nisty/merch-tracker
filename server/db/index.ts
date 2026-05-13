@@ -4,7 +4,8 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import * as schema from './schema'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { toSlug } from '../utils/id'
+import { randomBytes, scryptSync } from 'node:crypto'
+import { generateId, now, toSlug } from '../utils/id'
 
 let _db: ReturnType<typeof drizzle> | null = null
 
@@ -24,6 +25,21 @@ export function useDb() {
 
   // Create tables if they don't exist
   sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      username TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin','editor','user')),
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS persons (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -176,6 +192,33 @@ export function useDb() {
         usedSlugs.push(candidate)
         sqlite.prepare('UPDATE booths SET slug = ? WHERE id = ?').run(candidate, booth.id)
       }
+    }
+  }
+
+  // Seed default admin user if no users exist.
+  // Password is read from env (ADMIN_DEFAULT_PASSWORD). If unset, a random one is
+  // generated and printed once so the source never carries a real credential.
+  const userCount = (sqlite.prepare('SELECT COUNT(*) as c FROM users').get() as { c: number }).c
+  if (userCount === 0) {
+    const username = process.env.ADMIN_DEFAULT_USERNAME || 'admin'
+    let password = process.env.ADMIN_DEFAULT_PASSWORD
+    let generated = false
+    if (!password) {
+      password = randomBytes(9).toString('base64url')
+      generated = true
+    }
+    const salt = randomBytes(16).toString('hex')
+    const hash = scryptSync(password, salt, 64).toString('hex')
+    sqlite.prepare(`
+      INSERT INTO users (id, username, password_hash, role, created_at)
+      VALUES (?, ?, ?, 'admin', ?)
+    `).run(generateId(), username, `${salt}:${hash}`, now())
+    if (generated) {
+      console.log(`\n┌─ MerchTracker first-run admin credentials ─┐`)
+      console.log(`│ username: ${username}`)
+      console.log(`│ password: ${password}`)
+      console.log(`└────────────────────────────────────────────┘`)
+      console.log(`(Set ADMIN_DEFAULT_PASSWORD in .env to control this. Change after first login.)\n`)
     }
   }
 

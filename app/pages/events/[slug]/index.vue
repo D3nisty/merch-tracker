@@ -89,7 +89,7 @@ function locationIcon(type: Location['type']) {
     </div>
 
     <!-- Person filter notice -->
-    <div v-if="personsStore.currentPerson" class="flex items-center gap-2 mb-3 text-sm text-gray-400">
+    <div v-if="personsStore.currentPerson && authStore.isEditing" class="flex items-center gap-2 mb-3 text-sm text-gray-400">
       <span
         :class="['w-2.5 h-2.5 rounded-full shrink-0', {
           'bg-purple-500': personsStore.currentPerson.color === 'purple',
@@ -105,8 +105,8 @@ function locationIcon(type: Location['type']) {
       {{ t('event.showingBudgetFor') }} <span class="text-white font-medium">{{ personsStore.currentPerson.name }}</span>
     </div>
 
-    <!-- Stats bar -->
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-8">
+    <!-- Stats bar (paid/spent hidden for guests) -->
+    <div :class="['grid grid-cols-2 gap-3 mb-8', authStore.isEditing ? 'md:grid-cols-3 lg:grid-cols-5' : 'md:grid-cols-3']">
       <UCard class="text-center p-4">
         <div class="text-2xl font-bold text-purple-400">{{ event.locations?.length ?? 0 }}</div>
         <div class="text-xs text-gray-400 mt-1">{{ event.type === 'convention' ? t('event.halls') : t('event.locations') }}</div>
@@ -121,7 +121,7 @@ function locationIcon(type: Location['type']) {
         <div class="text-2xl font-bold text-green-400">{{ itemStats.purchased }}/{{ itemStats.total }}</div>
         <div class="text-xs text-gray-400 mt-1">{{ t('event.purchased') }}</div>
       </UCard>
-      <UCard class="text-center p-4">
+      <UCard v-if="authStore.isEditing" class="text-center p-4">
         <div v-if="plannedEntries.length" class="font-bold text-yellow-400 leading-snug">
           <div v-for="[cur, amt] in plannedEntries" :key="cur" class="text-xl">
             {{ amt.toFixed(2) }} {{ cur }}
@@ -130,7 +130,7 @@ function locationIcon(type: Location['type']) {
         <div v-else class="text-xl font-bold text-yellow-400">—</div>
         <div class="text-xs text-gray-400 mt-1">{{ t('event.plannedBudget') }}</div>
       </UCard>
-      <UCard class="text-center p-4">
+      <UCard v-if="authStore.isEditing" class="text-center p-4">
         <div v-if="paidEntries.length" class="font-bold text-green-400 leading-snug">
           <div v-for="[cur, amt] in paidEntries" :key="cur" class="text-xl">
             {{ amt.toFixed(2) }} {{ cur }}

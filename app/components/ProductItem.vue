@@ -52,14 +52,15 @@ const priorityColors: Record<number, string> = {
   >
     <UCheckbox
       :model-value="product.isPurchased"
-      @change="emit('toggle')"
+      :disabled="!authStore.isEditing"
+      @change="authStore.isEditing && emit('toggle')"
     />
 
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-2">
-        <!-- Person dot -->
+        <!-- Person dot (hidden for guests) -->
         <span
-          v-if="person"
+          v-if="person && authStore.isEditing"
           :class="['w-2.5 h-2.5 rounded-full shrink-0', COLOR_MAP[person.color] ?? 'bg-purple-500']"
           :title="person.name"
         />

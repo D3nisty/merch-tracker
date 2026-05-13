@@ -4,6 +4,12 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    # Picks up ADMIN_DEFAULT_USERNAME / ADMIN_DEFAULT_PASSWORD (and anything else)
+    # from a local .env file. Optional — if .env is absent the container starts
+    # fine and a random admin password is printed to the logs on first boot.
+    env_file:
+      - path: .env
+        required: false
     environment:
       NODE_ENV: production
       HOST: "0.0.0.0"

@@ -59,8 +59,8 @@ async function handleDelete() {
       </div>
     </section>
 
-    <!-- Travel -->
-    <section v-if="travelEvents.length > 0">
+    <!-- Travel (hidden for guests) -->
+    <section v-if="travelEvents.length > 0 && authStore.isEditing">
       <div class="flex items-center gap-2 mb-4">
         <UIcon name="i-heroicons-map" class="w-5 h-5 text-blue-400" />
         <h2 class="text-xl font-bold text-white">{{ t('events.travel') }}</h2>

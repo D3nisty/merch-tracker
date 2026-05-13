@@ -4,8 +4,10 @@ import { useDb } from '../../db'
 import { catalogImages } from '../../db/schema'
 import { eq, max } from 'drizzle-orm'
 import { generateId, now } from '../../utils/id'
+import { requireRole } from '../../utils/auth'
 
 export default defineEventHandler(async (event) => {
+  await requireRole(event, ['admin', 'editor'])
   const formData = await readMultipartFormData(event)
   if (!formData) throw createError({ statusCode: 400, message: 'No form data' })
 

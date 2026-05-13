@@ -90,7 +90,7 @@ async function handleSubmit() {
           </div>
         </template>
         <UFormGroup :label="t('common.notes')">
-          <UTextarea v-model="form.notes" rows="2" />
+          <UTextarea v-model="form.notes" :rows="2" />
         </UFormGroup>
       </form>
 

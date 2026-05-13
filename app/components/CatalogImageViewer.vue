@@ -41,6 +41,7 @@ const PERSON_HEX: Record<string, string> = {
   red: '#ef4444', pink: '#ec4899', orange: '#f97316', teal: '#14b8a6',
 }
 function personHex(personId: string | null | undefined): string {
+  if (!authStore.isEditing) return '#a855f8'
   if (!personId) return '#a855f8'
   const p = personsStore.persons.find(x => x.id === personId)
   return p ? (PERSON_HEX[p.color] ?? '#a855f8') : '#a855f8'
@@ -665,10 +666,9 @@ function openAddSource() {
       <UBadge v-if="image.imageType === 'article' && (subImages?.length ?? 0) > 0" :label="`${1 + (subImages?.length ?? 0)} photos`" variant="soft" color="orange" size="xs" class="shrink-0" />
       <UBadge v-if="image.imageType === 'receipt'" :label="`${receiptProducts.filter(p=>p.isPurchased).length}/${receiptProducts.length}`" variant="soft" color="green" size="xs" class="shrink-0" />
 
-      <!-- Article: person assignment -->
-      <template v-if="image.imageType === 'article'">
+      <!-- Article: person assignment (hidden for guests) -->
+      <template v-if="image.imageType === 'article' && authStore.isEditing">
         <USelect
-          v-if="authStore.isEditing"
           v-model="imagePersonId"
           :options="personOptions"
           option-attribute="label"
@@ -677,10 +677,6 @@ function openAddSource() {
           class="w-32 shrink-0"
           @change="saveImagePerson"
         />
-        <div v-else-if="personById(image.personId)" class="flex items-center gap-1 shrink-0">
-          <span :class="['w-2 h-2 rounded-full', COLOR_MAP[personById(image.personId)!.color] ?? 'bg-purple-500']" />
-          <span class="text-xs text-gray-400">{{ personById(image.personId)!.name }}</span>
-        </div>
       </template>
 
       <div class="flex items-center gap-1 shrink-0">
@@ -1114,21 +1110,21 @@ function openAddSource() {
           <!-- Source rows -->
           <div v-for="p in products" :key="p.id"
             class="border rounded-lg transition-colors overflow-hidden group"
-            :class="p.isPurchased ? 'border-green-500/40 bg-green-900/10' : 'border-gray-800 bg-gray-900'"
+            :class="p.isPurchased && authStore.isEditing ? 'border-green-500/40 bg-green-900/10' : 'border-gray-800 bg-gray-900'"
           >
             <div class="flex items-center gap-2 px-3 py-2">
               <div class="flex-1 min-w-0 cursor-pointer" @click="toggleSourceExpand(p.id)">
                 <div class="flex items-center gap-2">
                   <span
-                    v-if="personById(p.personId)"
+                    v-if="personById(p.personId) && authStore.isEditing"
                     :class="['w-2 h-2 rounded-full shrink-0', COLOR_MAP[personById(p.personId)!.color] ?? 'bg-purple-500']"
                     :title="personById(p.personId)!.name"
                   />
                   <span class="text-sm font-medium text-white">{{ p.name }}</span>
-                  <span v-if="personById(p.personId)" class="text-xs text-gray-500">{{ personById(p.personId)!.name }}</span>
+                  <span v-if="personById(p.personId) && authStore.isEditing" class="text-xs text-gray-500">{{ personById(p.personId)!.name }}</span>
                 </div>
                 <div v-if="p.price" class="flex items-center gap-1.5 mt-0.5">
-                  <span class="text-sm font-semibold" :class="p.isPurchased ? 'text-green-400' : 'text-yellow-400'">
+                  <span class="text-sm font-semibold" :class="p.isPurchased && authStore.isEditing ? 'text-green-400' : 'text-yellow-400'">
                     {{ p.price.toFixed(2) }} {{ currencySymbol(p.currency) }}
                   </span>
                   <span class="text-xs text-gray-500">{{ p.currency }}</span>
@@ -1147,12 +1143,14 @@ function openAddSource() {
                 @click="toggleSourceExpand(p.id)"
               />
               <button
+                v-if="authStore.isEditing"
                 type="button"
                 class="text-xs px-2 py-1 rounded-full border transition-all font-medium shrink-0"
                 :class="p.isPlanned ? 'bg-orange-600 border-orange-500 text-white' : 'border-gray-700 text-gray-400 hover:border-orange-500 hover:text-orange-400'"
                 @click="markAsPlanned(p)"
               >{{ p.isPlanned ? t('catalog.planned') : t('catalog.planQ') }}</button>
               <button
+                v-if="authStore.isEditing"
                 type="button"
                 class="text-xs px-2 py-1 rounded-full border transition-all font-medium shrink-0"
                 :class="p.isPurchased ? 'bg-green-600 border-green-500 text-white' : 'border-gray-700 text-gray-400 hover:border-green-500 hover:text-green-400'"
@@ -1189,8 +1187,8 @@ function openAddSource() {
             </div>
           </div>
 
-          <!-- Planned / Paid summary -->
-          <div class="mt-2 space-y-1.5">
+          <!-- Planned / Paid summary (hidden for guests) -->
+          <div v-if="authStore.isEditing" class="mt-2 space-y-1.5">
             <div v-if="products.some(p => p.isPlanned)" class="p-2.5 bg-orange-900/20 border border-orange-700/30 rounded-lg flex items-center gap-2">
               <UIcon name="i-heroicons-star" class="w-4 h-4 text-orange-400 shrink-0" />
               <span class="text-xs text-gray-400">{{ t('catalog.plannedFrom') }}</span>
@@ -1227,7 +1225,7 @@ function openAddSource() {
               :key="p.id"
               class="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-900 cursor-pointer transition-colors"
             >
-              <UCheckbox :model-value="p.isPurchased" @change="toggleReceiptProduct(p)" />
+              <UCheckbox :model-value="p.isPurchased" :disabled="!authStore.isEditing" @change="authStore.isEditing && toggleReceiptProduct(p)" />
               <div class="flex-1 min-w-0">
                 <span :class="['text-sm', p.isPurchased ? 'line-through text-gray-500' : 'text-white']">{{ p.name }}</span>
                 <span v-if="p.size" class="ml-2 text-xs text-gray-500">{{ p.size }}</span>
@@ -1620,9 +1618,8 @@ function openAddSource() {
             <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800">
               <div class="flex items-center gap-2">
                 <span class="text-sm font-medium text-white">{{ t('catalog.priceSources') }}</span>
-                <template v-if="image.imageType === 'article'">
+                <template v-if="image.imageType === 'article' && authStore.isEditing">
                   <USelect
-                    v-if="authStore.isEditing"
                     v-model="imagePersonId"
                     :options="personOptions"
                     option-attribute="label"
@@ -1631,10 +1628,6 @@ function openAddSource() {
                     class="w-32"
                     @change="saveImagePerson"
                   />
-                  <div v-else-if="personById(image.personId)" class="flex items-center gap-1">
-                    <span :class="['w-2 h-2 rounded-full', COLOR_MAP[personById(image.personId)!.color] ?? 'bg-purple-500']" />
-                    <span class="text-xs text-gray-400">{{ personById(image.personId)!.name }}</span>
-                  </div>
                 </template>
               </div>
               <div class="flex items-center gap-2">
@@ -1668,20 +1661,20 @@ function openAddSource() {
 
               <div v-for="p in products" :key="`fs-source-${p.id}`"
                 class="border rounded-lg overflow-hidden transition-colors group"
-                :class="p.isPurchased ? 'border-green-500/40 bg-green-900/10' : 'border-gray-700 bg-gray-800'"
+                :class="p.isPurchased && authStore.isEditing ? 'border-green-500/40 bg-green-900/10' : 'border-gray-700 bg-gray-800'"
               >
                 <div class="flex items-center gap-2 px-3 py-2">
                   <div class="flex-1 min-w-0 cursor-pointer" @click="toggleSourceExpand(p.id)">
                     <div class="flex items-center gap-2">
                       <span
-                        v-if="personById(p.personId)"
+                        v-if="personById(p.personId) && authStore.isEditing"
                         :class="['w-2 h-2 rounded-full shrink-0', COLOR_MAP[personById(p.personId)!.color] ?? 'bg-purple-500']"
                       />
                       <span class="text-sm text-white">{{ p.name }}</span>
-                      <span v-if="personById(p.personId)" class="text-xs text-gray-500">{{ personById(p.personId)!.name }}</span>
+                      <span v-if="personById(p.personId) && authStore.isEditing" class="text-xs text-gray-500">{{ personById(p.personId)!.name }}</span>
                     </div>
                     <div v-if="p.price" class="flex items-center gap-1.5 mt-0.5">
-                      <span class="text-sm font-semibold" :class="p.isPurchased ? 'text-green-400' : 'text-yellow-400'">
+                      <span class="text-sm font-semibold" :class="p.isPurchased && authStore.isEditing ? 'text-green-400' : 'text-yellow-400'">
                         {{ p.price.toFixed(2) }} {{ currencySymbol(p.currency) }}
                       </span>
                     </div>
@@ -1698,11 +1691,11 @@ function openAddSource() {
                     variant="ghost" color="gray" size="xs"
                     @click="toggleSourceExpand(p.id)"
                   />
-                  <button type="button"
+                  <button v-if="authStore.isEditing" type="button"
                     class="text-xs px-2 py-1 rounded-full border transition-all font-medium shrink-0"
                     :class="p.isPlanned ? 'bg-orange-600 border-orange-500 text-white' : 'border-gray-600 text-gray-400 hover:border-orange-500 hover:text-orange-400'"
                     @click="markAsPlanned(p)">{{ p.isPlanned ? t('catalog.planned') : t('catalog.planQ') }}</button>
-                  <button type="button"
+                  <button v-if="authStore.isEditing" type="button"
                     class="text-xs px-2 py-1 rounded-full border transition-all font-medium shrink-0"
                     :class="p.isPurchased ? 'bg-green-600 border-green-500 text-white' : 'border-gray-600 text-gray-400 hover:border-green-500 hover:text-green-400'"
                     @click="markAsPaid(p)">{{ p.isPurchased ? t('catalog.paidDone') : t('catalog.paidQ') }}</button>
@@ -1736,7 +1729,7 @@ function openAddSource() {
                 </div>
               </div>
 
-              <div class="space-y-1.5">
+              <div v-if="authStore.isEditing" class="space-y-1.5">
                 <div v-if="products.some(p => p.isPlanned)" class="p-2 bg-orange-900/20 border border-orange-700/30 rounded-lg flex items-center gap-2">
                   <UIcon name="i-heroicons-star" class="w-3.5 h-3.5 text-orange-400 shrink-0" />
                   <div class="flex-1 min-w-0">
@@ -1772,7 +1765,7 @@ function openAddSource() {
             <div class="flex-1 overflow-y-auto p-3 space-y-1">
               <label v-for="p in receiptProducts" :key="`fs-receipt-${p.id}`"
                 class="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-800 cursor-pointer transition-colors">
-                <UCheckbox :model-value="p.isPurchased" @change="toggleReceiptProduct(p)" />
+                <UCheckbox :model-value="p.isPurchased" :disabled="!authStore.isEditing" @change="authStore.isEditing && toggleReceiptProduct(p)" />
                 <div class="flex-1 min-w-0">
                   <span :class="['text-sm', p.isPurchased ? 'line-through text-gray-500' : 'text-white']">{{ p.name }}</span>
                 </div>

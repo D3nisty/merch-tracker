@@ -62,7 +62,7 @@ async function handleSubmit() {
           <UInput v-model="form.date" type="date" />
         </UFormGroup>
         <UFormGroup :label="t('common.description')">
-          <UTextarea v-model="form.description" rows="3" />
+          <UTextarea v-model="form.description" :rows="3" />
         </UFormGroup>
       </form>
 

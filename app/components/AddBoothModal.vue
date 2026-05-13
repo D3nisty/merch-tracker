@@ -118,7 +118,7 @@ async function handleSubmit() {
           <UInput v-model="form.website" placeholder="https://..." type="url" />
         </UFormGroup>
         <UFormGroup :label="t('common.notes')">
-          <UTextarea v-model="form.notes" rows="2" />
+          <UTextarea v-model="form.notes" :rows="2" />
         </UFormGroup>
       </form>
 

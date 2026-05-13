@@ -2,8 +2,10 @@ import { useDb } from '../../db'
 import { booths, locations } from '../../db/schema'
 import { generateId, now, toSlug } from '../../utils/id'
 import { eq } from 'drizzle-orm'
+import { requireRole } from '../../utils/auth'
 
 export default defineEventHandler(async (event) => {
+  await requireRole(event, ['admin', 'editor'])
   const body = await readBody(event)
 
   if (!body.locationId || !body.name) {

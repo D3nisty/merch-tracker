@@ -93,7 +93,7 @@ const typeOptions = computed(() => [
         </UFormGroup>
 
         <UFormGroup :label="t('common.description')">
-          <UTextarea v-model="form.description" :placeholder="t('createEvent.descriptionPlaceholder')" rows="3" />
+          <UTextarea v-model="form.description" :placeholder="t('createEvent.descriptionPlaceholder')" :rows="3" />
         </UFormGroup>
 
         <UAlert v-if="error" color="red" :description="error" />

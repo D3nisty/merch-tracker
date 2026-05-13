@@ -1,29 +1,68 @@
 import { defineStore } from 'pinia'
 
-const PASSWORD = 'Fichs'
+export interface AuthUser {
+  id: string
+  username: string
+  role: 'admin' | 'editor' | 'user'
+}
 
 export const useAuthStore = defineStore('auth', () => {
-  const isEditing = ref(false)
+  const user = ref<AuthUser | null>(null)
+  const fetching = ref(false)
 
-  function init() {
-    isEditing.value = localStorage.getItem('merch-editing') === '1'
-  }
+  // Backwards compat — most of the app reads `isEditing` to decide whether to render
+  // edit affordances. For now an admin/editor unlocks the editing UI; later this can
+  // become per-resource permission checks.
+  const isEditing = computed(() => user.value?.role === 'admin' || user.value?.role === 'editor')
+  const isAdmin = computed(() => user.value?.role === 'admin')
+  const isLoggedIn = computed(() => user.value !== null)
 
-  watch(isEditing, (val) => {
-    localStorage.setItem('merch-editing', val ? '1' : '0')
-  })
-
-  function tryUnlock(password: string): boolean {
-    if (password === PASSWORD) {
-      isEditing.value = true
-      return true
+  async function fetchMe(headers?: Record<string, string>) {
+    fetching.value = true
+    try {
+      user.value = await $fetch<AuthUser | null>('/api/auth/me', { headers })
+    } catch {
+      user.value = null
+    } finally {
+      fetching.value = false
     }
-    return false
   }
 
-  function lock() {
-    isEditing.value = false
+  async function login(username: string, password: string): Promise<{ ok: true } | { ok: false; message: string }> {
+    try {
+      const u = await $fetch<AuthUser>('/api/auth/login', {
+        method: 'POST',
+        body: { username, password },
+      })
+      user.value = u
+      return { ok: true }
+    } catch (e: unknown) {
+      const msg = (e as { data?: { message?: string }; message?: string })?.data?.message
+        ?? (e as { message?: string })?.message
+        ?? 'Login failed'
+      return { ok: false, message: msg }
+    }
   }
 
-  return { isEditing, init, tryUnlock, lock }
+  async function logout() {
+    try { await $fetch('/api/auth/logout', { method: 'POST' }) } catch {}
+    user.value = null
+  }
+
+  async function changePassword(currentPassword: string, newPassword: string): Promise<{ ok: true } | { ok: false; message: string }> {
+    try {
+      await $fetch('/api/auth/change-password', {
+        method: 'POST',
+        body: { currentPassword, newPassword },
+      })
+      return { ok: true }
+    } catch (e: unknown) {
+      const msg = (e as { data?: { message?: string }; message?: string })?.data?.message
+        ?? (e as { message?: string })?.message
+        ?? 'Could not change password'
+      return { ok: false, message: msg }
+    }
+  }
+
+  return { user, isEditing, isAdmin, isLoggedIn, fetching, fetchMe, login, logout, changePassword }
 })

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Booth, Product, CatalogImage } from '~/stores/events'
 import { usePersonsStore } from '~/stores/persons'
+import { useAuthStore } from '~/stores/auth'
 import { useLocale } from '~/composables/useLocale'
 
 const props = defineProps<{
@@ -10,6 +11,7 @@ const props = defineProps<{
 
 const route = useRoute()
 const personsStore = usePersonsStore()
+const authStore = useAuthStore()
 const { t } = useLocale()
 
 const COLOR_MAP: Record<string, string> = {
@@ -90,11 +92,11 @@ const progress = computed(() => totalCount.value ? (purchasedCount.value / total
             </div>
           </div>
           <div class="flex flex-col items-end gap-1 shrink-0">
-            <div v-if="boothPerson" class="flex items-center gap-1 text-xs text-gray-400">
+            <div v-if="boothPerson && authStore.isEditing" class="flex items-center gap-1 text-xs text-gray-400">
               <span :class="['w-2 h-2 rounded-full', COLOR_MAP[boothPerson.color] ?? 'bg-purple-500']" />
               {{ boothPerson.name }}
             </div>
-            <div v-if="hasCost" class="text-yellow-400 text-xs font-semibold text-right leading-tight">
+            <div v-if="hasCost && authStore.isEditing" class="text-yellow-400 text-xs font-semibold text-right leading-tight">
               <div v-for="[cur, amt] in Object.entries(costByCurrency)" :key="cur">
                 {{ amt.toFixed(2) }} {{ cur }}
               </div>

@@ -2,8 +2,10 @@ import { useDb } from '../../db'
 import { products } from '../../db/schema'
 import { eq } from 'drizzle-orm'
 import { now } from '../../utils/id'
+import { requireRole } from '../../utils/auth'
 
 export default defineEventHandler(async (event) => {
+  await requireRole(event, ['admin', 'editor'])
   const id = getRouterParam(event, 'id')!
   const body = await readBody(event)
   const db = useDb()

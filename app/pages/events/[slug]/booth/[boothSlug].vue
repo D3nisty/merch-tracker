@@ -230,7 +230,7 @@ const personBreakdown = computed(() => {
             </span>
           </div>
         </div>
-        <div class="text-right">
+        <div v-if="authStore.isEditing" class="text-right">
           <div v-if="formatCostMap(costByCurrency)" class="font-bold text-yellow-400 leading-tight">
             <div v-for="[cur, amt] in Object.entries(costByCurrency)" :key="cur" class="text-xl">
               {{ amt.toFixed(2) }} {{ cur }}

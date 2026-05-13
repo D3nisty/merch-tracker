@@ -1,5 +1,20 @@
 import { sqliteTable, text, real, integer } from 'drizzle-orm/sqlite-core'
 
+export const users = sqliteTable('users', {
+  id: text('id').primaryKey(),
+  username: text('username').notNull().unique(),
+  passwordHash: text('password_hash').notNull(),
+  role: text('role', { enum: ['admin', 'editor', 'user'] }).notNull().default('user'),
+  createdAt: text('created_at').notNull(),
+})
+
+export const sessions = sqliteTable('sessions', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  expiresAt: text('expires_at').notNull(),
+  createdAt: text('created_at').notNull(),
+})
+
 export const persons = sqliteTable('persons', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
@@ -105,6 +120,10 @@ export const products = sqliteTable('products', {
   updatedAt: text('updated_at').notNull(),
 })
 
+export type User = typeof users.$inferSelect
+export type NewUser = typeof users.$inferInsert
+export type Session = typeof sessions.$inferSelect
+export type NewSession = typeof sessions.$inferInsert
 export type Person = typeof persons.$inferSelect
 export type NewPerson = typeof persons.$inferInsert
 export type BoothPricePreset = typeof boothPricePresets.$inferSelect
