@@ -806,8 +806,11 @@ export const useEventsStore = defineStore('events', () => {
     return total
   }
 
-  // Paid budget — also GROSS for symmetry with planned. The "− X saved" line
-  // shown alongside is the same number computed by getDiscountSavingsByCurrency.
+  // Paid budget — NET of realised discounts. Returns what the user actually
+  // handed over to vendors (gross purchased − discount applied to those same
+  // purchased items). The "− X saved" caption shown alongside is for context
+  // ("of the gross price you saved X") — to recover gross paid add this back
+  // to `getDiscountSavingsByCurrency`.
   function getPaidCostByCurrency(personId?: string | null): Record<string, number> {
     if (!currentEvent.value?.locations) return {}
     const total: Record<string, number> = {}
@@ -815,6 +818,10 @@ export const useEventsStore = defineStore('events', () => {
       for (const booth of loc.booths ?? []) {
         const units = unitsForBooth(booth, personId, 'purchased')
         for (const u of units) total[u.currency] = (total[u.currency] ?? 0) + u.price
+        const savings = applyBoothDiscounts(units, booth.discounts ?? [])
+        for (const [cur, save] of Object.entries(savings)) {
+          total[cur] = (total[cur] ?? 0) - save
+        }
       }
     }
     return total
@@ -842,6 +849,11 @@ export const useEventsStore = defineStore('events', () => {
       const total: Record<string, number> = {}
       const units = unitsForBooth(booth, personId, 'purchased')
       for (const u of units) total[u.currency] = (total[u.currency] ?? 0) + u.price
+      // Net of realised discounts — same semantic as the event-level helper.
+      const savings = applyBoothDiscounts(units, booth.discounts ?? [])
+      for (const [cur, save] of Object.entries(savings)) {
+        total[cur] = (total[cur] ?? 0) - save
+      }
       return total
     }
     return {}

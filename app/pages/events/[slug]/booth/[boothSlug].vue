@@ -309,13 +309,20 @@ const effectivePersonId = computed<string | null>(() =>
     ?? null,
 )
 
-// Header totals are GROSS — the savings line below (`discountSavingsLabel`)
-// shows the per-booth discount value separately, so the user always sees both
-// "what these items cost" and "what the discount will knock off".
+// Planned is GROSS — what these items would cost at list price. Spent is
+// NET — actual money handed over after the discount kicked in at the till
+// (matches `getPaidCostByCurrency` semantics on the dashboard). The savings
+// caption in the Discounts section below shows the gap, so the user can
+// read both "you paid €252" and "you saved €20" at a glance.
 const costByCurrency = computed(() =>
   buildCostMap(booth.value?.products ?? [], booth.value?.images ?? [], false, effectivePersonId.value))
-const purchasedByCurrency = computed(() =>
-  buildCostMap(booth.value?.products ?? [], booth.value?.images ?? [], true, effectivePersonId.value))
+const purchasedByCurrency = computed(() => {
+  const raw = buildCostMap(booth.value?.products ?? [], booth.value?.images ?? [], true, effectivePersonId.value)
+  const savings = booth.value ? store.getBoothSavingsByCurrency(booth.value.id, effectivePersonId.value) : {}
+  const out: Record<string, number> = { ...raw }
+  for (const [cur, save] of Object.entries(savings)) out[cur] = (out[cur] ?? 0) - save
+  return out
+})
 const boothSavings = computed(() =>
   booth.value ? store.getBoothSavingsByCurrency(booth.value.id, effectivePersonId.value) : {})
 // "What would buying one of everything at this booth cost?" — see the store
