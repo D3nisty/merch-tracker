@@ -1,9 +1,11 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
 import { type H3Event, setCookie, getCookie, createError } from 'h3'
 import { useDb } from '../db'
-import { sessions, users, type User } from '../db/schema'
+import { sessions, users, persons, type User } from '../db/schema'
 import { eq } from 'drizzle-orm'
-import { now } from './id'
+import { generateId, now } from './id'
+
+const PERSON_COLORS = ['purple', 'blue', 'green', 'yellow', 'red', 'pink', 'orange', 'teal'] as const
 
 const SCRYPT_KEYLEN = 64
 const SESSION_COOKIE = 'mt_session'
@@ -102,4 +104,25 @@ export async function getOptionalUser(event: H3Event): Promise<User | null> {
   const sid = readSessionCookie(event)
   if (!sid) return null
   return getSessionUser(sid)
+}
+
+/**
+ * Auto-create a Person row for a newly created User and link it via users.personId.
+ * Called from every user-creation path so each user has a person identity from
+ * day one. The color is picked deterministically from the palette using the
+ * existing person count, so multiple users get distinct colors initially.
+ */
+export function createPersonForUser(userId: string, displayName: string): string {
+  const db = useDb()
+  const existingCount = db.select().from(persons).all().length
+  const color = PERSON_COLORS[existingCount % PERSON_COLORS.length]
+  const personId = generateId()
+  db.insert(persons).values({
+    id: personId,
+    name: displayName,
+    color,
+    createdAt: now(),
+  }).run()
+  db.update(users).set({ personId }).where(eq(users.id, userId)).run()
+  return personId
 }

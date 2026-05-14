@@ -1,5 +1,5 @@
 import { useDb } from '../../db'
-import { users } from '../../db/schema'
+import { users, persons } from '../../db/schema'
 import { eq } from 'drizzle-orm'
 import { verifyPassword, createSession, setSessionCookie } from '../../utils/auth'
 
@@ -20,5 +20,12 @@ export default defineEventHandler(async (event) => {
   const session = await createSession(user.id)
   setSessionCookie(event, session.id, session.expiresAt)
 
-  return { id: user.id, username: user.username, role: user.role }
+  let person: { id: string; name: string; color: string } | null = null
+  if (user.personId) {
+    const row = db.select({ id: persons.id, name: persons.name, color: persons.color })
+      .from(persons).where(eq(persons.id, user.personId)).get()
+    if (row) person = row
+  }
+
+  return { id: user.id, username: user.username, role: user.role, personId: user.personId, person }
 })

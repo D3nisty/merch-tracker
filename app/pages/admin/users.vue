@@ -22,9 +22,21 @@ const showCreate = ref(false)
 const newUser = reactive({ username: '', password: '', role: 'user' as 'admin' | 'editor' | 'user' })
 const creating = ref(false)
 
-// Inline edit (password reset / role change)
+// Inline edit (password reset / role change / color / display name)
 const editingId = ref<string | null>(null)
-const editForm = reactive({ role: 'user' as 'admin' | 'editor' | 'user', password: '' })
+const editForm = reactive({ role: 'user' as 'admin' | 'editor' | 'user', password: '', color: '', name: '' })
+
+const COLORS = ['purple', 'blue', 'green', 'yellow', 'red', 'pink', 'orange', 'teal'] as const
+const COLOR_BG: Record<string, string> = {
+  purple: 'bg-purple-500',
+  blue: 'bg-blue-500',
+  green: 'bg-green-500',
+  yellow: 'bg-yellow-500',
+  red: 'bg-red-500',
+  pink: 'bg-pink-500',
+  orange: 'bg-orange-500',
+  teal: 'bg-teal-500',
+}
 
 // Delete confirm
 const deleteTarget = ref<AdminUser | null>(null)
@@ -77,13 +89,18 @@ function startEdit(u: AdminUser) {
   editingId.value = u.id
   editForm.role = u.role
   editForm.password = ''
+  editForm.color = u.color ?? ''
+  editForm.name = u.name ?? u.username
 }
 
 async function saveEdit(id: string) {
   error.value = ''
   try {
-    const body: { role?: 'admin' | 'editor' | 'user'; password?: string } = { role: editForm.role }
+    const body: { role?: 'admin' | 'editor' | 'user'; password?: string; color?: string; name?: string } = { role: editForm.role }
     if (editForm.password) body.password = editForm.password
+    if (editForm.color) body.color = editForm.color
+    const trimmedName = editForm.name.trim()
+    if (trimmedName) body.name = trimmedName
     await store.updateAdminUser(id, body)
     editingId.value = null
     await refresh()
@@ -129,11 +146,16 @@ function roleColor(role: string) {
       <div v-if="loading" class="text-gray-500 text-sm">{{ t('common.loading') }}</div>
       <div v-else class="divide-y divide-gray-800">
         <div v-for="u in users" :key="u.id" class="py-3 first:pt-0 last:pb-0">
-          <div v-if="editingId === u.id" class="space-y-2">
+          <div v-if="editingId === u.id" class="space-y-3">
             <div class="flex items-center gap-2">
-              <UIcon name="i-heroicons-user-circle" class="w-5 h-5 text-gray-400 shrink-0" />
+              <span v-if="editForm.color" :class="['w-4 h-4 rounded-full shrink-0', COLOR_BG[editForm.color]]" />
+              <UIcon v-else name="i-heroicons-user-circle" class="w-5 h-5 text-gray-400 shrink-0" />
               <span class="font-medium text-white">{{ u.username }}</span>
+              <span class="text-xs text-gray-500">(login)</span>
             </div>
+            <UFormGroup :label="t('auth.displayName')">
+              <UInput v-model="editForm.name" size="sm" maxlength="60" />
+            </UFormGroup>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <UFormGroup :label="t('sharing.role')">
                 <USelect v-model="editForm.role" :options="roleOptions" option-attribute="label" value-attribute="value" size="sm" />
@@ -142,16 +164,36 @@ function roleColor(role: string) {
                 <UInput v-model="editForm.password" type="password" :placeholder="t('auth.newPassword')" size="sm" />
               </UFormGroup>
             </div>
+            <UFormGroup :label="t('auth.yourColor')">
+              <div class="flex gap-2 flex-wrap">
+                <button
+                  v-for="c in COLORS"
+                  :key="c"
+                  type="button"
+                  :class="[
+                    'w-7 h-7 rounded-full transition-all',
+                    COLOR_BG[c],
+                    editForm.color === c
+                      ? 'ring-2 ring-white ring-offset-2 ring-offset-gray-900 scale-110'
+                      : 'hover:scale-105 opacity-80 hover:opacity-100',
+                  ]"
+                  @click="editForm.color = c"
+                />
+              </div>
+            </UFormGroup>
             <div class="flex gap-2 justify-end">
               <UButton size="xs" variant="ghost" color="gray" @click="editingId = null">{{ t('common.cancel') }}</UButton>
               <UButton size="xs" color="purple" @click="saveEdit(u.id)">{{ t('common.save') }}</UButton>
             </div>
           </div>
           <div v-else class="flex items-center gap-3">
-            <UIcon name="i-heroicons-user-circle" class="w-5 h-5 text-gray-400 shrink-0" />
+            <span v-if="u.color" :class="['w-4 h-4 rounded-full shrink-0', COLOR_BG[u.color]]" :title="u.color" />
+            <UIcon v-else name="i-heroicons-user-circle" class="w-5 h-5 text-gray-400 shrink-0" />
             <div class="flex-1 min-w-0">
-              <div class="font-medium text-white truncate">{{ u.username }}</div>
-              <div class="text-xs text-gray-500">{{ new Date(u.createdAt).toLocaleDateString() }}</div>
+              <div class="font-medium text-white truncate">{{ u.name || u.username }}</div>
+              <div class="text-xs text-gray-500 truncate">
+                <span v-if="u.name && u.name !== u.username">@{{ u.username }} · </span>{{ new Date(u.createdAt).toLocaleDateString() }}
+              </div>
             </div>
             <UBadge :label="t(`sharing.role${u.role.charAt(0).toUpperCase() + u.role.slice(1)}`)" :color="roleColor(u.role)" variant="soft" size="xs" />
             <UButton icon="i-heroicons-pencil-square" variant="ghost" color="gray" size="xs" @click="startEdit(u)" />

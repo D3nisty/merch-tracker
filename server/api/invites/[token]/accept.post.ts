@@ -7,6 +7,7 @@ import {
   hashPassword,
   createSession,
   setSessionCookie,
+  createPersonForUser,
 } from '../../../utils/auth'
 
 /**
@@ -54,6 +55,7 @@ export default defineEventHandler(async (event) => {
       createdAt: now(),
     }
     db.insert(users).values(newUserRow).run()
+    createPersonForUser(newUserRow.id, newUserRow.username)
     user = newUserRow
 
     // Auto-login so the redirect target works

@@ -96,14 +96,14 @@ public/uploads/      # Uploaded images when UPLOAD_DIR isn't set (auto-created, 
 ## Database Schema
 | Table | Purpose |
 |-------|---------|
-| `users` | Account records (username, scrypt-hashed password, role: admin/editor/user) |
+| `users` | Account records (username, scrypt-hashed password, role: admin/editor/user, `personId` linking to the user's auto-created person) |
 | `sessions` | Session tokens with `expires_at` (30-day TTL) |
 | `groups` | Named collections of users; `ownerId` is who manages it |
 | `group_members` | Many-to-many between groups and users (UNIQUE on `group_id, user_id`) |
 | `event_shares` | Per-user share of an event with `level` of `view` or `edit` |
 | `event_group_shares` | Per-group share of an event with `level` of `view` or `edit` |
 | `event_invites` | Magic-link invite tokens. Multi-use until expired/revoked; redeeming creates an `event_shares` row |
-| `persons` | Colored labels for tagging items (NOT auth subjects) |
+| `persons` | Colored labels for tagging items. Every User gets one auto-created on signup (1:1 via `users.personId`). Legacy admin-managed standalone persons (no linked user) still exist for backwards compatibility |
 | `events` | Top-level events. `isPublic` flag and `ownerId` drive permissions |
 | `locations` | Halls (convention) or cities/areas (travel) |
 | `booths` | Individual vendor booths or shops, with optional map coordinates |
@@ -196,7 +196,8 @@ All IDs are UUIDs. SQLite with WAL mode + foreign keys enabled.
 - Don't wrap modals or panels in `<Transition>` (unstyled in Nuxt UI defaults).
 - Fullscreen overlays must use `z-[9999]`; the sticky navbar sits above lower z-indexes.
 - The image panel in CatalogImageViewer needs `self-start` so the grid doesn't stretch it past the image height (otherwise overlay percentages misalign).
-- Person filter / current person is **purely a tagging concept** today, unrelated to the logged-in user. Don't conflate.
+- **Person ↔ user link**: every User now has an auto-created Person on signup. The link is `users.personId` (1:1). Auto-creation lives in `createPersonForUser(userId, displayName)` in [server/utils/auth.ts](../server/utils/auth.ts); call it from every new user creation path. The navbar dropdown for switching person is **gone** — the current-person filter defaults to the logged-in user's own person. Admins can override via the "View as" picker on `/account`.
+- Legacy standalone persons (no linked user) still exist; they're not auto-cleaned. The Account page color picker only edits the caller's linked person; the admin users page can edit any user's color.
 
 ## Adding New Features
 - **New entity type** → add to `schema.ts`, `db/index.ts` CREATE TABLE, then API routes following existing patterns. Add `requireRole` guard on mutations (once Phase 3 lands).

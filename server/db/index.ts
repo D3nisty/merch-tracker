@@ -193,6 +193,7 @@ export function useDb() {
   try { sqlite.exec(`ALTER TABLE events ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE events ADD COLUMN owner_id TEXT REFERENCES users(id) ON DELETE SET NULL`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE products ADD COLUMN owner_id TEXT REFERENCES users(id) ON DELETE SET NULL`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE users ADD COLUMN person_id TEXT REFERENCES persons(id) ON DELETE SET NULL`) } catch { /* already exists */ }
 
   // Backfill slugs for existing events that don't have one
   const needsSlug = sqlite.prepare('SELECT id, name FROM events WHERE slug IS NULL').all() as { id: string; name: string }[]
@@ -254,10 +255,17 @@ export function useDb() {
     }
     const salt = randomBytes(16).toString('hex')
     const hash = scryptSync(password, salt, 64).toString('hex')
+    const userId = generateId()
+    const ts = now()
     sqlite.prepare(`
       INSERT INTO users (id, username, password_hash, role, created_at)
       VALUES (?, ?, ?, 'admin', ?)
-    `).run(generateId(), username, `${salt}:${hash}`, now())
+    `).run(userId, username, `${salt}:${hash}`, ts)
+    // Auto-create person + link
+    const personId = generateId()
+    sqlite.prepare(`INSERT INTO persons (id, name, color, created_at) VALUES (?, ?, 'purple', ?)`)
+      .run(personId, username, ts)
+    sqlite.prepare(`UPDATE users SET person_id = ? WHERE id = ?`).run(personId, userId)
     if (generated) {
       console.log(`\n┌─ MerchTracker first-run admin credentials ─┐`)
       console.log(`│ username: ${username}`)
@@ -265,6 +273,25 @@ export function useDb() {
       console.log(`└────────────────────────────────────────────┘`)
       console.log(`(Set ADMIN_DEFAULT_PASSWORD in .env to control this. Change after first login.)\n`)
     }
+  }
+
+  // Backfill: each user must have an associated Person row. For any legacy
+  // user with NULL person_id, create one using their username as the name and
+  // a deterministic color from the palette.
+  const usersNoPerson = sqlite.prepare(`SELECT id, username FROM users WHERE person_id IS NULL`).all() as { id: string; username: string }[]
+  if (usersNoPerson.length > 0) {
+    const palette = ['purple', 'blue', 'green', 'yellow', 'red', 'pink', 'orange', 'teal']
+    const existingPersonCount = (sqlite.prepare(`SELECT COUNT(*) as c FROM persons`).get() as { c: number }).c
+    let i = 0
+    for (const u of usersNoPerson) {
+      const personId = generateId()
+      const color = palette[(existingPersonCount + i) % palette.length]
+      sqlite.prepare(`INSERT INTO persons (id, name, color, created_at) VALUES (?, ?, ?, ?)`)
+        .run(personId, u.username, color, now())
+      sqlite.prepare(`UPDATE users SET person_id = ? WHERE id = ?`).run(personId, u.id)
+      i++
+    }
+    console.log(`Auto-created ${usersNoPerson.length} person row(s) for users that didn't have one yet.`)
   }
 
   // Backfill ownerId on legacy events: any event with NULL owner_id is reassigned

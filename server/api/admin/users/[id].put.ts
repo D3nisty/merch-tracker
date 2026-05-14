@@ -1,9 +1,10 @@
 import { useDb } from '../../../db'
-import { users } from '../../../db/schema'
+import { users, persons } from '../../../db/schema'
 import { eq } from 'drizzle-orm'
 import { requireRole, hashPassword } from '../../../utils/auth'
 
 const ROLES = ['admin', 'editor', 'user'] as const
+const COLORS = ['purple', 'blue', 'green', 'yellow', 'red', 'pink', 'orange', 'teal'] as const
 
 /**
  * Update a user's role and/or password. Admin-only.
@@ -47,10 +48,40 @@ export default defineEventHandler(async (event) => {
     update.passwordHash = hashPassword(body.password)
   }
 
-  if (Object.keys(update).length === 0) {
+  // Color + display name edits go through the linked Person row, not users.
+  const personUpdate: { color?: string; name?: string } = {}
+  if (typeof body?.color === 'string' && body.color.length > 0) {
+    if (!COLORS.includes(body.color)) {
+      throw createError({ statusCode: 400, message: 'Invalid color' })
+    }
+    personUpdate.color = body.color
+  }
+  if (typeof body?.name === 'string') {
+    const name = body.name.trim()
+    if (name.length < 1 || name.length > 60) {
+      throw createError({ statusCode: 400, message: 'Display name must be 1–60 characters' })
+    }
+    personUpdate.name = name
+  }
+  if (Object.keys(personUpdate).length > 0) {
+    if (!target.personId) {
+      throw createError({ statusCode: 500, message: 'User has no linked person row' })
+    }
+    db.update(persons).set(personUpdate).where(eq(persons.id, target.personId)).run()
+  }
+
+  if (Object.keys(update).length === 0 && Object.keys(personUpdate).length === 0) {
     throw createError({ statusCode: 400, message: 'Nothing to update' })
   }
 
-  db.update(users).set(update).where(eq(users.id, id)).run()
-  return { id: target.id, username: target.username, role: update.role ?? target.role }
+  if (Object.keys(update).length > 0) {
+    db.update(users).set(update).where(eq(users.id, id)).run()
+  }
+  return {
+    id: target.id,
+    username: target.username,
+    role: update.role ?? target.role,
+    color: personUpdate.color ?? null,
+    name: personUpdate.name ?? null,
+  }
 })

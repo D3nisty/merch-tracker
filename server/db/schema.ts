@@ -5,6 +5,10 @@ export const users = sqliteTable('users', {
   username: text('username').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
   role: text('role', { enum: ['admin', 'editor', 'user'] }).notNull().default('user'),
+  // Each user is linked to a Person row (auto-created on signup). The person
+  // carries the color used for tagging things on shared events. NULL only for
+  // legacy users that haven't been migrated yet.
+  personId: text('person_id'),
   createdAt: text('created_at').notNull(),
 })
 

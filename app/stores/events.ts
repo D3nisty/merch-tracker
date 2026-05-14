@@ -23,6 +23,9 @@ export interface AdminUser {
   id: string
   username: string
   role: 'admin' | 'editor' | 'user'
+  personId: string | null
+  name: string | null
+  color: string | null
   createdAt: string
 }
 
@@ -30,6 +33,8 @@ export interface BasicUser {
   id: string
   username: string
   role: 'admin' | 'editor' | 'user'
+  name: string | null
+  color: string | null
 }
 
 export interface Group {
@@ -54,6 +59,8 @@ export interface EventUserShare {
   createdAt: string
   userId: string
   username: string
+  name: string | null
+  color: string | null
 }
 
 export interface EventGroupShare {
@@ -600,7 +607,7 @@ export const useEventsStore = defineStore('events', () => {
     return await $fetch<AdminUser>('/api/admin/users', { method: 'POST', body: data })
   }
 
-  async function updateAdminUser(id: string, data: { role?: 'admin' | 'editor' | 'user'; password?: string }) {
+  async function updateAdminUser(id: string, data: { role?: 'admin' | 'editor' | 'user'; password?: string; color?: string; name?: string }) {
     return await $fetch(`/api/admin/users/${id}`, { method: 'PUT', body: data })
   }
 

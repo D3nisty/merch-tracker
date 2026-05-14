@@ -1,5 +1,5 @@
 import { useDb } from '../../../db'
-import { events, eventShares, eventGroupShares, users, groups } from '../../../db/schema'
+import { events, eventShares, eventGroupShares, users, groups, persons } from '../../../db/schema'
 import { eq, or } from 'drizzle-orm'
 import { requireEventView } from '../../../utils/permissions'
 
@@ -21,9 +21,12 @@ export default defineEventHandler(async (event) => {
       createdAt: eventShares.createdAt,
       userId: eventShares.userId,
       username: users.username,
+      name: persons.name,
+      color: persons.color,
     })
     .from(eventShares)
     .innerJoin(users, eq(eventShares.userId, users.id))
+    .leftJoin(persons, eq(persons.id, users.personId))
     .where(eq(eventShares.eventId, evt.id))
     .all()
 

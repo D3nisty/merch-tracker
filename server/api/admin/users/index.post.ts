@@ -2,7 +2,7 @@ import { useDb } from '../../../db'
 import { users } from '../../../db/schema'
 import { eq } from 'drizzle-orm'
 import { generateId, now } from '../../../utils/id'
-import { requireRole, hashPassword } from '../../../utils/auth'
+import { requireRole, hashPassword, createPersonForUser } from '../../../utils/auth'
 
 const ROLES = ['admin', 'editor', 'user'] as const
 
@@ -33,5 +33,6 @@ export default defineEventHandler(async (event) => {
     createdAt: now(),
   }
   db.insert(users).values(newUser).run()
-  return { id: newUser.id, username: newUser.username, role: newUser.role, createdAt: newUser.createdAt }
+  const personId = createPersonForUser(newUser.id, newUser.username)
+  return { id: newUser.id, username: newUser.username, role: newUser.role, personId, createdAt: newUser.createdAt }
 })

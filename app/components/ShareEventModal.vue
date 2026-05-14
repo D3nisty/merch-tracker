@@ -67,7 +67,10 @@ const userOptions = computed(() => {
   const sharedIds = new Set(shares.value.users.map(s => s.userId))
   return allUsers.value
     .filter(u => !sharedIds.has(u.id) && u.id !== props.event.ownerId)
-    .map(u => ({ value: u.id, label: u.username }))
+    .map(u => ({
+      value: u.id,
+      label: u.name && u.name !== u.username ? `${u.name} (@${u.username})` : u.username,
+    }))
 })
 
 const groupOptions = computed(() => {
@@ -229,7 +232,10 @@ async function copyInvite(token: string) {
             <div v-for="s in shares.users" :key="s.id"
               class="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-900 border border-gray-800">
               <UIcon name="i-heroicons-user" class="w-4 h-4 text-gray-400" />
-              <span class="text-sm text-white flex-1 truncate">{{ s.username }}</span>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm text-white truncate">{{ s.name || s.username }}</div>
+                <div v-if="s.name && s.name !== s.username" class="text-xs text-gray-500 truncate">@{{ s.username }}</div>
+              </div>
               <UBadge
                 :label="s.level === 'edit' ? t('sharing.levelEdit') : t('sharing.levelView')"
                 :color="s.level === 'edit' ? 'purple' : 'gray'"
