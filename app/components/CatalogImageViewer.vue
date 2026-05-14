@@ -186,12 +186,86 @@ const pendingRect = ref<DrawRect | null>(null)
 const hoveredProductId = ref<string | null>(null)
 
 const CURRENCIES = ['EUR', 'USD', 'JPY', 'GBP', 'CHF', 'CAD', 'AUD', 'CNY', 'KRW']
-const SIZES = ['A6', 'A5', 'A4', 'A3', 'A2', 'B2', 'B3', '90×50cm', '40×23.5cm', '25cm', '20cm', '15cm', '10cm']
-const sizeOptions = [{ value: '', label: '— No size —' }, ...SIZES.map(s => ({ value: s, label: s }))]
+const DEFAULT_SIZES = ['A6', 'A5', 'A4', 'A3', 'A2', 'B2', 'B3', '90×50cm', '40×23.5cm', '25cm', '20cm', '15cm', '10cm']
+const DEFAULT_CATS = ['Print', 'Keychain', 'Sticker', 'Acrylic Figure', 'Figure', 'Mousepad', 'Shirt', 'Pin', 'Plush', 'Other']
 const CURRENCY_SYMBOLS: Record<string, string> = {
   EUR: '€', USD: '$', JPY: '¥', GBP: '£', CHF: 'Fr', CAD: 'C$', AUD: 'A$', CNY: '¥', KRW: '₩',
 }
-const QUICK_CATS = ['Print', 'Keychain', 'Sticker', 'Acrylic Figure', 'Figure', 'Mousepad', 'Shirt', 'Pin', 'Plush', 'Other']
+
+// Per-session "extras": any custom size/category the user added inline via the
+// `+` button. These aren't persisted — once a product is saved with the value,
+// it'll appear naturally via the `boothProducts` derivation below.
+const customSizes = ref<string[]>([])
+const customCats = ref<string[]>([])
+
+// All sizes/categories that already exist on a product in this booth (other
+// than the defaults). This makes any value you've used before show up
+// automatically in the picker next time — no separate config needed.
+const SIZES = computed(() => {
+  const fromProducts = (props.boothProducts ?? [])
+    .map(p => p.size)
+    .filter((s): s is string => !!s)
+  const extras = new Set<string>([...fromProducts, ...customSizes.value])
+  for (const s of DEFAULT_SIZES) extras.delete(s)
+  return [...DEFAULT_SIZES, ...Array.from(extras)]
+})
+const QUICK_CATS = computed(() => {
+  const fromProducts = (props.boothProducts ?? [])
+    .map(p => p.category)
+    .filter((c): c is string => !!c)
+  const extras = new Set<string>([...fromProducts, ...customCats.value])
+  for (const c of DEFAULT_CATS) extras.delete(c)
+  return [...DEFAULT_CATS, ...Array.from(extras)]
+})
+const sizeOptions = computed(() => [
+  { value: '', label: '— No size —' },
+  ...SIZES.value.map(s => ({ value: s, label: s })),
+])
+
+// ── Inline "+ custom value" picker for size / category pills ─────────
+// One row at a time can show an input — keyed by a row id so we can reuse
+// across the 6 size-pill spots and 6 cat-pill spots without per-row state.
+const customSizeInputFor = ref<string | null>(null)
+const customCatInputFor = ref<string | null>(null)
+const customDraft = ref('')
+
+function openCustomSize(rowId: string) {
+  customCatInputFor.value = null
+  customSizeInputFor.value = rowId
+  customDraft.value = ''
+}
+function openCustomCat(rowId: string) {
+  customSizeInputFor.value = null
+  customCatInputFor.value = rowId
+  customDraft.value = ''
+}
+function cancelCustomPill() {
+  customSizeInputFor.value = null
+  customCatInputFor.value = null
+  customDraft.value = ''
+}
+function commitCustomSize(form: { sizes?: SizeEntry[]; size?: string; noSizePrice?: string | number }) {
+  const v = customDraft.value.trim()
+  customSizeInputFor.value = null
+  customDraft.value = ''
+  if (!v) return
+  if (!DEFAULT_SIZES.includes(v) && !customSizes.value.includes(v)) customSizes.value.push(v)
+  if (Array.isArray(form.sizes)) {
+    if (!form.sizes.some(e => e.size === v)) {
+      form.sizes.push({ size: v, price: form.sizes.length === 0 && form.noSizePrice ? String(form.noSizePrice) : '' })
+    }
+  } else {
+    form.size = v
+  }
+}
+function commitCustomCat(form: { category: string }) {
+  const v = customDraft.value.trim()
+  customCatInputFor.value = null
+  customDraft.value = ''
+  if (!v) return
+  if (!DEFAULT_CATS.includes(v) && !customCats.value.includes(v)) customCats.value.push(v)
+  form.category = v
+}
 
 function currencySymbol(code: string) {
   return CURRENCY_SYMBOLS[code] ?? code
@@ -298,7 +372,7 @@ function applyPreset(preset: BoothPreset, form: Record<string, unknown>) {
   form.currency = preset.currency
   if (Array.isArray((form as { sizes?: unknown }).sizes)) {
     const f = form as { sizes: SizeEntry[]; noSizePrice: string | number }
-    if (SIZES.includes(preset.label)) {
+    if (SIZES.value.includes(preset.label)) {
       const existing = f.sizes.find(e => e.size === preset.label)
       if (!existing) f.sizes.push({ size: preset.label, price: String(preset.price) })
       else existing.price = String(preset.price)
@@ -362,23 +436,86 @@ function endDraw() {
   annotateForm.sizes.splice(0)
 }
 
+// ── Auto-drawn rect + interactive drag/resize ─────────────────────
+function autoDrawRect() {
+  if (props.image.imageType !== 'catalog' || !authStore.isEditing) return
+  annotateMode.value = true
+  selectedGroupKey.value = null
+  liveRect.value = null
+  drawStart.value = null
+  pendingRect.value = { x: 40, y: 40, w: 20, h: 20 }
+  Object.assign(annotateForm, { name: '', noSizePrice: '', currency: 'EUR', category: '', website: '', personId: defaultPersonId() })
+  annotateForm.sizes.splice(0)
+}
+
+type RectDragMode = 'move' | 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w'
+const rectDrag = ref<{ mode: RectDragMode; startX: number; startY: number; orig: DrawRect } | null>(null)
+
+function startRectDrag(e: MouseEvent, mode: RectDragMode) {
+  if (!pendingRect.value) return
+  e.preventDefault()
+  e.stopPropagation()
+  const p = getPctFromPoint(e.clientX, e.clientY)
+  rectDrag.value = { mode, startX: p.x, startY: p.y, orig: { ...pendingRect.value } }
+}
+
+function startRectTouch(e: TouchEvent, mode: RectDragMode) {
+  if (!pendingRect.value || e.touches.length !== 1) return
+  e.preventDefault()
+  e.stopPropagation()
+  const t = e.touches[0]
+  const p = getPctFromPoint(t.clientX, t.clientY)
+  rectDrag.value = { mode, startX: p.x, startY: p.y, orig: { ...pendingRect.value } }
+}
+
+function applyRectDrag(clientX: number, clientY: number) {
+  if (!rectDrag.value || !pendingRect.value) return
+  const p = getPctFromPoint(clientX, clientY)
+  const dx = p.x - rectDrag.value.startX
+  const dy = p.y - rectDrag.value.startY
+  const o = rectDrag.value.orig
+  const minSize = 2
+  const m = rectDrag.value.mode
+  if (m === 'move') {
+    pendingRect.value.x = Math.max(0, Math.min(100 - o.w, o.x + dx))
+    pendingRect.value.y = Math.max(0, Math.min(100 - o.h, o.y + dy))
+    return
+  }
+  let x1 = o.x, y1 = o.y, x2 = o.x + o.w, y2 = o.y + o.h
+  if (m === 'nw' || m === 'w' || m === 'sw') x1 = Math.max(0, Math.min(x2 - minSize, o.x + dx))
+  if (m === 'nw' || m === 'n' || m === 'ne') y1 = Math.max(0, Math.min(y2 - minSize, o.y + dy))
+  if (m === 'ne' || m === 'e' || m === 'se') x2 = Math.max(x1 + minSize, Math.min(100, o.x + o.w + dx))
+  if (m === 'sw' || m === 's' || m === 'se') y2 = Math.max(y1 + minSize, Math.min(100, o.y + o.h + dy))
+  pendingRect.value.x = x1
+  pendingRect.value.y = y1
+  pendingRect.value.w = x2 - x1
+  pendingRect.value.h = y2 - y1
+}
+
 function onImgMouseDown(e: MouseEvent) {
+  if (rectDrag.value) return
   if (!annotateMode.value || !authStore.isEditing || props.image.imageType !== 'catalog') return
   e.preventDefault()
   startDraw(e.clientX, e.clientY)
 }
 
 function onImgMouseMove(e: MouseEvent) {
+  if (rectDrag.value) {
+    applyRectDrag(e.clientX, e.clientY)
+    return
+  }
   if (!annotateMode.value || !drawStart.value) return
   moveDraw(e.clientX, e.clientY)
 }
 
 function onImgMouseUp() {
+  if (rectDrag.value) { rectDrag.value = null; return }
   if (!annotateMode.value || !liveRect.value) return
   endDraw()
 }
 
 function onImgTouchStart(e: TouchEvent) {
+  if (rectDrag.value) return
   if (!annotateMode.value || !authStore.isEditing || props.image.imageType !== 'catalog') return
   if (e.touches.length !== 1) return
   e.preventDefault()
@@ -387,13 +524,20 @@ function onImgTouchStart(e: TouchEvent) {
 }
 
 function onImgTouchMove(e: TouchEvent) {
+  if (rectDrag.value && e.touches.length === 1) {
+    e.preventDefault()
+    const t = e.touches[0]
+    applyRectDrag(t.clientX, t.clientY)
+    return
+  }
   if (!annotateMode.value || !drawStart.value || e.touches.length !== 1) return
   e.preventDefault()
   const t = e.touches[0]
   moveDraw(t.clientX, t.clientY)
 }
 
-function onImgTouchEnd(e: TouchEvent) {
+function onImgTouchEnd(_e: TouchEvent) {
+  if (rectDrag.value) { rectDrag.value = null; return }
   if (!annotateMode.value || !liveRect.value) return
   endDraw()
 }
@@ -724,9 +868,10 @@ function openAddSource() {
 
     <div v-show="expanded">
       <!-- Annotate hint -->
-      <div v-if="annotateMode && image.imageType === 'catalog' && authStore.isEditing" class="px-4 py-2 bg-purple-900/30 border-b border-purple-700/40 text-xs text-purple-300 flex items-center gap-2">
+      <div v-if="annotateMode && image.imageType === 'catalog' && authStore.isEditing" class="px-4 py-2 bg-purple-900/30 border-b border-purple-700/40 text-xs text-purple-300 flex items-center gap-2 flex-wrap">
         <UIcon name="i-heroicons-pencil-square" class="w-3.5 h-3.5 shrink-0" />
-        {{ t('catalog.dragHint') }}
+        <span class="min-w-0">{{ t('catalog.dragHint') }}</span>
+        <UButton size="xs" variant="soft" color="purple" icon="i-heroicons-squares-plus" @click="autoDrawRect">{{ t('catalog.addRect') }}</UButton>
         <UButton size="xs" variant="link" color="purple" @click="fullscreen = true">{{ t('catalog.fullscreenBtn') }}</UButton>
       </div>
 
@@ -743,7 +888,7 @@ function openAddSource() {
           @mousedown="onImgMouseDown"
           @mousemove="onImgMouseMove"
           @mouseup="onImgMouseUp"
-          @mouseleave="drawStart = null; liveRect = null"
+          @mouseleave="drawStart = null; liveRect = null; rectDrag = null"
           @touchstart="onImgTouchStart"
           @touchmove="onImgTouchMove"
           @touchend="onImgTouchEnd"
@@ -793,8 +938,20 @@ function openAddSource() {
 
           <div v-if="liveRect" class="absolute border-2 border-dashed pointer-events-none rounded"
             :style="{ left: liveRect.x+'%', top: liveRect.y+'%', width: liveRect.w+'%', height: liveRect.h+'%', borderColor: personHex(annotateForm.personId), backgroundColor: personHex(annotateForm.personId) + '1a' }" />
-          <div v-if="pendingRect" class="absolute border-2 pointer-events-none rounded"
-            :style="{ left: pendingRect.x+'%', top: pendingRect.y+'%', width: pendingRect.w+'%', height: pendingRect.h+'%', borderColor: personHex(annotateForm.personId), backgroundColor: personHex(annotateForm.personId) + '26' }" />
+          <div v-if="pendingRect" class="absolute z-10"
+            :style="{ left: pendingRect.x+'%', top: pendingRect.y+'%', width: pendingRect.w+'%', height: pendingRect.h+'%' }">
+            <div class="absolute inset-0 border-2 rounded cursor-move"
+              :style="{ borderColor: personHex(annotateForm.personId), backgroundColor: personHex(annotateForm.personId) + '26' }"
+              @mousedown="startRectDrag($event, 'move')" @touchstart="startRectTouch($event, 'move')" />
+            <div class="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border border-gray-700 rounded-sm cursor-nwse-resize"
+              @mousedown="startRectDrag($event, 'nw')" @touchstart="startRectTouch($event, 'nw')" />
+            <div class="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border border-gray-700 rounded-sm cursor-nesw-resize"
+              @mousedown="startRectDrag($event, 'ne')" @touchstart="startRectTouch($event, 'ne')" />
+            <div class="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border border-gray-700 rounded-sm cursor-nesw-resize"
+              @mousedown="startRectDrag($event, 'sw')" @touchstart="startRectTouch($event, 'sw')" />
+            <div class="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border border-gray-700 rounded-sm cursor-nwse-resize"
+              @mousedown="startRectDrag($event, 'se')" @touchstart="startRectTouch($event, 'se')" />
+          </div>
 
           <!-- Toggle products panel button -->
           <button
@@ -903,11 +1060,19 @@ function openAddSource() {
                 class="px-2 py-0.5 text-xs rounded-full border border-gray-600 text-gray-400 hover:border-purple-500 hover:text-purple-300 transition-colors"
                 @click="applyPreset(preset, quickForm)">{{ preset.label }} {{ preset.price }}{{ preset.currency }}</button>
             </div>
-            <div class="flex flex-wrap gap-1">
+            <div class="flex flex-wrap gap-1 items-center">
               <button v-for="s in SIZES" :key="s" type="button"
                 class="px-2 py-1 text-xs rounded border transition-colors"
                 :class="isSizeSelected(s, quickForm) ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'"
                 @click="toggleSize(s, quickForm)">{{ s }}</button>
+              <template v-if="customSizeInputFor === 'quick'">
+                <UInput v-model="customDraft" :placeholder="t('catalog.addCustomSize')" size="xs" class="w-24" autofocus
+                  @keyup.enter="commitCustomSize(quickForm)" @keyup.escape="cancelCustomPill" />
+                <button type="button" class="px-1 text-xs text-gray-400 hover:text-white" @click="cancelCustomPill">✕</button>
+              </template>
+              <button v-else type="button" :title="t('catalog.addCustomSize')"
+                class="px-2 py-1 text-xs rounded border border-dashed border-gray-600 text-gray-500 hover:border-purple-500 hover:text-purple-300 transition-colors"
+                @click="openCustomSize('quick')">+</button>
             </div>
             <div v-if="quickForm.sizes.length" class="space-y-1.5">
               <div v-for="entry in quickForm.sizes" :key="entry.size" class="flex items-center gap-2">
@@ -917,11 +1082,19 @@ function openAddSource() {
               </div>
             </div>
             <UInput v-model="quickForm.website" placeholder="Website URL (optional)" size="sm" />
-            <div class="flex flex-wrap gap-1">
+            <div class="flex flex-wrap gap-1 items-center">
               <button v-for="c in QUICK_CATS" :key="c" type="button"
                 class="px-1.5 py-0.5 text-xs rounded border transition-colors"
                 :class="quickForm.category === c ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'"
                 @click="quickForm.category = quickForm.category === c ? '' : c">{{ c }}</button>
+              <template v-if="customCatInputFor === 'quick'">
+                <UInput v-model="customDraft" :placeholder="t('catalog.addCustomCategory')" size="xs" class="w-28" autofocus
+                  @keyup.enter="commitCustomCat(quickForm)" @keyup.escape="cancelCustomPill" />
+                <button type="button" class="px-1 text-xs text-gray-400 hover:text-white" @click="cancelCustomPill">✕</button>
+              </template>
+              <button v-else type="button" :title="t('catalog.addCustomCategory')"
+                class="px-1.5 py-0.5 text-xs rounded border border-dashed border-gray-600 text-gray-500 hover:border-purple-500 hover:text-purple-300 transition-colors"
+                @click="openCustomCat('quick')">+</button>
             </div>
             <USelect v-model="quickForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
             <div class="flex gap-2">
@@ -944,11 +1117,19 @@ function openAddSource() {
                 class="px-2 py-0.5 text-xs rounded-full border border-gray-600 text-gray-400 hover:border-purple-500 hover:text-purple-300 transition-colors"
                 @click="applyPreset(preset, annotateForm)">{{ preset.label }} {{ preset.price }}{{ preset.currency }}</button>
             </div>
-            <div class="flex flex-wrap gap-1">
+            <div class="flex flex-wrap gap-1 items-center">
               <button v-for="s in SIZES" :key="s" type="button"
                 class="px-2 py-1 text-xs rounded border transition-colors"
                 :class="isSizeSelected(s, annotateForm) ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'"
                 @click="toggleSize(s, annotateForm)">{{ s }}</button>
+              <template v-if="customSizeInputFor === 'annotate'">
+                <UInput v-model="customDraft" :placeholder="t('catalog.addCustomSize')" size="xs" class="w-24" autofocus
+                  @keyup.enter="commitCustomSize(annotateForm)" @keyup.escape="cancelCustomPill" />
+                <button type="button" class="px-1 text-xs text-gray-400 hover:text-white" @click="cancelCustomPill">✕</button>
+              </template>
+              <button v-else type="button" :title="t('catalog.addCustomSize')"
+                class="px-2 py-1 text-xs rounded border border-dashed border-gray-600 text-gray-500 hover:border-purple-500 hover:text-purple-300 transition-colors"
+                @click="openCustomSize('annotate')">+</button>
             </div>
             <div v-if="annotateForm.sizes.length" class="space-y-1.5">
               <div v-for="entry in annotateForm.sizes" :key="entry.size" class="flex items-center gap-2">
@@ -958,11 +1139,19 @@ function openAddSource() {
               </div>
             </div>
             <UInput v-model="annotateForm.website" placeholder="Website URL (optional)" size="sm" />
-            <div class="flex flex-wrap gap-1">
+            <div class="flex flex-wrap gap-1 items-center">
               <button v-for="c in QUICK_CATS" :key="c" type="button"
                 class="px-1.5 py-0.5 text-xs rounded border transition-colors"
                 :class="annotateForm.category === c ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'"
                 @click="annotateForm.category = annotateForm.category === c ? '' : c">{{ c }}</button>
+              <template v-if="customCatInputFor === 'annotate'">
+                <UInput v-model="customDraft" :placeholder="t('catalog.addCustomCategory')" size="xs" class="w-28" autofocus
+                  @keyup.enter="commitCustomCat(annotateForm)" @keyup.escape="cancelCustomPill" />
+                <button type="button" class="px-1 text-xs text-gray-400 hover:text-white" @click="cancelCustomPill">✕</button>
+              </template>
+              <button v-else type="button" :title="t('catalog.addCustomCategory')"
+                class="px-1.5 py-0.5 text-xs rounded border border-dashed border-gray-600 text-gray-500 hover:border-purple-500 hover:text-purple-300 transition-colors"
+                @click="openCustomCat('annotate')">+</button>
             </div>
             <USelect v-model="annotateForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
             <div class="flex gap-2">
@@ -985,11 +1174,19 @@ function openAddSource() {
                 {{ p.size || '—' }}: {{ p.price != null ? `${p.price}${currencySymbol(p.currency)}` : '—' }}
               </span>
             </div>
-            <div class="flex flex-wrap gap-1">
+            <div class="flex flex-wrap gap-1 items-center">
               <button v-for="s in SIZES" :key="s" type="button"
                 class="px-2 py-1 text-xs rounded border transition-colors"
                 :class="addSizeForm.size === s ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'"
                 @click="addSizeForm.size = addSizeForm.size === s ? '' : s">{{ s }}</button>
+              <template v-if="customSizeInputFor === 'addSize'">
+                <UInput v-model="customDraft" :placeholder="t('catalog.addCustomSize')" size="xs" class="w-24" autofocus
+                  @keyup.enter="commitCustomSize(addSizeForm)" @keyup.escape="cancelCustomPill" />
+                <button type="button" class="px-1 text-xs text-gray-400 hover:text-white" @click="cancelCustomPill">✕</button>
+              </template>
+              <button v-else type="button" :title="t('catalog.addCustomSize')"
+                class="px-2 py-1 text-xs rounded border border-dashed border-gray-600 text-gray-500 hover:border-purple-500 hover:text-purple-300 transition-colors"
+                @click="openCustomSize('addSize')">+</button>
             </div>
             <div class="flex gap-2">
               <UInput v-model="addSizeForm.price" type="number" step="0.01" placeholder="Price" size="sm" class="flex-1" autofocus />
@@ -1017,11 +1214,19 @@ function openAddSource() {
               </div>
               <USelect v-model="editProductForm.size" :options="sizeOptions" option-attribute="label" value-attribute="value" size="sm" />
               <UInput v-model="editProductForm.website" placeholder="Website URL" size="sm" />
-              <div class="flex flex-wrap gap-1">
+              <div class="flex flex-wrap gap-1 items-center">
                 <button v-for="c in QUICK_CATS" :key="c" type="button"
                   class="px-1.5 py-0.5 text-xs rounded border transition-colors"
                   :class="editProductForm.category === c ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'"
                   @click="editProductForm.category = editProductForm.category === c ? '' : c">{{ c }}</button>
+                <template v-if="customCatInputFor === 'editProduct'">
+                  <UInput v-model="customDraft" :placeholder="t('catalog.addCustomCategory')" size="xs" class="w-28" autofocus
+                    @keyup.enter="commitCustomCat(editProductForm)" @keyup.escape="cancelCustomPill" />
+                  <button type="button" class="px-1 text-xs text-gray-400 hover:text-white" @click="cancelCustomPill">✕</button>
+                </template>
+                <button v-else type="button" :title="t('catalog.addCustomCategory')"
+                  class="px-1.5 py-0.5 text-xs rounded border border-dashed border-gray-600 text-gray-500 hover:border-purple-500 hover:text-purple-300 transition-colors"
+                  @click="openCustomCat('editProduct')">+</button>
               </div>
               <USelect v-model="editProductForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
               <div class="flex gap-2">
@@ -1330,6 +1535,11 @@ function openAddSource() {
             variant="outline" size="sm"
             @click="annotateMode = !annotateMode; if (!annotateMode) cancelAnnotation()"
           >{{ annotateMode ? t('catalog.drawingOn') : t('catalog.enableDrawing') }}</UButton>
+          <UButton v-if="annotateMode"
+            icon="i-heroicons-squares-plus"
+            color="purple" variant="soft" size="sm"
+            @click="autoDrawRect"
+          >{{ t('catalog.addRect') }}</UButton>
           <span v-if="annotateMode" class="text-xs text-purple-400 hidden sm:inline">{{ t('catalog.dragRectHint') }}</span>
         </template>
         <span class="ml-auto text-xs text-gray-500 shrink-0">
@@ -1374,7 +1584,7 @@ function openAddSource() {
           @mousedown="onImgMouseDown"
           @mousemove="onImgMouseMove"
           @mouseup="onImgMouseUp"
-          @mouseleave="drawStart = null; liveRect = null"
+          @mouseleave="drawStart = null; liveRect = null; rectDrag = null"
           @touchstart="onImgTouchStart"
           @touchmove="onImgTouchMove"
           @touchend="onImgTouchEnd"
@@ -1413,8 +1623,20 @@ function openAddSource() {
 
             <div v-if="liveRect" class="absolute border-2 border-dashed pointer-events-none rounded"
               :style="{ left: liveRect.x+'%', top: liveRect.y+'%', width: liveRect.w+'%', height: liveRect.h+'%', borderColor: personHex(annotateForm.personId), backgroundColor: personHex(annotateForm.personId) + '1a' }" />
-            <div v-if="pendingRect" class="absolute border-2 pointer-events-none rounded"
-              :style="{ left: pendingRect.x+'%', top: pendingRect.y+'%', width: pendingRect.w+'%', height: pendingRect.h+'%', borderColor: personHex(annotateForm.personId), backgroundColor: personHex(annotateForm.personId) + '26' }" />
+            <div v-if="pendingRect" class="absolute z-10"
+              :style="{ left: pendingRect.x+'%', top: pendingRect.y+'%', width: pendingRect.w+'%', height: pendingRect.h+'%' }">
+              <div class="absolute inset-0 border-2 rounded cursor-move"
+                :style="{ borderColor: personHex(annotateForm.personId), backgroundColor: personHex(annotateForm.personId) + '26' }"
+                @mousedown="startRectDrag($event, 'move')" @touchstart="startRectTouch($event, 'move')" />
+              <div class="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border border-gray-700 rounded-sm cursor-nwse-resize"
+                @mousedown="startRectDrag($event, 'nw')" @touchstart="startRectTouch($event, 'nw')" />
+              <div class="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border border-gray-700 rounded-sm cursor-nesw-resize"
+                @mousedown="startRectDrag($event, 'ne')" @touchstart="startRectTouch($event, 'ne')" />
+              <div class="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border border-gray-700 rounded-sm cursor-nesw-resize"
+                @mousedown="startRectDrag($event, 'sw')" @touchstart="startRectTouch($event, 'sw')" />
+              <div class="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border border-gray-700 rounded-sm cursor-nwse-resize"
+                @mousedown="startRectDrag($event, 'se')" @touchstart="startRectTouch($event, 'se')" />
+            </div>
           </div>
         </div>
 
@@ -1466,11 +1688,19 @@ function openAddSource() {
                     class="px-2 py-0.5 text-xs rounded-full border border-gray-600 text-gray-400 hover:border-purple-500 hover:text-purple-300 transition-colors"
                     @click="applyPreset(preset, annotateForm)">{{ preset.label }} {{ preset.price }}{{ preset.currency }}</button>
                 </div>
-                <div class="flex flex-wrap gap-1">
+                <div class="flex flex-wrap gap-1 items-center">
                   <button v-for="s in SIZES" :key="s" type="button"
                     class="px-2 py-1 text-xs rounded border transition-colors"
                     :class="isSizeSelected(s, annotateForm) ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'"
                     @click="toggleSize(s, annotateForm)">{{ s }}</button>
+                  <template v-if="customSizeInputFor === 'fs-annotate'">
+                    <UInput v-model="customDraft" :placeholder="t('catalog.addCustomSize')" size="xs" class="w-24" autofocus
+                      @keyup.enter="commitCustomSize(annotateForm)" @keyup.escape="cancelCustomPill" />
+                    <button type="button" class="px-1 text-xs text-gray-400 hover:text-white" @click="cancelCustomPill">✕</button>
+                  </template>
+                  <button v-else type="button" :title="t('catalog.addCustomSize')"
+                    class="px-2 py-1 text-xs rounded border border-dashed border-gray-600 text-gray-500 hover:border-purple-500 hover:text-purple-300 transition-colors"
+                    @click="openCustomSize('fs-annotate')">+</button>
                 </div>
                 <div v-if="annotateForm.sizes.length" class="space-y-1.5">
                   <div v-for="entry in annotateForm.sizes" :key="entry.size" class="flex items-center gap-2">
@@ -1480,11 +1710,19 @@ function openAddSource() {
                   </div>
                 </div>
                 <UInput v-model="annotateForm.website" placeholder="Website URL" size="sm" />
-                <div class="flex flex-wrap gap-1">
+                <div class="flex flex-wrap gap-1 items-center">
                   <button v-for="c in QUICK_CATS" :key="c" type="button"
                     class="px-1.5 py-0.5 text-xs rounded border transition-colors"
                     :class="annotateForm.category === c ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'"
                     @click="annotateForm.category = annotateForm.category === c ? '' : c">{{ c }}</button>
+                  <template v-if="customCatInputFor === 'fs-annotate'">
+                    <UInput v-model="customDraft" :placeholder="t('catalog.addCustomCategory')" size="xs" class="w-28" autofocus
+                      @keyup.enter="commitCustomCat(annotateForm)" @keyup.escape="cancelCustomPill" />
+                    <button type="button" class="px-1 text-xs text-gray-400 hover:text-white" @click="cancelCustomPill">✕</button>
+                  </template>
+                  <button v-else type="button" :title="t('catalog.addCustomCategory')"
+                    class="px-1.5 py-0.5 text-xs rounded border border-dashed border-gray-600 text-gray-500 hover:border-purple-500 hover:text-purple-300 transition-colors"
+                    @click="openCustomCat('fs-annotate')">+</button>
                 </div>
                 <USelect v-model="annotateForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
                 <div class="flex gap-2">
@@ -1502,11 +1740,19 @@ function openAddSource() {
                     class="px-2 py-0.5 text-xs rounded-full border border-gray-600 text-gray-400 hover:border-purple-500 hover:text-purple-300 transition-colors"
                     @click="applyPreset(preset, quickForm)">{{ preset.label }} {{ preset.price }}{{ preset.currency }}</button>
                 </div>
-                <div class="flex flex-wrap gap-1">
+                <div class="flex flex-wrap gap-1 items-center">
                   <button v-for="s in SIZES" :key="s" type="button"
                     class="px-2 py-1 text-xs rounded border transition-colors"
                     :class="isSizeSelected(s, quickForm) ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'"
                     @click="toggleSize(s, quickForm)">{{ s }}</button>
+                  <template v-if="customSizeInputFor === 'fs-quick'">
+                    <UInput v-model="customDraft" :placeholder="t('catalog.addCustomSize')" size="xs" class="w-24" autofocus
+                      @keyup.enter="commitCustomSize(quickForm)" @keyup.escape="cancelCustomPill" />
+                    <button type="button" class="px-1 text-xs text-gray-400 hover:text-white" @click="cancelCustomPill">✕</button>
+                  </template>
+                  <button v-else type="button" :title="t('catalog.addCustomSize')"
+                    class="px-2 py-1 text-xs rounded border border-dashed border-gray-600 text-gray-500 hover:border-purple-500 hover:text-purple-300 transition-colors"
+                    @click="openCustomSize('fs-quick')">+</button>
                 </div>
                 <div v-if="quickForm.sizes.length" class="space-y-1.5">
                   <div v-for="entry in quickForm.sizes" :key="entry.size" class="flex items-center gap-2">
@@ -1516,11 +1762,19 @@ function openAddSource() {
                   </div>
                 </div>
                 <UInput v-model="quickForm.website" placeholder="Website URL" size="sm" />
-                <div class="flex flex-wrap gap-1">
+                <div class="flex flex-wrap gap-1 items-center">
                   <button v-for="c in QUICK_CATS" :key="c" type="button"
                     class="px-1.5 py-0.5 text-xs rounded border transition-colors"
                     :class="quickForm.category === c ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'"
                     @click="quickForm.category = quickForm.category === c ? '' : c">{{ c }}</button>
+                  <template v-if="customCatInputFor === 'fs-quick'">
+                    <UInput v-model="customDraft" :placeholder="t('catalog.addCustomCategory')" size="xs" class="w-28" autofocus
+                      @keyup.enter="commitCustomCat(quickForm)" @keyup.escape="cancelCustomPill" />
+                    <button type="button" class="px-1 text-xs text-gray-400 hover:text-white" @click="cancelCustomPill">✕</button>
+                  </template>
+                  <button v-else type="button" :title="t('catalog.addCustomCategory')"
+                    class="px-1.5 py-0.5 text-xs rounded border border-dashed border-gray-600 text-gray-500 hover:border-purple-500 hover:text-purple-300 transition-colors"
+                    @click="openCustomCat('fs-quick')">+</button>
                 </div>
                 <USelect v-model="quickForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
                 <div class="flex gap-2">
@@ -1543,11 +1797,19 @@ function openAddSource() {
                     {{ p.size || '—' }}: {{ p.price != null ? `${p.price}${currencySymbol(p.currency)}` : '—' }}
                   </span>
                 </div>
-                <div class="flex flex-wrap gap-1">
+                <div class="flex flex-wrap gap-1 items-center">
                   <button v-for="s in SIZES" :key="s" type="button"
                     class="px-2 py-0.5 text-xs rounded border transition-colors"
                     :class="addSizeForm.size === s ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'"
                     @click="addSizeForm.size = addSizeForm.size === s ? '' : s">{{ s }}</button>
+                  <template v-if="customSizeInputFor === 'fs-addSize'">
+                    <UInput v-model="customDraft" :placeholder="t('catalog.addCustomSize')" size="xs" class="w-24" autofocus
+                      @keyup.enter="commitCustomSize(addSizeForm)" @keyup.escape="cancelCustomPill" />
+                    <button type="button" class="px-1 text-xs text-gray-400 hover:text-white" @click="cancelCustomPill">✕</button>
+                  </template>
+                  <button v-else type="button" :title="t('catalog.addCustomSize')"
+                    class="px-2 py-0.5 text-xs rounded border border-dashed border-gray-600 text-gray-500 hover:border-purple-500 hover:text-purple-300 transition-colors"
+                    @click="openCustomSize('fs-addSize')">+</button>
                 </div>
                 <div class="flex gap-2">
                   <UInput v-model="addSizeForm.price" type="number" step="0.01" placeholder="Price" size="sm" class="flex-1" />
@@ -1574,11 +1836,19 @@ function openAddSource() {
                   </div>
                   <USelect v-model="editProductForm.size" :options="sizeOptions" option-attribute="label" value-attribute="value" size="sm" />
                   <UInput v-model="editProductForm.website" placeholder="Website URL" size="sm" />
-                  <div class="flex flex-wrap gap-1">
+                  <div class="flex flex-wrap gap-1 items-center">
                     <button v-for="c in QUICK_CATS" :key="c" type="button"
                       class="px-1.5 py-0.5 text-xs rounded border transition-colors"
                       :class="editProductForm.category === c ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'"
                       @click="editProductForm.category = editProductForm.category === c ? '' : c">{{ c }}</button>
+                    <template v-if="customCatInputFor === 'fs-editProduct'">
+                      <UInput v-model="customDraft" :placeholder="t('catalog.addCustomCategory')" size="xs" class="w-28" autofocus
+                        @keyup.enter="commitCustomCat(editProductForm)" @keyup.escape="cancelCustomPill" />
+                      <button type="button" class="px-1 text-xs text-gray-400 hover:text-white" @click="cancelCustomPill">✕</button>
+                    </template>
+                    <button v-else type="button" :title="t('catalog.addCustomCategory')"
+                      class="px-1.5 py-0.5 text-xs rounded border border-dashed border-gray-600 text-gray-500 hover:border-purple-500 hover:text-purple-300 transition-colors"
+                      @click="openCustomCat('fs-editProduct')">+</button>
                   </div>
                   <USelect v-model="editProductForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
                   <div class="flex gap-2">

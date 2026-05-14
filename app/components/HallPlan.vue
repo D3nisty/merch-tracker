@@ -17,6 +17,8 @@ const emit = defineEmits<{
     rect: { x: number; y: number; w: number; h: number },
   ]
   placeExistingBooth: [boothId: string, imageIdx: number, rect: { x: number; y: number; w: number; h: number }]
+  removeDetectedBooth: [imageIdx: number, boothNr: string]
+  deleteBooth: [boothId: string]
 }>()
 
 const authStore = useAuthStore()
@@ -69,6 +71,10 @@ const allDetectedBooths = computed<DetectedBooth[]>(() => {
 // ── View mode + search ─────────────────────────────────────────────────
 const viewMode = ref<'map' | 'list'>('map')
 const searchQuery = ref('')
+
+// When true, the underlying floor plan image is hidden and only the SVG
+// rendering is shown — a clean redrawn-map view with gray boxes + labels.
+const showImage = ref(true)
 
 const filteredListBooths = computed(() => {
   const q = searchQuery.value.trim().toUpperCase()
@@ -137,9 +143,87 @@ const liveDraw = ref<{ x: number; y: number; w: number; h: number } | null>(null
 const pendingDraw = ref<{ x: number; y: number; w: number; h: number } | null>(null)
 const manualForm = reactive({ name: '', boothNr: '', hallNr: '', website: '', notes: '' })
 
+// Pattern replication — when the user draws one booth, they can also create
+// N siblings in one of the four cardinal directions, with the booth number
+// auto-incremented based on the pattern. Avoids retyping for the typical grid
+// floor plan where booths sit in regular rows/columns.
+type ReplicateDirection = 'right' | 'left' | 'up' | 'down'
+const replicateForm = reactive<{ count: number; direction: ReplicateDirection }>({
+  count: 1,
+  direction: 'right',
+})
+
+/**
+ * Auto-increment a booth number along a direction.
+ *   - 'up' / 'down'    → step the trailing number
+ *   - 'left' / 'right' → step the letter section (skipping 'I' — most venues
+ *                        skip it because it looks like the digit 1)
+ *
+ * Defaults match a typical convention floor plan where letters DECREASE going
+ * right (e.g. 10N → 10M → 10L → 10K → 10J → 10H) and numbers DECREASE going
+ * down. The user can flip direction if their layout differs.
+ *
+ * Returns null if the increment runs out of bounds (e.g. letter past 'Z').
+ */
+function incrementBoothNr(nr: string, direction: ReplicateDirection, step: number): string | null {
+  const m = nr.match(/^(\d{0,2})([A-Z]+)?(\d{1,4})$/i)
+  if (!m) return null
+  const hallPart = m[1] || ''
+  const letterPart = (m[2] || '').toUpperCase()
+  const numPart = m[3]
+  const padLength = numPart.length
+
+  if (direction === 'up' || direction === 'down') {
+    const delta = direction === 'up' ? step : -step
+    const next = parseInt(numPart, 10) + delta
+    if (next < 0) return null
+    return `${hallPart}${letterPart}${String(next).padStart(padLength, '0')}`
+  }
+
+  // Horizontal direction → letter shift
+  if (!letterPart) return null
+  const lastChar = letterPart.charCodeAt(letterPart.length - 1)
+  const delta = direction === 'left' ? step : -step
+  let nextCode = lastChar + delta
+  // Skip 'I' (charCode 73) if the new letter would cross it
+  while ((delta > 0 && lastChar < 73 && nextCode >= 73 && nextCode <= 73 + Math.abs(delta) - 1)
+      || (delta < 0 && lastChar > 73 && nextCode <= 73 && nextCode >= 73 - Math.abs(delta) + 1)) {
+    nextCode += delta > 0 ? 1 : -1
+  }
+  if (nextCode < 65 || nextCode > 90) return null
+  const newLetter = letterPart.slice(0, -1) + String.fromCharCode(nextCode)
+  return `${hallPart}${newLetter}${numPart}`
+}
+
+function computeOffset(direction: ReplicateDirection, step: number, w: number, h: number) {
+  const GAP = 2  // small pixel gap so replicas don't visually merge
+  switch (direction) {
+    case 'right': return { dx: step * (w + GAP), dy: 0 }
+    case 'left':  return { dx: -step * (w + GAP), dy: 0 }
+    case 'down':  return { dx: 0, dy: step * (h + GAP) }
+    case 'up':    return { dx: 0, dy: -step * (h + GAP) }
+  }
+}
+
+// Preview of the booth numbers that will be created (including the seed).
+const replicatePreview = computed<string[]>(() => {
+  if (replicateForm.count <= 1 || !manualForm.boothNr.trim()) return []
+  const out: string[] = [manualForm.boothNr.trim().toUpperCase()]
+  for (let i = 1; i < replicateForm.count; i++) {
+    const next = incrementBoothNr(manualForm.boothNr.trim(), replicateForm.direction, i)
+    if (!next) break
+    out.push(next)
+  }
+  return out
+})
+
 // ── Place existing booth mode ──────────────────────────────────────────
 const placingBooth = ref<Booth | null>(null)
 const pendingPlace = ref<{ x: number; y: number; w: number; h: number } | null>(null)
+
+// When true, clicking a gray (detected) booth removes it from the OCR layout.
+// Mutually exclusive with drawMode.
+const removeMode = ref(false)
 
 function startPlacing(booth: Booth) {
   if (placingBooth.value?.id === booth.id) {
@@ -157,6 +241,17 @@ function cancelPlace() {
   pendingPlace.value = null
   liveDraw.value = null
   drawStart.value = null
+}
+
+function deletePlacingBooth() {
+  if (!placingBooth.value) return
+  const target = placingBooth.value
+  // Confirm before destroying — this also wipes the booth's products + images.
+  if (typeof window !== 'undefined' && !window.confirm(`Delete "${target.name}" and all its products / images?`)) {
+    return
+  }
+  emit('deleteBooth', target.id)
+  cancelPlace()
 }
 
 async function confirmPlace() {
@@ -178,6 +273,7 @@ function getImageCoords(e: MouseEvent): { x: number; y: number } {
 
 function toggleDrawMode() {
   drawMode.value = !drawMode.value
+  if (drawMode.value) removeMode.value = false
   if (!drawMode.value) cancelManualBooth()
 }
 
@@ -190,18 +286,47 @@ function cancelManualBooth() {
 
 async function saveManualBooth() {
   if (!manualForm.name.trim() || !pendingDraw.value) return
-  emit('createManualBooth', { ...manualForm }, currentImageIdx.value, { ...pendingDraw.value })
+  const seedRect = { ...pendingDraw.value }
+  const seedForm = { ...manualForm }
+  const imageIdx = currentImageIdx.value
+
+  // First (seed) booth — keeps the name, website, and notes the user typed.
+  emit('createManualBooth', seedForm, imageIdx, seedRect)
+
+  // Replicas: same position offset along the chosen direction, booth number
+  // auto-incremented. Name defaults to the new boothNr (or "<seed name> 2", "3"
+  // if no booth number is provided). Website and notes are NOT copied.
+  if (replicateForm.count > 1) {
+    for (let i = 1; i < replicateForm.count; i++) {
+      const offset = computeOffset(replicateForm.direction, i, seedRect.w, seedRect.h)
+      const nextBoothNr = seedForm.boothNr
+        ? incrementBoothNr(seedForm.boothNr, replicateForm.direction, i)
+        : null
+      // Stop early if the booth-number sequence runs out (e.g. past 'Z')
+      if (seedForm.boothNr && !nextBoothNr) break
+      const name = nextBoothNr || `${seedForm.name} ${i + 1}`
+      emit('createManualBooth',
+        { name, boothNr: nextBoothNr ?? '', hallNr: seedForm.hallNr, website: '', notes: '' },
+        imageIdx,
+        { x: seedRect.x + offset.dx, y: seedRect.y + offset.dy, w: seedRect.w, h: seedRect.h },
+      )
+    }
+  }
+
   pendingDraw.value = null
   drawMode.value = false
   Object.assign(manualForm, { name: '', boothNr: '', hallNr: '', website: '', notes: '' })
+  replicateForm.count = 1
 }
 
 // ── Mouse handlers (pan + draw + place) ───────────────────────────────
 const isDrawing = computed(() => drawMode.value || !!placingBooth.value)
 
 function onMouseDown(e: MouseEvent) {
-  if ((e.target as Element).closest('.booth-rect')) return
-
+  // In drawing/placing mode the user needs to drag over existing booths to
+  // pick a position, so we must NOT bail out when the mousedown happens on
+  // top of one. The booth-rect click handlers themselves use @click.stop so
+  // a non-drag click on a booth still works in normal mode.
   if (isDrawing.value && authStore.isEditing) {
     e.preventDefault()
     const c = getImageCoords(e)
@@ -211,6 +336,10 @@ function onMouseDown(e: MouseEvent) {
     else pendingPlace.value = null
     return
   }
+
+  // Not drawing/placing: clicks on existing booths are handled by their own
+  // @click handler. Don't start panning when the user clicks a booth.
+  if ((e.target as Element).closest('.booth-rect')) return
 
   isPanning.value = true
   lastMouse.value = { x: e.clientX, y: e.clientY }
@@ -294,6 +423,13 @@ function boothBorderColor(booth: Booth): string {
           </template>
         </UInput>
         <UButton
+          v-if="viewMode === 'map'"
+          size="sm" variant="outline" color="gray"
+          :icon="showImage ? 'i-heroicons-eye-slash' : 'i-heroicons-photo'"
+          :title="showImage ? t('hallplan.hideImage') : t('hallplan.showImage')"
+          @click="showImage = !showImage"
+        />
+        <UButton
           size="sm" variant="outline" color="gray"
           :icon="viewMode === 'map' ? 'i-heroicons-list-bullet' : 'i-heroicons-map'"
           @click="viewMode = viewMode === 'map' ? 'list' : 'map'"
@@ -345,6 +481,20 @@ function boothBorderColor(booth: Booth): string {
               {{ drawMode ? t('hallplan.drawMode') : t('hallplan.drawBooth') }}
             </UButton>
 
+            <!-- Remove-detected toggle: click detected (gray) booths to remove
+                 them from the OCR layout. Useful for clearing false positives. -->
+            <UButton
+              v-if="authStore.isEditing"
+              size="xs"
+              :variant="removeMode ? 'solid' : 'outline'"
+              :color="removeMode ? 'red' : 'gray'"
+              icon="i-heroicons-trash"
+              :title="t('hallplan.removeDetectedHint')"
+              @click="removeMode = !removeMode; if (removeMode) drawMode = false"
+            >
+              {{ removeMode ? t('hallplan.removeMode') : t('hallplan.removeDetected') }}
+            </UButton>
+
             <UButton size="xs" variant="ghost" color="gray" icon="i-heroicons-magnifying-glass-minus"
               @click="zoom = Math.max(0.15, zoom - 0.15)" />
             <span class="w-12 text-center">{{ Math.round(zoom * 100) }}%</span>
@@ -366,7 +516,15 @@ function boothBorderColor(booth: Booth): string {
           <UIcon name="i-heroicons-map-pin" class="w-3.5 h-3.5 shrink-0" />
           {{ t('hallplan.placeHintA') }} <span class="font-semibold text-orange-200 mx-1">{{ placingBooth.name }}</span>
           <span v-if="placingBooth.boothNr" class="font-mono bg-orange-900/50 px-1 rounded">{{ placingBooth.boothNr }}</span> {{ t('hallplan.placeHintB') }}
-          <UButton size="xs" variant="link" color="gray" class="ml-auto" @click="cancelPlace">{{ t('common.cancel') }}</UButton>
+          <div class="ml-auto flex items-center gap-1">
+            <UButton size="xs" variant="link" color="gray" @click="cancelPlace">{{ t('common.cancel') }}</UButton>
+            <UButton
+              size="xs" variant="link" color="red"
+              icon="i-heroicons-trash"
+              :title="t('hallplan.deleteThisBooth')"
+              @click="deletePlacingBooth"
+            >{{ t('common.delete') }}</UButton>
+          </div>
         </div>
 
         <!-- Map viewport -->
@@ -392,11 +550,19 @@ function boothBorderColor(booth: Booth): string {
             }"
           >
             <img
+              v-if="showImage"
               :src="currentPlanImage.path"
               class="block"
               :width="currentPlanImage.naturalWidth"
               :height="currentPlanImage.naturalHeight"
               draggable="false"
+            />
+            <!-- Map-only mode: render a clean light background where the image
+                 would normally sit, so SVG rects + labels read on their own. -->
+            <div
+              v-else
+              class="bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-700"
+              :style="{ width: currentPlanImage.naturalWidth + 'px', height: currentPlanImage.naturalHeight + 'px' }"
             />
 
             <svg
@@ -411,22 +577,37 @@ function boothBorderColor(booth: Booth): string {
                 v-for="b in currentPlanImage.booths.filter(b => !getUserBooth(b.boothNr))"
                 :key="`det-${b.boothNr}`"
                 :x="b.x" :y="b.y" :width="b.w" :height="b.h" rx="3"
-                :fill="isSearchMatch(b.boothNr) ? 'rgba(168,85,247,0.25)' : 'rgba(156,163,175,0.07)'"
-                :stroke="isSearchMatch(b.boothNr) ? '#a855f8' : 'rgba(156,163,175,0.45)'"
-                :stroke-width="isSearchMatch(b.boothNr) ? 2.5 : 1.5"
+                :fill="removeMode
+                  ? 'rgba(239,68,68,0.18)'
+                  : (isSearchMatch(b.boothNr)
+                      ? 'rgba(168,85,247,0.25)'
+                      : (showImage ? 'rgba(156,163,175,0.07)' : 'rgba(229,231,235,0.9)'))"
+                :stroke="removeMode
+                  ? '#ef4444'
+                  : (isSearchMatch(b.boothNr)
+                      ? '#a855f8'
+                      : (showImage ? 'rgba(156,163,175,0.45)' : 'rgba(107,114,128,0.85)'))"
+                :stroke-width="isSearchMatch(b.boothNr) || removeMode ? 2.5 : 1.5"
                 class="booth-rect"
                 style="pointer-events: all; cursor: pointer"
-                @click.stop="!drawMode && emit('addDetectedBooth', b.boothNr)"
+                @click.stop="removeMode
+                  ? emit('removeDetectedBooth', currentImageIdx, b.boothNr)
+                  : (!drawMode && emit('addDetectedBooth', b.boothNr))"
               >
-                <title>{{ b.boothNr }} — click to add</title>
+                <title>{{ removeMode ? `${b.boothNr} — click to remove` : `${b.boothNr} — click to add` }}</title>
               </rect>
 
+              <!-- Detected-booth labels: shown for every box in map-only mode
+                   (no image to read the number off of), or just for search
+                   matches when the image is visible. -->
               <text
-                v-for="b in currentPlanImage.booths.filter(b => !getUserBooth(b.boothNr) && isSearchMatch(b.boothNr))"
+                v-for="b in currentPlanImage.booths.filter(b => !getUserBooth(b.boothNr) && (!showImage || isSearchMatch(b.boothNr)))"
                 :key="`det-lbl-${b.boothNr}`"
                 :x="b.x + b.w / 2" :y="b.y + b.h / 2 + 4"
                 text-anchor="middle" :font-size="Math.min(12, b.h * 0.45)"
-                font-weight="bold" fill="#a855f8" font-family="ui-monospace, monospace"
+                font-weight="bold"
+                :fill="isSearchMatch(b.boothNr) ? '#a855f8' : '#374151'"
+                font-family="ui-monospace, monospace"
                 style="pointer-events: none"
               >{{ b.boothNr }}</text>
 
@@ -516,9 +697,48 @@ function boothBorderColor(booth: Booth): string {
               <UInput v-model="manualForm.notes" :placeholder="t('hallplan.notesPlaceholder')" size="sm" />
             </UFormGroup>
 
+            <!-- Pattern replication: draw one booth, fill a whole row/column.
+                 Disabled when there's no booth number to auto-increment. -->
+            <div class="border-t border-gray-800 pt-2 space-y-2">
+              <p class="text-xs font-medium text-gray-400">{{ t('hallplan.replicate') }}</p>
+              <div class="flex items-center gap-2">
+                <label class="text-xs text-gray-500 shrink-0">{{ t('hallplan.replicateCount') }}</label>
+                <UInput
+                  v-model.number="replicateForm.count"
+                  type="number" min="1" max="50" size="xs" class="w-16"
+                  :disabled="!manualForm.boothNr.trim()"
+                />
+                <div class="flex gap-0.5 ml-auto" :class="manualForm.boothNr.trim() ? '' : 'opacity-40 pointer-events-none'">
+                  <button v-for="d in (['left','right','up','down'] as ReplicateDirection[])" :key="d"
+                    type="button"
+                    class="w-7 h-7 rounded text-xs font-medium border transition-colors flex items-center justify-center"
+                    :class="replicateForm.direction === d
+                      ? 'border-purple-500 bg-purple-500/20 text-purple-300'
+                      : 'border-gray-700 text-gray-400 hover:border-gray-500 hover:text-white'"
+                    :title="t('hallplan.direction' + d.charAt(0).toUpperCase() + d.slice(1))"
+                    @click="replicateForm.direction = d"
+                  >
+                    <UIcon
+                      :name="d === 'left' ? 'i-heroicons-arrow-left'
+                           : d === 'right' ? 'i-heroicons-arrow-right'
+                           : d === 'up' ? 'i-heroicons-arrow-up'
+                           : 'i-heroicons-arrow-down'"
+                      class="w-3.5 h-3.5"
+                    />
+                  </button>
+                </div>
+              </div>
+              <div v-if="replicatePreview.length > 1" class="text-xs text-gray-500 leading-relaxed">
+                <span class="text-gray-400">{{ t('hallplan.replicatePreview') }}:</span>
+                <span class="font-mono ml-1">{{ replicatePreview.join(', ') }}</span>
+              </div>
+            </div>
+
             <div class="flex gap-2 pt-1">
               <UButton color="purple" size="sm" :disabled="!manualForm.name.trim()" class="flex-1" @click="saveManualBooth">
-                {{ t('hallplan.addBooth') }}
+                {{ replicatePreview.length > 1
+                  ? t('hallplan.addNBooths').replace('{n}', String(replicatePreview.length))
+                  : t('hallplan.addBooth') }}
               </UButton>
               <UButton variant="ghost" color="gray" size="sm" @click="cancelManualBooth">{{ t('common.cancel') }}</UButton>
             </div>

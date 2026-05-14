@@ -172,7 +172,7 @@ All IDs are UUIDs. SQLite with WAL mode + foreign keys enabled.
 
 ## Key Features
 - **Hall Plan**: Upload a floor plan image, click to place booths as percentage-positioned overlays. Drag to reposition. Color-coded by purchase status.
-- **Hall Plan OCR Setup**: Tesseract.js scans the floor plan for booth numbers and stores pixel positions so detected booths can be picked from the map.
+- **Hall Plan OCR Setup**: Tesseract.js scans the floor plan for booth numbers and stores pixel positions so detected booths can be picked from the map. Pipeline in [`HallPlanSetupModal.vue`](../app/components/HallPlanSetupModal.vue) runs vanilla Tesseract (no preprocessing, default PSM, no whitelist) at confidence threshold 28, then merges adjacent horizontal word pairs to handle splits like `10N` + `18` → `10N18`. Previously tried image preprocessing / PSM tweaks / pattern broadening but those regressed accuracy on real convention floor plans, so the simpler pipeline stays. Manual fallback: pattern replication in [`HallPlan.vue`](../app/components/HallPlan.vue)'s Draw mode lets you create a whole row/column of booths from one drawn rectangle (auto-increments the booth number, skipping `I`).
 - **Catalog Image Split**: Images can be displayed in "split" mode (N horizontal sections) to navigate large catalog pages.
 - **Catalog Annotations**: Draw a rectangle on a catalog page → linked to a Product. Sizes can be added per region.
 - **Article gallery**: For figures/items with multiple price sources. Each source = a Product row with shop name, price, planned/paid flags. Layout: image left, sources right (side-by-side, same as catalog).

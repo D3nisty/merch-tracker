@@ -132,6 +132,25 @@ async function onPlaceExistingBooth(
   }
 }
 
+// Delete an entire user-added booth (the row in `booths`, its products, and
+// its images). Confirmation happened in the child component.
+async function onDeleteBooth(boothId: string) {
+  await store.deleteBooth(boothId)
+  if (selectedBoothId.value === boothId) selectedBoothId.value = null
+}
+
+// Remove a booth from the OCR layout (e.g. false positive). Only the layout
+// data is mutated — any user-added Booth row keyed by the same boothNr is
+// untouched.
+async function onRemoveDetectedBooth(imageIdx: number, boothNr: string) {
+  if (!selectedLocation.value?.layoutData) return
+  const layout = JSON.parse(selectedLocation.value.layoutData) as HallLayoutData
+  const page = layout.images[imageIdx]
+  if (!page) return
+  page.booths = page.booths.filter(b => b.boothNr !== boothNr)
+  await store.updateLocation(selectedLocationId.value, { layoutData: JSON.stringify(layout) })
+}
+
 // Stats for selected location
 const locationStats = computed(() => {
   const booths = selectedLocation.value?.booths ?? []
@@ -236,6 +255,8 @@ const locationStats = computed(() => {
           @add-detected-booth="onAddDetectedBooth"
           @create-manual-booth="onCreateManualBooth"
           @place-existing-booth="onPlaceExistingBooth"
+          @remove-detected-booth="onRemoveDetectedBooth"
+          @delete-booth="onDeleteBooth"
         />
         <div v-else class="bg-gray-900 rounded-xl p-10 text-center text-gray-500">
           {{ t('hallplan.noHalls') }}
