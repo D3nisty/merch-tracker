@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Event } from '~/stores/events'
+import { formatEventDateRange } from '~/stores/events'
 import { useAuthStore } from '~/stores/auth'
 import { useLocale } from '~/composables/useLocale'
 
@@ -58,7 +59,7 @@ const dropdownItems = computed(() => {
               <span class="text-xs font-medium" :class="isConvention ? 'text-purple-400' : 'text-blue-400'">
                 {{ isConvention ? t('events.convention') : t('events.travelType') }}
               </span>
-              <span v-if="event.date" class="text-xs text-gray-500">· {{ event.date }}</span>
+              <span v-if="event.date" class="text-xs text-gray-500">· {{ formatEventDateRange(event.date, event.dateTo) }}</span>
             </div>
             <h3 class="font-bold text-white text-lg truncate">{{ event.name }}</h3>
             <p v-if="event.location" class="text-gray-400 text-sm">{{ event.location }}</p>

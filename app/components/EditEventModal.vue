@@ -16,6 +16,7 @@ const submitting = ref(false)
 const form = reactive({
   name: props.event.name,
   date: props.event.date ?? '',
+  dateTo: props.event.dateTo ?? '',
   location: props.event.location ?? '',
   description: props.event.description ?? '',
   isPublic: props.event.isPublic ?? false,
@@ -24,18 +25,26 @@ const form = reactive({
 watch(() => props.event, (e) => {
   form.name = e.name
   form.date = e.date ?? ''
+  form.dateTo = e.dateTo ?? ''
   form.location = e.location ?? ''
   form.description = e.description ?? ''
   form.isPublic = e.isPublic ?? false
 })
 
+// The "to" date input clamps to >= the start so the browser picker hints at
+// valid values. We also drop dateTo on submit when it's on/before the start
+// (server does the same — defense in depth).
+const dateToMin = computed(() => form.date || undefined)
+
 async function handleSubmit() {
   if (!form.name.trim()) return
   submitting.value = true
   try {
+    const normalisedDateTo = form.dateTo && form.date && form.dateTo > form.date ? form.dateTo : null
     await store.updateEvent(props.event.id, {
       name: form.name.trim(),
       date: form.date || null,
+      dateTo: normalisedDateTo,
       location: form.location || null,
       description: form.description || null,
       isPublic: form.isPublic,
@@ -61,9 +70,14 @@ async function handleSubmit() {
         <UFormGroup :label="event.type === 'convention' ? t('createEvent.venueCity') : t('createEvent.countryRegion')">
           <UInput v-model="form.location" />
         </UFormGroup>
-        <UFormGroup :label="t('common.date')">
-          <UInput v-model="form.date" type="date" />
-        </UFormGroup>
+        <div class="grid grid-cols-2 gap-3">
+          <UFormGroup :label="t('common.from')">
+            <UInput v-model="form.date" type="date" />
+          </UFormGroup>
+          <UFormGroup :label="t('common.to')">
+            <UInput v-model="form.dateTo" type="date" :min="dateToMin" :disabled="!form.date" />
+          </UFormGroup>
+        </div>
         <UFormGroup :label="t('common.description')">
           <UTextarea v-model="form.description" :rows="3" />
         </UFormGroup>

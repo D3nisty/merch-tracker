@@ -95,6 +95,7 @@ export function useDb() {
       name TEXT NOT NULL,
       type TEXT NOT NULL CHECK(type IN ('convention','travel')),
       date TEXT,
+      date_to TEXT,
       location TEXT,
       description TEXT,
       created_at TEXT NOT NULL,
@@ -231,6 +232,10 @@ export function useDb() {
   try { sqlite.exec(`ALTER TABLE booth_discounts ADD COLUMN bundle_currency TEXT`) } catch { /* already exists */ }
   // product_person_marks gained per-person quantity for "I want 2 of this".
   try { sqlite.exec(`ALTER TABLE product_person_marks ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1`) } catch { /* already exists */ }
+  // Events gained an optional end-date so multi-day conventions can record
+  // the full range. Pre-existing single-day events keep `date` populated and
+  // `date_to` NULL — the UI treats that as "single day".
+  try { sqlite.exec(`ALTER TABLE events ADD COLUMN date_to TEXT`) } catch { /* already exists */ }
 
   // Backfill slugs for existing events that don't have one
   const needsSlug = sqlite.prepare('SELECT id, name FROM events WHERE slug IS NULL').all() as { id: string; name: string }[]

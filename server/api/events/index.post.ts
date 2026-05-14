@@ -28,12 +28,19 @@ export default defineEventHandler(async (event) => {
   let i = 2
   while (takenSlugs.includes(slug)) slug = `${base}-${i++}`
 
+  // Normalise the date range: if dateTo is the same as date OR earlier than
+  // date, drop it (single-day event). This keeps queries / display simple.
+  const dateFrom = body.date ?? null
+  let dateTo: string | null = body.dateTo ?? null
+  if (dateTo && dateFrom && dateTo <= dateFrom) dateTo = null
+
   const newEvent = {
     id,
     slug,
     name: body.name,
     type: body.type as 'convention' | 'travel',
-    date: body.date ?? null,
+    date: dateFrom,
+    dateTo,
     location: body.location ?? null,
     description: body.description ?? null,
     isPublic: Boolean(body.isPublic),

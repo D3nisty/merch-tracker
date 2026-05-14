@@ -4,6 +4,7 @@ import { useAuthStore } from '~/stores/auth'
 import { usePersonsStore } from '~/stores/persons'
 import { useLocale } from '~/composables/useLocale'
 import type { Location } from '~/stores/events'
+import { formatEventDateRange } from '~/stores/events'
 
 const route = useRoute()
 const store = useEventsStore()
@@ -87,7 +88,7 @@ function locationIcon(type: Location['type']) {
               :color="event.type === 'convention' ? 'purple' : 'blue'"
               variant="soft"
             />
-            <span v-if="event.date" class="text-gray-400 text-sm">{{ event.date }}</span>
+            <span v-if="event.date" class="text-gray-400 text-sm">{{ formatEventDateRange(event.date, event.dateTo) }}</span>
           </div>
           <h1 class="text-2xl sm:text-3xl font-bold text-white break-words">{{ event.name }}</h1>
           <p v-if="event.location" class="text-gray-400 mt-1">{{ event.location }}</p>
@@ -165,12 +166,6 @@ function locationIcon(type: Location['type']) {
         </div>
         <div v-else class="text-xl font-bold text-yellow-400">—</div>
         <div class="text-xs text-gray-400 mt-1">{{ t('event.plannedBudget') }}</div>
-        <div v-if="savingsEntries.length" class="text-xs text-green-400 mt-1">
-          <span v-for="([cur, amt], i) in savingsEntries" :key="cur">
-            <span v-if="i > 0" class="text-gray-600"> · </span>− {{ amt.toFixed(2) }} {{ cur }}
-          </span>
-          {{ t('discount.saved') }}
-        </div>
       </UCard>
       <UCard v-if="authStore.isEditing" class="text-center p-4">
         <div v-if="paidEntries.length" class="font-bold text-green-400 leading-snug">
@@ -180,6 +175,16 @@ function locationIcon(type: Location['type']) {
         </div>
         <div v-else class="text-xl font-bold text-gray-600">—</div>
         <div class="text-xs text-gray-400 mt-1">{{ t('event.paid') }}</div>
+        <!-- Realised savings — discounts that have actually kicked in because
+             matching items are marked purchased. Lives next to "Spent" since
+             that's where the money already moved (forecast savings on planned
+             items aren't surfaced anywhere right now). -->
+        <div v-if="savingsEntries.length" class="text-xs text-green-400 mt-1">
+          <span v-for="([cur, amt], i) in savingsEntries" :key="cur">
+            <span v-if="i > 0" class="text-gray-600"> · </span>− {{ amt.toFixed(2) }} {{ cur }}
+          </span>
+          {{ t('discount.saved') }}
+        </div>
       </UCard>
     </div>
 

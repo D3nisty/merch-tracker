@@ -1,11 +1,27 @@
 import { defineStore } from 'pinia'
 
+// Format an event's date range for display. Returns:
+//   - ''                  if no start date
+//   - 'YYYY-MM-DD'        if no end date OR end ≤ start (single day)
+//   - 'YYYY-MM-DD – YYYY-MM-DD'  for multi-day ranges
+// Kept format-locale-agnostic (raw ISO) to match the rest of the app, which
+// renders `event.date` directly.
+export function formatEventDateRange(date: string | null | undefined, dateTo: string | null | undefined): string {
+  if (!date) return ''
+  if (!dateTo || dateTo <= date) return date
+  return `${date} – ${dateTo}`
+}
+
 export interface Event {
   id: string
   slug: string | null
   name: string
   type: 'convention' | 'travel'
+  // `date` is the start day (kept named `date` for backward compat with the
+  // single-day schema). `dateTo` is an OPTIONAL end day for multi-day events
+  // — when null or equal-to-or-before `date`, the UI renders a single date.
   date: string | null
+  dateTo: string | null
   location: string | null
   description: string | null
   isPublic: boolean
@@ -870,27 +886,30 @@ export const useEventsStore = defineStore('events', () => {
     return {}
   }
 
-  // The total savings discounts produced across the event for the given person
-  // (planned + paid combined view = planned, since planned subsumes purchased).
+  // REALISED savings — discounts that have actually kicked in because the
+  // matching items are marked PURCHASED. Forecast savings (on merely-planned
+  // items) aren't shown anywhere right now since the user reads "savings"
+  // as "money I've already kept in my pocket", not "money I might save
+  // later". If we ever want a forecast view, pass `'planned'` to
+  // `unitsForBooth` in a parallel helper.
   function getDiscountSavingsByCurrency(personId?: string | null): Record<string, number> {
     if (!currentEvent.value?.locations) return {}
     const total: Record<string, number> = {}
     for (const loc of currentEvent.value.locations) {
       for (const booth of loc.booths ?? []) {
-        const units = unitsForBooth(booth, personId, 'planned')
+        const units = unitsForBooth(booth, personId, 'purchased')
         addInto(total, applyBoothDiscounts(units, booth.discounts ?? []))
       }
     }
     return total
   }
 
-  // Per-booth savings for the booth detail / card UIs.
   function getBoothSavingsByCurrency(boothId: string, personId?: string | null): Record<string, number> {
     if (!currentEvent.value?.locations) return {}
     for (const loc of currentEvent.value.locations) {
       const booth = loc.booths?.find(b => b.id === boothId)
       if (!booth) continue
-      const units = unitsForBooth(booth, personId, 'planned')
+      const units = unitsForBooth(booth, personId, 'purchased')
       return applyBoothDiscounts(units, booth.discounts ?? [])
     }
     return {}

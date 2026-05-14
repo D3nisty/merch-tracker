@@ -71,7 +71,12 @@ export const events = sqliteTable('events', {
   slug: text('slug').unique(),
   name: text('name').notNull(),
   type: text('type', { enum: ['convention', 'travel'] }).notNull(),
+  // `date` is the start date (kept named `date` for backward compat with
+  // legacy single-day events). `dateTo` is the optional end date — when
+  // present and != date, the UI renders a range. Conventions span multiple
+  // days; travel events can too.
   date: text('date'),
+  dateTo: text('date_to'),
   location: text('location'),
   description: text('description'),
   isPublic: integer('is_public', { mode: 'boolean' }).notNull().default(false),

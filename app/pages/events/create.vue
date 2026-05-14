@@ -12,9 +12,12 @@ const form = reactive({
   name: '',
   type: 'convention' as 'convention' | 'travel',
   date: '',
+  dateTo: '',
   location: '',
   description: '',
 })
+
+const dateToMin = computed(() => form.date || undefined)
 
 const submitting = ref(false)
 const error = ref('')
@@ -27,10 +30,12 @@ async function handleSubmit() {
   submitting.value = true
   error.value = ''
   try {
+    const normalisedDateTo = form.dateTo && form.date && form.dateTo > form.date ? form.dateTo : null
     const created = await store.createEvent({
       name: form.name.trim(),
       type: form.type,
       date: form.date || null,
+      dateTo: normalisedDateTo,
       location: form.location || null,
       description: form.description || null,
     })
@@ -90,9 +95,14 @@ const typeOptions = computed(() => [
           <UInput v-model="form.location" :placeholder="form.type === 'convention' ? t('createEvent.venuePlaceholder') : t('createEvent.countryPlaceholder')" />
         </UFormGroup>
 
-        <UFormGroup :label="t('common.date')">
-          <UInput v-model="form.date" type="date" />
-        </UFormGroup>
+        <div class="grid grid-cols-2 gap-3">
+          <UFormGroup :label="t('common.from')">
+            <UInput v-model="form.date" type="date" />
+          </UFormGroup>
+          <UFormGroup :label="t('common.to')">
+            <UInput v-model="form.dateTo" type="date" :min="dateToMin" :disabled="!form.date" />
+          </UFormGroup>
+        </div>
 
         <UFormGroup :label="t('common.description')">
           <UTextarea v-model="form.description" :placeholder="t('createEvent.descriptionPlaceholder')" :rows="3" />
