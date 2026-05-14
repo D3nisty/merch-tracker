@@ -407,6 +407,16 @@ const en = {
     want: 'Want',
     must: 'Must',
   },
+  qrscan: {
+    title: 'Scan Booth QR',
+    scan: 'Scan',
+    starting: 'Starting camera…',
+    hint: 'Point your camera at a booth QR code',
+    noMatchTitle: 'No booth matches this QR',
+    errorTitle: 'Camera unavailable',
+    noCamera: 'No camera found on this device.',
+    retry: 'Retry',
+  },
 }
 
 const de: typeof en = {
@@ -815,6 +825,16 @@ const de: typeof en = {
   product: {
     want: 'Wünscht',
     must: 'Muss',
+  },
+  qrscan: {
+    title: 'Stand-QR scannen',
+    scan: 'Scannen',
+    starting: 'Kamera wird gestartet…',
+    hint: 'Richte die Kamera auf einen Stand-QR-Code',
+    noMatchTitle: 'Kein Stand passt zu diesem QR',
+    errorTitle: 'Kamera nicht verfügbar',
+    noCamera: 'Keine Kamera auf diesem Gerät gefunden.',
+    retry: 'Erneut versuchen',
   },
 }
 

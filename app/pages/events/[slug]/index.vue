@@ -24,6 +24,7 @@ const showAddLocation = ref(false)
 const showEditEvent = ref(false)
 const showShareEvent = ref(false)
 const showDeleteLocationModal = ref(false)
+const showQrScanner = ref(false)
 const deleteLocationId = ref<string | null>(null)
 
 const canShare = computed(() =>
@@ -206,6 +207,27 @@ function locationIcon(type: Location['type']) {
       v-model="showShareEvent"
       :event="event"
     />
+
+    <QrScannerModal
+      v-if="event.type === 'convention'"
+      v-model="showQrScanner"
+      :event-slug="event.slug ?? (route.params.slug as string)"
+      :locations="event.locations ?? []"
+    />
+
+    <!-- Floating Scan QR button (convention only) -->
+    <ClientOnly>
+      <button
+        v-if="event.type === 'convention'"
+        type="button"
+        class="fixed bottom-4 left-4 z-40 flex items-center gap-2 px-4 py-3 rounded-full bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-900/40 transition-colors"
+        :title="t('qrscan.title')"
+        @click="showQrScanner = true"
+      >
+        <UIcon name="i-heroicons-qr-code" class="w-5 h-5" />
+        <span class="hidden sm:inline text-sm font-medium">{{ t('qrscan.scan') }}</span>
+      </button>
+    </ClientOnly>
 
     <UModal v-model="showDeleteLocationModal" :ui="{ width: 'sm:max-w-sm' }">
       <UCard>

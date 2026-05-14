@@ -15,14 +15,15 @@
   "dependencies": {
     "@nuxt/ui": "^2.21.0",
     "@pinia/nuxt": "^0.9.0",
-    "pinia": "^3.0.0",
-    "@vueuse/nuxt": "^13.1.0",
     "@vueuse/core": "^13.1.0",
+    "@vueuse/nuxt": "^13.1.0",
     "better-sqlite3": "^11.9.1",
     "drizzle-orm": "^0.43.1",
     "nuxt": "^4.0.0",
-    "vue": "latest",
-    "tesseract.js": "^5.1.1"
+    "pinia": "^3.0.0",
+    "qr-scanner": "^1.4.2",
+    "tesseract.js": "^5.1.1",
+    "vue": "latest"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",

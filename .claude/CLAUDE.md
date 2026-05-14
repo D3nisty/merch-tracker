@@ -11,6 +11,7 @@ Two modes: **Convention** (halls + booths) and **Travel** (countries/cities + sh
 - **Database**: SQLite via `better-sqlite3` + Drizzle ORM
 - **Auth**: Rolled in-house. `scrypt` password hash (Node built-in), httpOnly session cookies, no third-party dependency. See `server/utils/auth.ts`.
 - **OCR**: `tesseract.js` (client-side, loaded lazily in `CatalogImageViewer.vue` and `HallPlanSetupModal.vue`)
+- **QR scanning**: `qr-scanner` (~13 KB, BSD, bundled worker). Dynamically imported inside `QrScannerModal.vue` so it never runs at SSR.
 - **File uploads**: H3 multipart form data → `UPLOAD_DIR` (defaults to `public/uploads/`), served at `/uploads/[filename]` via a dynamic server route. Do NOT use Nitro `publicAssets` for this path — it pre-indexes at build time and 404s on runtime uploads.
 - **Remote image URLs**: Both catalog images and floor plans accept external URLs as an alternative to file upload. The `catalogImages.path` / `locations.floorPlanImage` column stores the raw URL (`http(s)://…`); the browser fetches it directly, no server round-trip. Use `POST /api/images/from-url` for catalog images, `PUT /api/locations/[id]` with `floorPlanImage = <url>` for floor plans. `filename` is set to empty string for remote images so it's clear nothing local is owned.
 - **i18n**: Hand-rolled `useLocale` composable in `app/composables/useLocale.ts` with `en` + `de`. `de: typeof en` enforces parity at compile time.
@@ -45,6 +46,7 @@ app/
     HallPlan.vue            # Interactive canvas-free floor plan (CSS overlay on img)
     HallPlanSetupModal.vue  # OCR-based booth-number detection from floor plan
     CatalogImageViewer.vue  # Image viewer with split mode, annotation, OCR, fullscreen
+    QrScannerModal.vue      # QR-code → booth jump (camera, convention events only)
     AddLocationModal.vue
     AddBoothModal.vue
     AddProductModal.vue
@@ -174,11 +176,12 @@ All IDs are UUIDs. SQLite with WAL mode + foreign keys enabled.
 - **Hall Plan**: Upload a floor plan image, click to place booths as percentage-positioned overlays. Drag to reposition. Color-coded by purchase status.
 - **Hall Plan OCR Setup**: Tesseract.js scans the floor plan for booth numbers and stores pixel positions so detected booths can be picked from the map. Pipeline in [`HallPlanSetupModal.vue`](../app/components/HallPlanSetupModal.vue) runs vanilla Tesseract (no preprocessing, default PSM, no whitelist) at confidence threshold 28, then merges adjacent horizontal word pairs to handle splits like `10N` + `18` → `10N18`. Previously tried image preprocessing / PSM tweaks / pattern broadening but those regressed accuracy on real convention floor plans, so the simpler pipeline stays. Manual fallback: pattern replication in [`HallPlan.vue`](../app/components/HallPlan.vue)'s Draw mode lets you create a whole row/column of booths from one drawn rectangle (auto-increments the booth number, skipping `I`).
 - **Catalog Image Split**: Images can be displayed in "split" mode (N horizontal sections) to navigate large catalog pages.
-- **Catalog Annotations**: Draw a rectangle on a catalog page → linked to a Product. Sizes can be added per region.
+- **Catalog Annotations**: Draw a rectangle on a catalog page → linked to a Product. Sizes can be added per region. Pickers also include an "Add rect" button (auto-draws a 20×20% pending rectangle at center, then drag the body or corner handles to position/resize) and an inline `+` button next to size/category pills that lets you type a custom value (kept in session memory; persisted automatically once a product is saved with that value via the reactive `SIZES`/`QUICK_CATS` derived from `boothProducts`).
 - **Article gallery**: For figures/items with multiple price sources. Each source = a Product row with shop name, price, planned/paid flags. Layout: image left, sources right (side-by-side, same as catalog).
 - **Receipt mode**: Image displays alongside a checklist of the booth's products for checking off purchases.
 - **OCR Price Extraction**: Click the chip icon on any catalog image to run Tesseract.js OCR and extract detected prices. Results can be one-click added as products.
 - **Cross-off**: Click checkbox on any product to mark it purchased. Products strike through.
+- **QR scan to booth (convention events only)**: Floating bottom-left purple button on the event detail page opens [`QrScannerModal.vue`](../app/components/QrScannerModal.vue). Uses the [`qr-scanner`](https://github.com/nimiq/qr-scanner) library, dynamically imported on first open to keep SSR clean (the library is browser-only). Decode → normalize URL (strip `http(s)://`, `www.`, trailing slash, lowercase) → match against the event's booths: (1) exact `booth.website` normalized match, (2) startsWith either direction (so a QR for `twitch.tv/miaow/about` still hits a booth set to `twitch.tv/miaow`), (3) fallback: last URL path segment vs `booth.slug` exact, then `booth.name` case-insensitive substring. On hit: stop camera and `navigateTo` the booth page. On miss: a yellow UAlert shows the scanned URL and scanning continues. 800ms debounce between handled scans.
 - **i18n**: English + German throughout.
 
 ## Environment Variables
