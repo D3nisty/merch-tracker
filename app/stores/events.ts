@@ -806,11 +806,13 @@ export const useEventsStore = defineStore('events', () => {
     return total
   }
 
-  // Paid budget — NET of realised discounts. Returns what the user actually
-  // handed over to vendors (gross purchased − discount applied to those same
-  // purchased items). The "− X saved" caption shown alongside is for context
-  // ("of the gross price you saved X") — to recover gross paid add this back
-  // to `getDiscountSavingsByCurrency`.
+  // Paid budget — GROSS. Net paid (what the user actually handed over) =
+  // this − `getDiscountSavingsByCurrency(personId)`. We keep this gross and
+  // do the subtraction in the consumer (event header / booth card) so the
+  // math is colocated with the display and Vue's computed-cache reactivity
+  // is dependent on both helpers directly (HMR-resistant: even if Pinia's
+  // setup-store function bodies don't hot-reload cleanly, the consumer
+  // computed will re-subtract on each evaluation).
   function getPaidCostByCurrency(personId?: string | null): Record<string, number> {
     if (!currentEvent.value?.locations) return {}
     const total: Record<string, number> = {}
@@ -818,10 +820,6 @@ export const useEventsStore = defineStore('events', () => {
       for (const booth of loc.booths ?? []) {
         const units = unitsForBooth(booth, personId, 'purchased')
         for (const u of units) total[u.currency] = (total[u.currency] ?? 0) + u.price
-        const savings = applyBoothDiscounts(units, booth.discounts ?? [])
-        for (const [cur, save] of Object.entries(savings)) {
-          total[cur] = (total[cur] ?? 0) - save
-        }
       }
     }
     return total
@@ -841,6 +839,7 @@ export const useEventsStore = defineStore('events', () => {
     }
     return {}
   }
+  // GROSS — subtract `getBoothSavingsByCurrency` in the consumer.
   function getBoothPaidByCurrency(boothId: string, personId?: string | null): Record<string, number> {
     if (!currentEvent.value?.locations) return {}
     for (const loc of currentEvent.value.locations) {
@@ -849,11 +848,6 @@ export const useEventsStore = defineStore('events', () => {
       const total: Record<string, number> = {}
       const units = unitsForBooth(booth, personId, 'purchased')
       for (const u of units) total[u.currency] = (total[u.currency] ?? 0) + u.price
-      // Net of realised discounts — same semantic as the event-level helper.
-      const savings = applyBoothDiscounts(units, booth.discounts ?? [])
-      for (const [cur, save] of Object.entries(savings)) {
-        total[cur] = (total[cur] ?? 0) - save
-      }
       return total
     }
     return {}

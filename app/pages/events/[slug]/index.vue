@@ -45,7 +45,15 @@ const pid = computed(() =>
 )
 const itemStats = computed(() => store.getItemStats(pid.value))
 const plannedEntries = computed(() => Object.entries(store.getPlannedCostByCurrency(pid.value)).filter(([, v]) => Math.abs(v) > 0.005))
-const paidEntries = computed(() => Object.entries(store.getPaidCostByCurrency(pid.value)).filter(([, v]) => Math.abs(v) > 0.005))
+// Net paid = gross paid − realised savings. Subtraction is done here (not in
+// the store helper) so the math is colocated with the display.
+const paidEntries = computed(() => {
+  const gross = store.getPaidCostByCurrency(pid.value)
+  const savings = store.getDiscountSavingsByCurrency(pid.value)
+  const net: Record<string, number> = { ...gross }
+  for (const [cur, save] of Object.entries(savings)) net[cur] = (net[cur] ?? 0) - save
+  return Object.entries(net).filter(([, v]) => Math.abs(v) > 0.005)
+})
 const savingsEntries = computed(() => Object.entries(store.getDiscountSavingsByCurrency(pid.value)).filter(([, v]) => Math.abs(v) > 0.005))
 
 async function handleDeleteLocation() {

@@ -40,9 +40,16 @@ const effectivePersonId = computed<string | null>(() =>
 const plannedByCurrency = computed(() =>
   store.getBoothPlannedByCurrency(props.booth.id, effectivePersonId.value),
 )
-const paidByCurrency = computed(() =>
-  store.getBoothPaidByCurrency(props.booth.id, effectivePersonId.value),
-)
+// Net paid = gross paid − realised savings. Subtraction lives here so we
+// don't depend on store-function HMR — when discounts apply, the tile shows
+// the after-discount number directly.
+const paidByCurrency = computed(() => {
+  const gross = store.getBoothPaidByCurrency(props.booth.id, effectivePersonId.value)
+  const savings = store.getBoothSavingsByCurrency(props.booth.id, effectivePersonId.value)
+  const net: Record<string, number> = { ...gross }
+  for (const [cur, save] of Object.entries(savings)) net[cur] = (net[cur] ?? 0) - save
+  return net
+})
 // Hypothetical cost to buy one of everything at this booth — same across
 // viewers, doesn't depend on marks. Useful for "is this vendor worth a trip?"
 const buyEverythingByCurrency = computed(() =>
