@@ -179,6 +179,7 @@ export function useDb() {
       person_id TEXT NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
       is_planned INTEGER NOT NULL DEFAULT 0,
       is_purchased INTEGER NOT NULL DEFAULT 0,
+      quantity INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       UNIQUE(product_id, person_id)
@@ -226,6 +227,8 @@ export function useDb() {
   try { sqlite.exec(`ALTER TABLE booth_discounts ADD COLUMN type TEXT NOT NULL DEFAULT 'buy_get_free'`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE booth_discounts ADD COLUMN bundle_price REAL`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE booth_discounts ADD COLUMN bundle_currency TEXT`) } catch { /* already exists */ }
+  // product_person_marks gained per-person quantity for "I want 2 of this".
+  try { sqlite.exec(`ALTER TABLE product_person_marks ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1`) } catch { /* already exists */ }
 
   // Backfill slugs for existing events that don't have one
   const needsSlug = sqlite.prepare('SELECT id, name FROM events WHERE slug IS NULL').all() as { id: string; name: string }[]

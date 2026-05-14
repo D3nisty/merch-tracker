@@ -247,50 +247,35 @@ function formatCostMap(map: Record<string, number>) {
   return entries.map(([cur, amt]) => `${amt.toFixed(2)} ${cur}`).join(' · ')
 }
 
-// Multi-person aware booth total. Each (product, person-who-marked) pair
-// counts one unit of the product's price × quantity. For article galleries,
-// only the WINNING source per person is counted (planned > paid).
+// Booth header total: each product's contribution is `price × Σ mark.quantity`
+// across every person who has the matching flag set. For article galleries we
+// still pick ONE winning source per article (per-person "winners" are
+// summarised down to a single product on the booth header — full per-person
+// breakdown lives in the event-level totals).
 function buildCostMap(products: Product[], images: CatalogImage[], paidOnly: boolean) {
   const map: Record<string, number> = {}
-  // For articles, gather { imgId → personId → winning-product-id }
-  const articleWinners = new Map<string, Map<string, string>>()
+  const articleWinners = new Map<string, string>() // imgId → winning productId
   for (const img of images) {
     if (img.imageType !== 'article') continue
     const articleProducts = products.filter(q => q.catalogImageId === img.id && q.price)
-    const winnersForImg = new Map<string, string>()
-    const personIds = new Set<string>()
-    for (const q of articleProducts) for (const m of (q.marks ?? [])) personIds.add(m.personId)
-    for (const pid of personIds) {
-      const winner = paidOnly
-        ? articleProducts.find(q => (q.marks ?? []).some(m => m.personId === pid && m.isPurchased))
-        : (articleProducts.find(q => (q.marks ?? []).some(m => m.personId === pid && m.isPlanned))
-           ?? articleProducts.find(q => (q.marks ?? []).some(m => m.personId === pid && m.isPurchased)))
-      if (winner) winnersForImg.set(pid, winner.id)
-    }
-    articleWinners.set(img.id, winnersForImg)
+    const winner = paidOnly
+      ? articleProducts.find(q => (q.marks ?? []).some(m => m.isPurchased))
+      : (articleProducts.find(q => (q.marks ?? []).some(m => m.isPlanned))
+         ?? articleProducts.find(q => (q.marks ?? []).some(m => m.isPurchased)))
+    if (winner) articleWinners.set(img.id, winner.id)
   }
   for (const p of products) {
     if (!p.price) continue
     const marks = p.marks ?? []
+    const qtySum = marks.reduce((sum, m) => {
+      const matches = paidOnly ? m.isPurchased : (m.isPlanned || m.isPurchased)
+      return sum + (matches ? Math.max(1, m.quantity ?? 1) : 0)
+    }, 0)
+    if (qtySum === 0) continue
     const img = images.find(i => i.id === p.catalogImageId)
-    let countingPersons = 0
-    if (img?.imageType === 'article') {
-      const winners = articleWinners.get(img.id)
-      if (!winners) continue
-      for (const [pid, winnerId] of winners) {
-        if (winnerId !== p.id) continue
-        const mark = marks.find(m => m.personId === pid)
-        if (!mark) continue
-        if (paidOnly ? mark.isPurchased : (mark.isPlanned || mark.isPurchased)) countingPersons++
-      }
-    } else {
-      for (const m of marks) {
-        if (paidOnly ? m.isPurchased : (m.isPlanned || m.isPurchased)) countingPersons++
-      }
-    }
-    if (!countingPersons) continue
+    if (img?.imageType === 'article' && articleWinners.get(img.id) !== p.id) continue
     const cur = p.currency || 'EUR'
-    map[cur] = (map[cur] ?? 0) + p.price * p.quantity * countingPersons
+    map[cur] = (map[cur] ?? 0) + p.price * qtySum
   }
   return map
 }

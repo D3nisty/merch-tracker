@@ -25,10 +25,14 @@ export interface Event {
 
 // Per-person planned/purchased mark on a product. Multiple persons can
 // independently mark the same product without owning the rectangle.
+// `quantity` is per-person ("I'm buying 2 of these"), used by both the booth
+// totals and the discount engine — NOT the same field as `products.quantity`
+// (that one is a legacy per-product default; marks override it on the UI).
 export interface ProductMark {
   personId: string
   isPlanned: boolean
   isPurchased: boolean
+  quantity: number
 }
 
 // Discount rule attached to a booth, narrowed to products with the given size
@@ -238,10 +242,21 @@ export const useEventsStore = defineStore('events', () => {
   const currentEvent = ref<Event | null>(null)
   const loading = ref(false)
 
+  // During SSR, internal $fetch does NOT forward the incoming request's
+  // cookie automatically — so the API sees no session and treats the call as
+  // anonymous. Pass it through explicitly. Without this, `viewerPersonId`
+  // resolves to null on first load, every per-person `isPurchased` flag on the
+  // event response is false, and checkbox state visually "resets" on refresh
+  // (even though the marks are still in the DB).
+  function ssrHeaders(): Record<string, string> | undefined {
+    if (!import.meta.server) return undefined
+    return useRequestHeaders(['cookie'])
+  }
+
   async function fetchEvents() {
     loading.value = true
     try {
-      events.value = await $fetch<Event[]>('/api/events')
+      events.value = await $fetch<Event[]>('/api/events', { headers: ssrHeaders() })
     } finally {
       loading.value = false
     }
@@ -250,7 +265,7 @@ export const useEventsStore = defineStore('events', () => {
   async function fetchEvent(id: string) {
     loading.value = true
     try {
-      currentEvent.value = await $fetch<Event>(`/api/events/${id}`)
+      currentEvent.value = await $fetch<Event>(`/api/events/${id}`, { headers: ssrHeaders() })
     } finally {
       loading.value = false
     }
@@ -366,8 +381,10 @@ export const useEventsStore = defineStore('events', () => {
   // ── Per-person marks ──────────────────────────────────────────────────
   // Set or update the requesting user's planned/purchased flags on a product.
   // Pass `personId` to mark FOR ANOTHER person (only allowed if you have edit
-  // access to the event; otherwise the server 403s).
-  async function setMark(productId: string, flags: { isPlanned?: boolean; isPurchased?: boolean; personId?: string }) {
+  // access to the event; otherwise the server 403s). `quantity` is the
+  // per-person count (defaults to 1 server-side when omitted on first mark;
+  // preserved on subsequent updates unless explicitly overridden).
+  async function setMark(productId: string, flags: { isPlanned?: boolean; isPurchased?: boolean; quantity?: number; personId?: string }) {
     const res = await $fetch<{ productId: string; marks: ProductMark[]; aggregate: { isPlanned: boolean; isPurchased: boolean } }>(
       `/api/products/${productId}/marks`,
       { method: 'POST', body: flags },
@@ -380,9 +397,6 @@ export const useEventsStore = defineStore('events', () => {
           const idx = booth.products?.findIndex(p => p.id === productId) ?? -1
           if (idx === -1 || !booth.products) continue
           const old = booth.products[idx]
-          // If the change was for the viewer's own person, reflect it on the
-          // viewer-perspective `isPlanned`/`isPurchased`. Otherwise keep the
-          // existing viewer state (their mark didn't change).
           const isForMe = !!viewerPersonId && targetPersonId === viewerPersonId
           booth.products[idx] = {
             ...old,
@@ -400,6 +414,19 @@ export const useEventsStore = defineStore('events', () => {
   // single-aggregate flip — multiple people can each have their own state.
   async function togglePurchased(product: Product) {
     return setMark(product.id, { isPurchased: !product.isPurchased })
+  }
+
+  // Returns the requesting viewer's own mark on a product, or null.
+  function myMark(p: Product): ProductMark | null {
+    const pid = currentEvent.value?.viewerPersonId
+    if (!pid) return null
+    return (p.marks ?? []).find(m => m.personId === pid) ?? null
+  }
+  // Convenience: how many copies the viewer currently has marked (defaults
+  // to 1 when there's a mark with no qty info; 0 if no mark at all).
+  function myQty(p: Product): number {
+    const m = myMark(p)
+    return m ? Math.max(1, m.quantity ?? 1) : 0
   }
 
   // ── Booth discounts ───────────────────────────────────────────────────
@@ -644,30 +671,52 @@ export const useEventsStore = defineStore('events', () => {
     for (const loc of currentEvent.value.locations) {
       for (const booth of loc.booths ?? []) {
         const images = booth.images ?? []
-        const products = (booth.products ?? []).filter(p => {
-          if (!personId) return true
-          return isPlannedFor(p, personId) || isPurchasedFor(p, personId)
-        })
         for (const img of images) {
           if (img.imageType !== 'article' || img.parentId) continue
-          const articleProducts = products.filter(p => p.catalogImageId === img.id)
-          if (!articleProducts.length && personId) continue
-          total++
-          if (articleProducts.some(p => isPurchasedFor(p, personId))) purchased++
+          const articleProducts = (booth.products ?? []).filter(p => p.catalogImageId === img.id)
+          const plannedQty = articleProducts.reduce((s, p) => s + matchingQty(p, personId, 'planned'), 0)
+          if (plannedQty === 0 && personId) continue
+          if (plannedQty === 0 && !personId) {
+            // Show unmarked items in the unfiltered totals (legacy "X items in this event").
+            total++
+            continue
+          }
+          total += plannedQty
+          purchased += articleProducts.reduce((s, p) => s + matchingQty(p, personId, 'purchased'), 0)
         }
-        for (const p of products) {
+        for (const p of (booth.products ?? [])) {
           const img = images.find(i => i.id === p.catalogImageId)
           if (img?.imageType === 'article') continue
-          total++
-          if (isPurchasedFor(p, personId)) purchased++
+          const pq = matchingQty(p, personId, 'planned')
+          if (pq === 0 && personId) continue
+          if (pq === 0 && !personId) { total++; continue }
+          total += pq
+          purchased += matchingQty(p, personId, 'purchased')
         }
       }
     }
     return { total, purchased }
   }
 
-  // Internal: collect priced units (each line item, multiplied by quantity)
-  // for a booth that belong to the given person under the given filter.
+  // For a product, return how many MATCHING units the relevant person(s) have
+  // committed to. With a `personId` it's that person's mark quantity (0 if
+  // they didn't mark). Without one, it sums across every person who marked
+  // the product — that's what the booth header / unfiltered totals show.
+  function matchingQty(p: Product, personId: string | null | undefined, pick: 'planned' | 'purchased'): number {
+    const marks = p.marks ?? []
+    const matches = (m: ProductMark) => pick === 'planned'
+      ? (m.isPlanned || m.isPurchased)
+      : m.isPurchased
+    if (personId) {
+      const mine = marks.find(m => m.personId === personId)
+      return mine && matches(mine) ? Math.max(1, mine.quantity ?? 1) : 0
+    }
+    return marks.reduce((sum, m) => sum + (matches(m) ? Math.max(1, m.quantity ?? 1) : 0), 0)
+  }
+
+  // Internal: collect priced units for a booth that belong to the given
+  // person under the given filter. Each unit becomes one entry the discount
+  // engine can group into BOGO/bundle batches.
   function unitsForBooth(
     booth: Booth,
     personId: string | null | undefined,
@@ -677,21 +726,20 @@ export const useEventsStore = defineStore('events', () => {
     const out: Array<{ price: number; currency: string; size: string | null; category: string | null }> = []
     for (const p of (booth.products ?? [])) {
       if (!p.price) continue
-      const matches = pick === 'planned'
-        ? (isPlannedFor(p, personId) || isPurchasedFor(p, personId))
-        : isPurchasedFor(p, personId)
-      if (!matches) continue
-      // Article gallery: only one source per article counts (planned > paid)
+      // Article gallery: only the WINNING source per person counts. With
+      // `personId` it's that person's winner; without, we still cap to a
+      // single winning product per article (the first to qualify) to avoid
+      // counting every catalogue source for the same article.
       const img = images.find(i => i.id === p.catalogImageId)
       if (img?.imageType === 'article') {
-        // Find the "winning" source for this article for the given person
         const articleProducts = (booth.products ?? []).filter(q => q.catalogImageId === img.id && q.price)
         const winner = pick === 'planned'
           ? (articleProducts.find(q => isPlannedFor(q, personId)) ?? articleProducts.find(q => isPurchasedFor(q, personId)))
           : articleProducts.find(q => isPurchasedFor(q, personId))
         if (winner?.id !== p.id) continue
       }
-      for (let i = 0; i < p.quantity; i++) {
+      const qty = matchingQty(p, personId, pick)
+      for (let i = 0; i < qty; i++) {
         out.push({ price: p.price, currency: p.currency || 'EUR', size: p.size, category: p.category })
       }
     }
@@ -879,6 +927,9 @@ export const useEventsStore = defineStore('events', () => {
     deleteProduct,
     togglePurchased,
     setMark,
+    myMark,
+    myQty,
+    matchingQty,
     isPlannedFor,
     isPurchasedFor,
     createDiscount,

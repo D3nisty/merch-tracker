@@ -70,11 +70,13 @@ export default defineEventHandler(async (event) => {
       isPlanned: myMark?.isPlanned ?? false,
       isPurchased: myMark?.isPurchased ?? false,
       // Surface raw per-person marks so the UI can show other-person dots and
-      // compute per-person totals.
+      // compute per-person totals. Quantity defaults to 1 for legacy rows that
+      // were backfilled before this column existed.
       marks: productMarks.map(m => ({
         personId: m.personId,
         isPlanned: m.isPlanned,
         isPurchased: m.isPurchased,
+        quantity: m.quantity ?? 1,
       })),
     }
   })

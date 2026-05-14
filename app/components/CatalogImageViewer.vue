@@ -18,6 +18,12 @@ const authStore = useAuthStore()
 const personsStore = usePersonsStore()
 const { t } = useLocale()
 
+// "Can mark for myself" — any logged-in user with a linked Person. Used to
+// gate the article-gallery Plan?/Paid? buttons + the planned/paid summary
+// boxes so view-share users can pick their own winning source without
+// earning edit rights (drawing/editing products still requires isEditing).
+const canMark = computed(() => authStore.isLoggedIn && !!store.currentEvent?.viewerPersonId)
+
 const expanded = ref(true)
 const fullscreen = ref(false)
 const showProductsPanel = ref(true)
@@ -1352,14 +1358,14 @@ function openAddSource() {
                 @click="toggleSourceExpand(p.id)"
               />
               <button
-                v-if="authStore.isEditing"
+                v-if="canMark"
                 type="button"
                 class="text-xs px-2 py-1 rounded-full border transition-all font-medium shrink-0"
                 :class="p.isPlanned ? 'bg-orange-600 border-orange-500 text-white' : 'border-gray-700 text-gray-400 hover:border-orange-500 hover:text-orange-400'"
                 @click="markAsPlanned(p)"
               >{{ p.isPlanned ? t('catalog.planned') : t('catalog.planQ') }}</button>
               <button
-                v-if="authStore.isEditing"
+                v-if="canMark"
                 type="button"
                 class="text-xs px-2 py-1 rounded-full border transition-all font-medium shrink-0"
                 :class="p.isPurchased ? 'bg-green-600 border-green-500 text-white' : 'border-gray-700 text-gray-400 hover:border-green-500 hover:text-green-400'"
@@ -1396,8 +1402,10 @@ function openAddSource() {
             </div>
           </div>
 
-          <!-- Planned / Paid summary (hidden for guests) -->
-          <div v-if="authStore.isEditing" class="mt-2 space-y-1.5">
+          <!-- Planned / Paid summary — shows the viewer's OWN winning source
+               (the server substitutes isPlanned/isPurchased to be per-viewer).
+               Visible to any logged-in user with a person; guests still hide. -->
+          <div v-if="canMark" class="mt-2 space-y-1.5">
             <div v-if="products.some(p => p.isPlanned)" class="p-2.5 bg-orange-900/20 border border-orange-700/30 rounded-lg flex items-center gap-2">
               <UIcon name="i-heroicons-star" class="w-4 h-4 text-orange-400 shrink-0" />
               <span class="text-xs text-gray-400">{{ t('catalog.plannedFrom') }}</span>
@@ -1967,11 +1975,11 @@ function openAddSource() {
                     variant="ghost" color="gray" size="xs"
                     @click="toggleSourceExpand(p.id)"
                   />
-                  <button v-if="authStore.isEditing" type="button"
+                  <button v-if="canMark" type="button"
                     class="text-xs px-2 py-1 rounded-full border transition-all font-medium shrink-0"
                     :class="p.isPlanned ? 'bg-orange-600 border-orange-500 text-white' : 'border-gray-600 text-gray-400 hover:border-orange-500 hover:text-orange-400'"
                     @click="markAsPlanned(p)">{{ p.isPlanned ? t('catalog.planned') : t('catalog.planQ') }}</button>
-                  <button v-if="authStore.isEditing" type="button"
+                  <button v-if="canMark" type="button"
                     class="text-xs px-2 py-1 rounded-full border transition-all font-medium shrink-0"
                     :class="p.isPurchased ? 'bg-green-600 border-green-500 text-white' : 'border-gray-600 text-gray-400 hover:border-green-500 hover:text-green-400'"
                     @click="markAsPaid(p)">{{ p.isPurchased ? t('catalog.paidDone') : t('catalog.paidQ') }}</button>
@@ -2005,7 +2013,7 @@ function openAddSource() {
                 </div>
               </div>
 
-              <div v-if="authStore.isEditing" class="space-y-1.5">
+              <div v-if="canMark" class="space-y-1.5">
                 <div v-if="products.some(p => p.isPlanned)" class="p-2 bg-orange-900/20 border border-orange-700/30 rounded-lg flex items-center gap-2">
                   <UIcon name="i-heroicons-star" class="w-3.5 h-3.5 text-orange-400 shrink-0" />
                   <div class="flex-1 min-w-0">

@@ -28,6 +28,29 @@ const person = computed(() =>
 // The viewer's own person id (server-stamped on the event response).
 const viewerPersonId = computed(() => store.currentEvent?.viewerPersonId ?? null)
 
+// Viewer's own mark + the per-person quantity displayed in the stepper.
+const myOwnMark = computed(() =>
+  viewerPersonId.value
+    ? (props.product.marks ?? []).find(m => m.personId === viewerPersonId.value) ?? null
+    : null,
+)
+const myDisplayQty = computed(() => Math.max(1, myOwnMark.value?.quantity ?? 1))
+
+async function adjustQty(delta: number) {
+  if (!canMark.value) return
+  const current = myOwnMark.value?.quantity ?? 1
+  const next = current + delta
+  if (next < 1) {
+    // Going below 1 means "un-mark" — drop the purchased flag entirely.
+    await store.setMark(props.product.id, { isPurchased: false })
+    return
+  }
+  // If we don't have a mark yet (defensive), creating one with qty>1 still
+  // requires flipping isPurchased on. The server preserves both fields.
+  const wasPurchased = props.product.isPurchased
+  await store.setMark(props.product.id, { isPurchased: wasPurchased ? undefined : true, quantity: next })
+}
+
 // Other persons who have planned or purchased this item (excluding the
 // viewer's own person — that's the checkbox).
 const otherMarkers = computed(() => {
@@ -73,6 +96,27 @@ const canMark = computed(() => authStore.isLoggedIn && !!viewerPersonId.value)
       @change="canMark && emit('toggle')"
     />
 
+    <!-- Per-person qty stepper, shown only when the viewer's own mark is set.
+         `−` at qty=1 un-marks the product entirely. `+` increments. -->
+    <div
+      v-if="product.isPurchased && canMark"
+      class="flex items-center gap-0.5 shrink-0 rounded border border-gray-700 bg-gray-800/60"
+    >
+      <button
+        type="button"
+        class="w-5 h-5 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded-l"
+        :title="t('product.qtyDecrement')"
+        @click="adjustQty(-1)"
+      >−</button>
+      <span class="px-1 text-xs font-mono tabular-nums text-white min-w-[1.25rem] text-center">{{ myDisplayQty }}</span>
+      <button
+        type="button"
+        class="w-5 h-5 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded-r"
+        :title="t('product.qtyIncrement')"
+        @click="adjustQty(1)"
+      >+</button>
+    </div>
+
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-2 flex-wrap">
         <!-- Creator dot (hidden for guests) -->
@@ -115,7 +159,7 @@ const canMark = computed(() => authStore.isLoggedIn && !!viewerPersonId.value)
           :class="authStore.isEditing ? 'cursor-pointer hover:underline' : ''"
           @click="authStore.isEditing && (editing = true, editPrice = product.price ?? 0)"
         >
-          {{ (product.price * product.quantity).toFixed(2) }}{{ product.currency }}
+          {{ (product.price * (product.isPurchased ? myDisplayQty : product.quantity)).toFixed(2) }}{{ product.currency }}
         </span>
         <UButton
           v-else-if="authStore.isEditing"

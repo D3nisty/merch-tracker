@@ -99,6 +99,15 @@ async function handleLogout() {
                 <UIcon name="i-heroicons-user-circle" class="w-4 h-4" />
                 {{ t('nav.adminUsers') }}
               </NuxtLink>
+              <NuxtLink
+                v-if="authStore.isAdmin"
+                to="/admin/persons"
+                class="flex items-center gap-2 px-2 py-1.5 rounded text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+                @click="showUserMenu = false"
+              >
+                <UIcon name="i-heroicons-paint-brush" class="w-4 h-4" />
+                {{ t('nav.adminPersons') }}
+              </NuxtLink>
               <button
                 class="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
                 @click="handleLogout"

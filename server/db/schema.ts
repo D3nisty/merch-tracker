@@ -204,6 +204,12 @@ export const productPersonMarks = sqliteTable('product_person_marks', {
   personId: text('person_id').notNull().references(() => persons.id, { onDelete: 'cascade' }),
   isPlanned: integer('is_planned', { mode: 'boolean' }).notNull().default(false),
   isPurchased: integer('is_purchased', { mode: 'boolean' }).notNull().default(false),
+  // How many copies this person wants/bought. Defaults to 1 when the mark is
+  // first created; ProductItem's stepper writes 2, 3, … as the person buys
+  // more of the same item. Used by the discount engine (BOGO/bundle batches
+  // count this many units per person) and by the booth header total (sum
+  // across persons of qty × price).
+  quantity: integer('quantity').notNull().default(1),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 })

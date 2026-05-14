@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
   if (!eventId) throw createError({ statusCode: 404, message: 'Product not found' })
   const user = await requireEventMark(event, eventId)
 
-  const body = await readBody(event) as { personId?: string; isPlanned?: boolean; isPurchased?: boolean }
+  const body = await readBody(event) as { personId?: string; isPlanned?: boolean; isPurchased?: boolean; quantity?: number }
 
   // Resolve target person. Default: requester's own person.
   let targetPersonId: string | null
@@ -54,6 +54,16 @@ export default defineEventHandler(async (event) => {
 
   const nextPlanned = body.isPlanned ?? existing?.isPlanned ?? false
   const nextPurchased = body.isPurchased ?? existing?.isPurchased ?? false
+  // Quantity behavior:
+  //   - explicit qty in body → that (clamped ≥ 1)
+  //   - existing row → preserve its qty
+  //   - first time mark flips on → default 1
+  let nextQuantity: number
+  if (typeof body.quantity === 'number' && Number.isFinite(body.quantity)) {
+    nextQuantity = Math.max(1, Math.floor(body.quantity))
+  } else {
+    nextQuantity = existing?.quantity ?? 1
+  }
 
   if (!nextPlanned && !nextPurchased) {
     // No flags left: delete the row to keep the table lean.
@@ -62,7 +72,7 @@ export default defineEventHandler(async (event) => {
     }
   } else if (existing) {
     db.update(productPersonMarks)
-      .set({ isPlanned: nextPlanned, isPurchased: nextPurchased, updatedAt: now() })
+      .set({ isPlanned: nextPlanned, isPurchased: nextPurchased, quantity: nextQuantity, updatedAt: now() })
       .where(eq(productPersonMarks.id, existing.id))
       .run()
   } else {
@@ -72,6 +82,7 @@ export default defineEventHandler(async (event) => {
       personId: targetPersonId,
       isPlanned: nextPlanned,
       isPurchased: nextPurchased,
+      quantity: nextQuantity,
       createdAt: now(),
       updatedAt: now(),
     }).run()
@@ -95,6 +106,7 @@ export default defineEventHandler(async (event) => {
       personId: m.personId,
       isPlanned: m.isPlanned,
       isPurchased: m.isPurchased,
+      quantity: m.quantity,
     })),
     aggregate: { isPlanned: anyPlanned, isPurchased: anyPurchased },
   }
