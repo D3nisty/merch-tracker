@@ -1,7 +1,7 @@
 import { useDb } from '../../db'
 import { boothDiscounts } from '../../db/schema'
 import { eq } from 'drizzle-orm'
-import { requireEventEdit, eventIdForDiscount } from '../../utils/permissions'
+import { requireBoothEdit } from '../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')!
@@ -10,9 +10,7 @@ export default defineEventHandler(async (event) => {
   const existing = db.select().from(boothDiscounts).where(eq(boothDiscounts.id, id)).get()
   if (!existing) throw createError({ statusCode: 404, message: 'Discount not found' })
 
-  const eventId = await eventIdForDiscount(id)
-  if (!eventId) throw createError({ statusCode: 404, message: 'Discount not found' })
-  await requireEventEdit(event, eventId)
+  await requireBoothEdit(event, existing.boothId)
 
   const body = await readBody(event) as Partial<typeof existing>
   const next: Partial<typeof existing> = {}

@@ -31,7 +31,42 @@ if (!booth.value) {
 
 useHead({ title: () => booth.value?.name ?? 'Booth' })
 
+// Per-booth edit permission — true when the user has event-edit OR a direct
+// booth-edit share. Server stamps `canEdit` on each booth in the event
+// response. Falls back to `canEdit` for legacy events that
+// pre-date the per-booth flag.
+const canEdit = computed(() => booth.value?.canEdit ?? canEdit)
+// Only the event owner / admin can grant new booth shares.
+const canManageBoothShares = computed(() => authStore.isAdmin || event.value?.ownerId === authStore.user?.id)
+
+const showShareBoothModal = ref(false)
+const showEditBoothModal = ref(false)
 const showAddProduct = ref(false)
+const iconInputRef = ref<HTMLInputElement | null>(null)
+const iconError = ref('')
+
+async function handleIconFile(e: Event) {
+  const target = e.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file || !booth.value) return
+  iconError.value = ''
+  try {
+    await store.uploadBoothIcon(booth.value.id, file)
+  } catch (err) {
+    iconError.value = (err as { data?: { message?: string } })?.data?.message ?? 'Upload failed'
+  } finally {
+    target.value = '' // reset so the same file can be selected again
+  }
+}
+
+async function clearIcon() {
+  if (!booth.value) return
+  try {
+    await store.updateBooth(booth.value.id, { iconPath: null })
+  } catch (err) {
+    iconError.value = (err as { data?: { message?: string } })?.data?.message ?? 'Failed to clear icon'
+  }
+}
 const showUploadImage = ref(false)
 const selectedImageId = ref<string | null>(null)
 const showDeleteProductModal = ref(false)
@@ -436,8 +471,62 @@ const personBreakdown = computed(() => {
       </div>
 
       <div class="flex items-start justify-between gap-3 flex-wrap">
-        <div class="min-w-0 flex-1">
-          <h1 class="text-2xl font-bold text-white break-words">{{ booth.name }}</h1>
+        <div class="min-w-0 flex-1 flex items-start gap-3">
+          <!-- Booth icon (same image shown on the dashboard tile). Editors
+               click to upload; long-press / right-click clears via the
+               handler. Falls back to a generic glyph. -->
+          <button
+            type="button"
+            class="shrink-0 w-12 h-12 rounded-lg overflow-hidden flex items-center justify-center bg-gray-800 border border-gray-700 hover:border-purple-500 transition-colors group/icon relative"
+            :class="canEdit ? 'cursor-pointer' : 'cursor-default'"
+            :disabled="!canEdit"
+            :title="canEdit ? t('booth.uploadIcon') : ''"
+            @click="canEdit && iconInputRef?.click()"
+          >
+            <img
+              v-if="booth.iconPath"
+              :src="booth.iconPath"
+              alt=""
+              loading="lazy"
+              decoding="async"
+              class="w-full h-full object-cover"
+            />
+            <UIcon v-else name="i-heroicons-shopping-bag" class="w-5 h-5 text-gray-500" />
+            <div v-if="canEdit"
+              class="absolute inset-0 bg-black/60 opacity-0 group-hover/icon:opacity-100 transition-opacity flex items-center justify-center"
+            >
+              <UIcon name="i-heroicons-camera" class="w-5 h-5 text-white" />
+            </div>
+          </button>
+          <input
+            ref="iconInputRef"
+            type="file"
+            accept="image/*"
+            class="hidden"
+            @change="handleIconFile"
+          />
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2 flex-wrap">
+              <h1 class="text-2xl font-bold text-white break-words">{{ booth.name }}</h1>
+              <UButton
+                v-if="canEdit"
+                icon="i-heroicons-pencil-square"
+                variant="ghost"
+                color="gray"
+                size="xs"
+                :title="t('editBooth.title')"
+                @click="showEditBoothModal = true"
+              />
+              <UButton
+                v-if="canEdit && booth.iconPath"
+                icon="i-heroicons-x-mark"
+                variant="ghost"
+                color="gray"
+                size="xs"
+                :title="t('booth.clearIcon')"
+                @click="clearIcon"
+              />
+            </div>
           <div class="flex items-center gap-3 mt-1 text-gray-400 text-sm">
             <span v-if="booth.hallNr">Hall {{ booth.hallNr }}</span>
             <span v-if="booth.boothNr">Booth {{ booth.boothNr }}</span>
@@ -455,8 +544,9 @@ const personBreakdown = computed(() => {
               {{ cat }}
             </span>
           </div>
-        </div>
-        <div v-if="authStore.isEditing" class="text-right">
+          </div><!-- /inner text wrap -->
+        </div><!-- /icon + text flex -->
+        <div v-if="canEdit" class="text-right">
           <div v-if="formatCostMap(costByCurrency)" class="font-bold text-yellow-400 leading-tight">
             <div v-for="[cur, amt] in Object.entries(costByCurrency)" :key="cur" class="text-xl">
               {{ amt.toFixed(2) }} {{ cur }}
@@ -476,14 +566,16 @@ const personBreakdown = computed(() => {
       </div>
     </div>
 
-    <!-- Action bar (edit mode only) -->
-    <div v-if="authStore.isEditing" class="flex gap-2 mb-6 flex-wrap">
-      <UButton icon="i-heroicons-plus" color="purple" @click="showAddProduct = true">{{ t('booth.addProduct') }}</UButton>
-      <UButton icon="i-heroicons-photo" variant="outline" color="gray" @click="showUploadImage = true">{{ t('booth.uploadImage') }}</UButton>
+    <!-- Action bar (edit mode only). "Share booth" only shows for event
+         owner / admin since booth-edit-share users can't onward-share. -->
+    <div v-if="canEdit || canManageBoothShares" class="flex gap-2 mb-6 flex-wrap">
+      <UButton v-if="canEdit" icon="i-heroicons-plus" color="purple" @click="showAddProduct = true">{{ t('booth.addProduct') }}</UButton>
+      <UButton v-if="canEdit" icon="i-heroicons-photo" variant="outline" color="gray" @click="showUploadImage = true">{{ t('booth.uploadImage') }}</UButton>
+      <UButton v-if="canManageBoothShares" icon="i-heroicons-share" variant="outline" color="purple" @click="showShareBoothModal = true">{{ t('boothShare.shareBooth') }}</UButton>
     </div>
 
     <!-- Price presets (edit mode only) -->
-    <div v-if="authStore.isEditing" class="mb-6">
+    <div v-if="canEdit" class="mb-6">
       <div class="flex items-center justify-between mb-2">
         <h3 class="text-sm font-semibold text-gray-400">{{ t('booth.pricePresets') }}</h3>
         <UButton
@@ -543,7 +635,7 @@ const personBreakdown = computed(() => {
     </div>
 
     <!-- Discounts -->
-    <div v-if="(booth.discounts?.length ?? 0) > 0 || authStore.isEditing" class="mb-6">
+    <div v-if="(booth.discounts?.length ?? 0) > 0 || canEdit" class="mb-6">
       <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
         <h3 class="text-sm font-semibold text-gray-400 flex items-center gap-2">
           <UIcon name="i-heroicons-tag" class="w-4 h-4" />
@@ -553,7 +645,7 @@ const personBreakdown = computed(() => {
           </span>
         </h3>
         <UButton
-          v-if="authStore.isEditing"
+          v-if="canEdit"
           icon="i-heroicons-plus"
           variant="ghost"
           color="gray"
@@ -577,7 +669,7 @@ const personBreakdown = computed(() => {
           <span v-else class="text-xs text-gray-500">
             ({{ t('discount.buyN', { n: d.triggerQty - (d.freeQty ?? 0) }) }} {{ d.scopeValue }} {{ t('discount.getM', { m: d.freeQty ?? 0 }) }})
           </span>
-          <template v-if="authStore.isEditing">
+          <template v-if="canEdit">
             <button
               class="text-gray-500 hover:text-purple-400 opacity-0 group-hover:opacity-100 transition-opacity"
               :title="t('common.edit')"
@@ -595,7 +687,7 @@ const personBreakdown = computed(() => {
           </template>
         </div>
       </div>
-      <p v-else-if="authStore.isEditing" class="text-xs text-gray-600">{{ t('discount.empty') }}</p>
+      <p v-else-if="canEdit" class="text-xs text-gray-600">{{ t('discount.empty') }}</p>
     </div>
 
     <!-- Per-person breakdown — admin-only for privacy. Regular users see only
@@ -623,7 +715,7 @@ const personBreakdown = computed(() => {
     </div>
 
     <!-- Catalog images with products -->
-    <div :class="['space-y-8', authStore.isEditing && sortedImages.length > 1 ? 'pl-8' : '']">
+    <div :class="['space-y-8', canEdit && sortedImages.length > 1 ? 'pl-8' : '']">
       <!-- Person filter notice -->
       <div
         v-if="personsStore.currentPersonId && filteredImages.length < sortedImages.length"
@@ -637,7 +729,7 @@ const personBreakdown = computed(() => {
 
       <div v-for="img in filteredImages" :key="img.id" class="relative group/img">
         <!-- Reorder controls -->
-        <div v-if="authStore.isEditing && sortedImages.length > 1" class="absolute -left-8 top-2 flex flex-col gap-0.5 opacity-0 group-hover/img:opacity-100 transition-opacity z-10">
+        <div v-if="canEdit && sortedImages.length > 1" class="absolute -left-8 top-2 flex flex-col gap-0.5 opacity-0 group-hover/img:opacity-100 transition-opacity z-10">
           <button
             :disabled="sortedImages.findIndex(i => i.id === img.id) === 0"
             class="w-6 h-6 flex items-center justify-center rounded bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 disabled:opacity-20 disabled:cursor-not-allowed"
@@ -682,13 +774,25 @@ const personBreakdown = computed(() => {
       <div v-if="!booth.products?.length && !booth.images?.length" class="text-center py-12 text-gray-500">
         <UIcon name="i-heroicons-shopping-bag" class="w-12 h-12 mx-auto mb-3 text-gray-600" />
         <p>{{ t('booth.noContent') }}</p>
-        <p v-if="authStore.isEditing" class="text-sm mt-1">{{ t('booth.uploadHint') }}</p>
+        <p v-if="canEdit" class="text-sm mt-1">{{ t('booth.uploadHint') }}</p>
       </div>
     </div>
 
     <!-- Modals -->
     <AddProductModal v-model="showAddProduct" :booth-id="booth.id" />
     <UploadCatalogModal v-model="showUploadImage" :booth-id="booth.id" />
+
+    <ShareBoothModal
+      v-if="event"
+      v-model="showShareBoothModal"
+      :booth="booth"
+      :event="event"
+    />
+
+    <EditBoothModal
+      v-model="showEditBoothModal"
+      :booth="booth"
+    />
 
     <UModal v-model="showDeleteProductModal" :ui="{ width: 'sm:max-w-sm' }">
       <UCard>

@@ -2,7 +2,7 @@ import { useDb } from '../../db'
 import { catalogImages } from '../../db/schema'
 import { eq, max } from 'drizzle-orm'
 import { generateId, now } from '../../utils/id'
-import { requireEventEdit, eventIdForBooth } from '../../utils/permissions'
+import { requireBoothEdit, eventIdForBooth } from '../../utils/permissions'
 
 /**
  * Create a catalog image record that points at an external URL instead of an
@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
 
   const eventId = await eventIdForBooth(String(body.boothId))
   if (!eventId) throw createError({ statusCode: 404, message: 'Booth not found' })
-  await requireEventEdit(event, eventId)
+  await requireBoothEdit(event, String(body.boothId))
 
   const db = useDb()
 

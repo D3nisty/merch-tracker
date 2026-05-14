@@ -1,7 +1,7 @@
 import { useDb } from '../../db'
 import { products } from '../../db/schema'
 import { generateId, now } from '../../utils/id'
-import { requireEventEdit, eventIdForBooth } from '../../utils/permissions'
+import { requireBoothEdit, eventIdForBooth } from '../../utils/permissions'
 import { requireUser } from '../../utils/auth'
 
 export default defineEventHandler(async (event) => {
@@ -11,10 +11,11 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'boothId and name are required' })
   }
 
+  // Existence check via the event walker (404s for non-existent booths) plus
+  // the booth-level edit gate (admin / event-edit / booth-edit-share).
   const eventId = await eventIdForBooth(body.boothId)
   if (!eventId) throw createError({ statusCode: 404, message: 'Booth not found' })
-  await requireEventEdit(event, eventId)
-  const me = await requireUser(event)
+  const me = await requireBoothEdit(event, body.boothId)
 
   const db = useDb()
   const id = generateId()

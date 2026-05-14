@@ -1,7 +1,7 @@
 import { useDb } from '../../db'
 import { boothPricePresets } from '../../db/schema'
 import { generateId, now } from '../../utils/id'
-import { requireEventEdit, eventIdForBooth } from '../../utils/permissions'
+import { requireBoothEdit, eventIdForBooth } from '../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
 
   const eventId = await eventIdForBooth(String(body.boothId))
   if (!eventId) throw createError({ statusCode: 404, message: 'Booth not found' })
-  await requireEventEdit(event, eventId)
+  await requireBoothEdit(event, String(body.boothId))
 
   const db = useDb()
   const preset = {

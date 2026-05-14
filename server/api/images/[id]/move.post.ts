@@ -1,7 +1,7 @@
 import { useDb } from '../../../db'
 import { catalogImages, products } from '../../../db/schema'
 import { eq } from 'drizzle-orm'
-import { requireEventEdit, eventIdForImage, eventIdForBooth } from '../../../utils/permissions'
+import { requireBoothEdit, eventIdForBooth } from '../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')!
@@ -12,12 +12,13 @@ export default defineEventHandler(async (event) => {
   const existing = db.select().from(catalogImages).where(eq(catalogImages.id, id)).get()
   if (!existing) throw createError({ statusCode: 404, message: 'Image not found' })
 
-  // Moving an image requires edit on both source and destination events.
-  const sourceEventId = await eventIdForImage(existing.id)
+  // Moving an image requires edit on BOTH source and destination booths so a
+  // booth-share user can't relocate an image out of (or into) a booth they
+  // shouldn't touch. eventIdForBooth doubles as an existence check.
   const destEventId = await eventIdForBooth(boothId)
-  if (!sourceEventId || !destEventId) throw createError({ statusCode: 404, message: 'Booth or image not found' })
-  await requireEventEdit(event, sourceEventId)
-  if (destEventId !== sourceEventId) await requireEventEdit(event, destEventId)
+  if (!destEventId) throw createError({ statusCode: 404, message: 'Booth not found' })
+  await requireBoothEdit(event, existing.boothId)
+  if (boothId !== existing.boothId) await requireBoothEdit(event, boothId)
 
   db.update(catalogImages).set({ boothId }).where(eq(catalogImages.id, id)).run()
   db.update(catalogImages).set({ boothId }).where(eq(catalogImages.parentId, id)).run()

@@ -126,6 +126,7 @@ export function useDb() {
       map_h REAL,
       website TEXT,
       notes TEXT,
+      icon_path TEXT,
       created_at TEXT NOT NULL
     );
 
@@ -201,6 +202,34 @@ export function useDb() {
       bundle_currency TEXT,
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS booth_shares (
+      id TEXT PRIMARY KEY,
+      booth_id TEXT NOT NULL REFERENCES booths(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      level TEXT NOT NULL DEFAULT 'edit' CHECK(level IN ('view','edit')),
+      created_at TEXT NOT NULL,
+      UNIQUE(booth_id, user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS booth_invites (
+      id TEXT PRIMARY KEY,
+      booth_id TEXT NOT NULL REFERENCES booths(id) ON DELETE CASCADE,
+      token TEXT NOT NULL UNIQUE,
+      level TEXT NOT NULL DEFAULT 'edit' CHECK(level IN ('view','edit')),
+      created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS booth_group_shares (
+      id TEXT PRIMARY KEY,
+      booth_id TEXT NOT NULL REFERENCES booths(id) ON DELETE CASCADE,
+      group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+      level TEXT NOT NULL DEFAULT 'edit' CHECK(level IN ('view','edit')),
+      created_at TEXT NOT NULL,
+      UNIQUE(booth_id, group_id)
+    );
   `)
 
   // Column migrations for existing databases (ALTER TABLE is idempotent via try/catch)
@@ -232,6 +261,9 @@ export function useDb() {
   try { sqlite.exec(`ALTER TABLE booth_discounts ADD COLUMN bundle_currency TEXT`) } catch { /* already exists */ }
   // product_person_marks gained per-person quantity for "I want 2 of this".
   try { sqlite.exec(`ALTER TABLE product_person_marks ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1`) } catch { /* already exists */ }
+  // Booths gained an optional icon (small avatar shown on the dashboard tile
+  // + booth detail header). Either a local upload path or an external URL.
+  try { sqlite.exec(`ALTER TABLE booths ADD COLUMN icon_path TEXT`) } catch { /* already exists */ }
   // Events gained an optional end-date so multi-day conventions can record
   // the full range. Pre-existing single-day events keep `date` populated and
   // `date_to` NULL — the UI treats that as "single day".
@@ -352,6 +384,11 @@ export function useDb() {
   try { sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_marks_product ON product_person_marks(product_id)`) } catch { /* noop */ }
   try { sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_marks_person ON product_person_marks(person_id)`) } catch { /* noop */ }
   try { sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_discounts_booth ON booth_discounts(booth_id)`) } catch { /* noop */ }
+  try { sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_booth_shares_booth ON booth_shares(booth_id)`) } catch { /* noop */ }
+  try { sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_booth_shares_user ON booth_shares(user_id)`) } catch { /* noop */ }
+  try { sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_booth_invites_booth ON booth_invites(booth_id)`) } catch { /* noop */ }
+  try { sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_booth_group_shares_booth ON booth_group_shares(booth_id)`) } catch { /* noop */ }
+  try { sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_booth_group_shares_group ON booth_group_shares(group_id)`) } catch { /* noop */ }
 
   // Backfill per-person marks from the legacy single-person columns. For each
   // product where personId is set and isPlanned or isPurchased is true, ensure

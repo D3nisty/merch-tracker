@@ -1,7 +1,7 @@
 import { useDb } from '../../db'
 import { events, locations, booths, products, catalogImages, productPersonMarks, boothDiscounts } from '../../db/schema'
 import { eq, or } from 'drizzle-orm'
-import { requireEventView, canEditEvent } from '../../utils/permissions'
+import { requireEventView, canEditEvent, userBoothEditIds } from '../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')!
@@ -83,6 +83,14 @@ export default defineEventHandler(async (event) => {
     }
   })
 
+  // Per-booth edit flag: true when the viewer has event-edit (covers every
+  // booth) OR a direct booth-level edit share. Stamping it on the response
+  // lets the client decide whether to render edit affordances without
+  // running its own permission logic.
+  const editableBoothIds = canEdit
+    ? new Set(boothRows.map(b => b.id)) // event-edit covers all booths
+    : await userBoothEditIds(viewer)
+
   // Assemble nested structure
   const locationsWithBooths = locationRows.map(loc => ({
     ...loc,
@@ -93,6 +101,7 @@ export default defineEventHandler(async (event) => {
         products: productsWithMarks.filter(p => p.boothId === booth.id),
         images: imageRows.filter(i => i.boothId === booth.id),
         discounts: discountRows.filter(d => d.boothId === booth.id),
+        canEdit: editableBoothIds.has(booth.id),
       })),
   }))
 
@@ -100,5 +109,9 @@ export default defineEventHandler(async (event) => {
     ...eventRow,
     locations: locationsWithBooths,
     viewerPersonId,
+    // Event-level edit flag — true for admins, the event owner, edit-share
+    // users, and global 'editor' roles. Used by the dashboard to show
+    // event-wide affordances like "Add Hall" or the Share Event button.
+    canEdit,
   }
 })

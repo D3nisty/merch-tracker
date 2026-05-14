@@ -37,6 +37,58 @@ export interface Event {
   // server stamps this so the client can route "mark for me" actions without
   // a separate /api/auth/me call.
   viewerPersonId?: string | null
+  // True when the viewer can edit the event itself (admin / editor role /
+  // owner / direct edit-share). Per-booth edit is exposed via `booth.canEdit`.
+  canEdit?: boolean
+}
+
+// Per-user share attached to a single booth — read by `ShareBoothModal` to
+// list "shared with whom" and by the server to compute `booth.canEdit` for
+// the viewer.
+export interface BoothUserShare {
+  id: string
+  level: 'view' | 'edit'
+  createdAt: string
+  userId: string
+  username: string
+  name: string | null
+  color: string | null
+}
+
+// Per-group share — every member of the group inherits the level.
+export interface BoothGroupShare {
+  id: string
+  level: 'view' | 'edit'
+  createdAt: string
+  groupId: string
+  groupName: string
+}
+
+// Combined payload returned by `GET /api/booths/[id]/shares` (mirrors
+// `EventShares`).
+export interface BoothShares {
+  users: BoothUserShare[]
+  groups: BoothGroupShare[]
+}
+
+// Magic-link invite for booth-level access (mirrors `EventInvite`). The
+// `token` field is the secret — never log it. ShareBoothModal copies it to
+// the user's clipboard as part of the full `/booth-invite/<token>` URL.
+export interface BoothInvite {
+  id: string
+  boothId: string
+  token: string
+  level: 'view' | 'edit'
+  createdBy: string | null
+  createdAt: string
+  expiresAt: string | null
+}
+
+// Server payload for the public booth-invite landing page.
+export interface BoothInviteIntrospection {
+  level: 'view' | 'edit'
+  booth: { id: string; slug: string | null; name: string }
+  event: { id: string; slug: string | null; name: string; type: 'convention' | 'travel'; location: string | null }
 }
 
 // Per-person planned/purchased mark on a product. Multiple persons can
@@ -190,10 +242,19 @@ export interface Booth {
   notes: string | null
   shopCategory: string | null
   personId: string | null
+  // Optional booth icon (`/uploads/icon-…` for local upload, or `http(s)://…`
+  // for an external URL). Rendered as a small avatar on the dashboard tile
+  // and next to the title on the booth detail header.
+  iconPath: string | null
   createdAt: string
   products?: Product[]
   images?: CatalogImage[]
   discounts?: BoothDiscount[]
+  // Server-stamped per-viewer flag — true when the viewer can edit THIS
+  // booth (event-edit OR direct booth-edit-share). Pages should prefer
+  // this over `authStore.isEditing` so booth-share users with role='user'
+  // still see edit affordances on the booths they're shared on.
+  canEdit?: boolean
 }
 
 export interface CatalogImage {
@@ -357,6 +418,22 @@ export const useEventsStore = defineStore('events', () => {
       const loc = currentEvent.value.locations.find(l => l.id === locationId)
       if (loc) loc.booths = loc.booths?.filter(b => b.id !== id)
     }
+  }
+
+  // Upload an icon image for a booth and stamp the returned URL on the local
+  // booth row so the avatar reflects the change immediately. Callers may
+  // also pass `iconPath` to `updateBooth` directly for external URLs.
+  async function uploadBoothIcon(id: string, file: File): Promise<{ iconPath: string }> {
+    const fd = new FormData()
+    fd.append('image', file)
+    const res = await $fetch<{ iconPath: string }>(`/api/booths/${id}/icon`, { method: 'POST', body: fd })
+    if (currentEvent.value?.locations) {
+      for (const loc of currentEvent.value.locations) {
+        const idx = loc.booths?.findIndex(b => b.id === id) ?? -1
+        if (idx !== -1 && loc.booths) loc.booths[idx] = { ...loc.booths[idx], iconPath: res.iconPath }
+      }
+    }
+    return res
   }
 
   async function createProduct(data: Partial<Product>) {
@@ -948,6 +1025,49 @@ export const useEventsStore = defineStore('events', () => {
     return await $fetch(`/api/events/${eventIdOrSlug}/shares/${shareId}`, { method: 'DELETE' })
   }
 
+  // ── Booth shares (per-booth edit grants, layered on top of event shares) ──
+  async function fetchBoothShares(boothId: string): Promise<BoothShares> {
+    return await $fetch<BoothShares>(`/api/booths/${boothId}/shares`)
+  }
+  async function shareBoothWithUser(boothId: string, userId: string, level: 'view' | 'edit' = 'edit') {
+    return await $fetch(`/api/booths/${boothId}/shares`, {
+      method: 'POST',
+      body: { userId, level },
+    })
+  }
+  async function shareBoothWithGroup(boothId: string, groupId: string, level: 'view' | 'edit' = 'edit') {
+    return await $fetch(`/api/booths/${boothId}/shares`, {
+      method: 'POST',
+      body: { groupId, level },
+    })
+  }
+  async function removeBoothShare(boothId: string, shareId: string) {
+    return await $fetch(`/api/booths/${boothId}/shares/${shareId}`, { method: 'DELETE' })
+  }
+
+  // ── Booth invites (magic-link tokens, mirror of event invites) ──────────
+  async function fetchBoothInvites(boothId: string): Promise<BoothInvite[]> {
+    return await $fetch<BoothInvite[]>(`/api/booths/${boothId}/invites`)
+  }
+  async function createBoothInvite(boothId: string, level: 'view' | 'edit', expiresInHours?: number): Promise<BoothInvite> {
+    return await $fetch<BoothInvite>(`/api/booths/${boothId}/invites`, {
+      method: 'POST',
+      body: { level, expiresInHours },
+    })
+  }
+  async function revokeBoothInvite(boothId: string, inviteId: string) {
+    return await $fetch(`/api/booths/${boothId}/invites/${inviteId}`, { method: 'DELETE' })
+  }
+  async function introspectBoothInvite(token: string): Promise<BoothInviteIntrospection> {
+    return await $fetch<BoothInviteIntrospection>(`/api/booth-invites/${token}`)
+  }
+  async function acceptBoothInvite(token: string, body?: { username: string; password: string }) {
+    return await $fetch<{ boothId: string; boothSlug: string | null; eventId: string | null; level: 'view' | 'edit' }>(
+      `/api/booth-invites/${token}/accept`,
+      { method: 'POST', body: body ?? {} },
+    )
+  }
+
   async function fetchEventInvites(eventIdOrSlug: string): Promise<EventInvite[]> {
     return await $fetch<EventInvite[]>(`/api/events/${eventIdOrSlug}/invites`)
   }
@@ -1033,6 +1153,7 @@ export const useEventsStore = defineStore('events', () => {
     createBooth,
     updateBooth,
     deleteBooth,
+    uploadBoothIcon,
     createProduct,
     updateProduct,
     deleteProduct,
@@ -1065,6 +1186,15 @@ export const useEventsStore = defineStore('events', () => {
     shareEventWithUser,
     shareEventWithGroup,
     removeShare,
+    fetchBoothShares,
+    shareBoothWithUser,
+    shareBoothWithGroup,
+    removeBoothShare,
+    fetchBoothInvites,
+    createBoothInvite,
+    revokeBoothInvite,
+    introspectBoothInvite,
+    acceptBoothInvite,
     fetchEventInvites,
     createInvite,
     revokeInvite,

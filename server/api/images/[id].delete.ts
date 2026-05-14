@@ -1,7 +1,7 @@
 import { useDb } from '../../db'
 import { catalogImages } from '../../db/schema'
 import { eq } from 'drizzle-orm'
-import { requireEventEdit, eventIdForImage } from '../../utils/permissions'
+import { requireBoothEdit } from '../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')!
@@ -10,9 +10,7 @@ export default defineEventHandler(async (event) => {
   const existing = db.select().from(catalogImages).where(eq(catalogImages.id, id)).get()
   if (!existing) throw createError({ statusCode: 404, message: 'Image not found' })
 
-  const eventId = await eventIdForImage(existing.id)
-  if (!eventId) throw createError({ statusCode: 404, message: 'Image not found' })
-  await requireEventEdit(event, eventId)
+  await requireBoothEdit(event, existing.boothId)
 
   db.delete(catalogImages).where(eq(catalogImages.id, id)).run()
 

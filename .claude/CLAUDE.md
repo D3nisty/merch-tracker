@@ -30,8 +30,11 @@ app/
       users.vue          # Admin-only: create/edit/delete users, change roles
       groups.vue         # Group management (owner or admin per row)
       persons.vue        # Admin-only: list all Person rows, delete orphans (no linked user), see mark/product counts per person
+      permissions.vue    # Admin-only: bulk-grant share rights — pick multiple users/groups + multiple events or booths and grant in one go (cross-product)
     invite/
       [token].vue        # Magic-link landing page: introspect token, signup or accept
+    booth-invite/
+      [token].vue        # Booth-scoped magic-link landing page — same flow but creates a booth_shares row instead of event_shares
     events/
       create.vue         # New event form
       [slug]/
@@ -48,6 +51,8 @@ app/
     HallPlanSetupModal.vue  # OCR-based booth-number detection from floor plan
     CatalogImageViewer.vue  # Image viewer with split mode, annotation, OCR, fullscreen
     QrScannerModal.vue      # QR-code → booth jump (camera, convention events only)
+    ShareBoothModal.vue     # Per-booth user-share + magic-link invite management (owner/admin only)
+    EditBoothModal.vue      # Edit booth name / hall / booth nr / website / notes / categories / icon
     AddLocationModal.vue
     AddBoothModal.vue
     AddProductModal.vue
@@ -106,6 +111,10 @@ public/uploads/      # Uploaded images when UPLOAD_DIR isn't set (auto-created, 
 | `event_shares` | Per-user share of an event with `level` of `view` or `edit` |
 | `event_group_shares` | Per-group share of an event with `level` of `view` or `edit` |
 | `event_invites` | Magic-link invite tokens. Multi-use until expired/revoked; redeeming creates an `event_shares` row |
+| `booths` | (existing table — column note) `icon_path` is an optional small image shown as a square avatar on the dashboard tile AND in the booth detail header. Stores either a `/uploads/icon-…` path (local upload) or an external URL. Set via `POST /api/booths/[id]/icon` (multipart, gated by `requireBoothEdit`) or `PUT /api/booths/[id]` with `iconPath: <url>` to set an external URL; pass `null` to clear. |
+| `booth_shares` | Per-(booth, user) share grant — layers ON TOP of event-level access. Lets the event owner give a single artist edit rights on JUST their own booth without exposing the whole event. UNIQUE on (booth_id, user_id). `level` is `'view'` or `'edit'`. Cascades on booth or user delete. |
+| `booth_group_shares` | Per-(booth, group) share grant — every member of the group inherits the level. UNIQUE on (booth_id, group_id). Cascades on booth or group delete. The booth's effective edit pool is `union(direct user-shares) ∪ union(group-shares)`. |
+| `booth_invites` | Magic-link tokens for booth-level access. Mirrors `event_invites` (multi-use until expired/revoked; redeeming creates a `booth_shares` row). UNIQUE `token`. Cascades on booth delete; `created_by` is SET NULL if the inviter is deleted. |
 | `persons` | Colored labels for tagging items. Every User gets one auto-created on signup (1:1 via `users.personId`). Legacy admin-managed standalone persons (no linked user) still exist for backwards compatibility |
 | `events` | Top-level events. `date` is the start day; `date_to` is the optional end day for multi-day events (conventions span 2-3 days typically). When `date_to` is null or ≤ `date`, the UI renders a single date — the POST/PUT endpoints normalise this on write (drop `date_to` when it isn't strictly after `date`). `isPublic` flag and `ownerId` drive permissions. |
 | `locations` | Halls (convention) or cities/areas (travel) |
@@ -130,7 +139,7 @@ All IDs are UUIDs. SQLite with WAL mode + foreign keys enabled.
 - **Truly anonymous (logged out)**: travel events hidden on dashboard, person filter dropdown hidden, paid/spent totals hidden, person dots/labels hidden, catalog overlay boxes use neutral purple, **Plan?/Paid? buttons + "Planned from X" / "Paid from X" summary boxes hidden** (no person to mark for), product + receipt checkboxes disabled. Listed prices still visible.
 - **Logged-in `role === 'user'`** (view-share or public viewer): still no edit affordances (no drawing, no creating products, no editing existing ones), but **CAN mark anything for their own person** — the checkbox in `ProductItem.vue`, the qty stepper, the article-gallery `Plan?` / `Paid?` buttons, and the planned/paid summary boxes are all gated on `canMark` (= `authStore.isLoggedIn && !!store.currentEvent?.viewerPersonId`), NOT on `authStore.isEditing`. Editing/drawing/deleting still requires `isEditing`.
 
-**API enforcement** (Phase 3 + Phase 4 — done):
+**API enforcement** (Phase 3 + Phase 4 + booth-share — done):
 - **Per-event permissions** live in [`server/utils/permissions.ts`](../server/utils/permissions.ts):
   - `canViewEvent(user, eventId)` — admin OR public OR owner OR direct share OR group share (any level)
   - `canEditEvent(user, eventId)` — admin OR editor role OR owner OR direct share `edit` OR group share `edit`
@@ -138,6 +147,14 @@ All IDs are UUIDs. SQLite with WAL mode + foreign keys enabled.
   - Helpers `requireEventView` / `requireEventEdit` throw 401/403/404 appropriately
   - Resource-to-event walkers: `eventIdForLocation`, `eventIdForBooth`, `eventIdForProduct`, `eventIdForImage`, `eventIdForPreset`, `eventIdForDiscount` — every nested mutation looks up the parent event and gates on it
   - `accessibleEventIds(user)` — used by `GET /api/events` to filter the list
+- **Per-booth permissions** (layered on top of event-level):
+  - `canViewBooth(user, boothId)` — canViewEvent on the parent OR a direct booth share (any level)
+  - `canEditBooth(user, boothId)` — canEditEvent on the parent OR a direct booth-edit share
+  - `requireBoothEdit(event, boothId)` — gates EVERY booth-scoped mutation: product create/edit/delete, catalog image upload/edit/delete/replace/move/from-url, preset create/delete, discount create/edit/delete, booth edit (PUT). Deleting the booth itself or creating new booths still uses `requireEventEdit` — that's event-level structural work.
+  - `userBoothEditIds(user)` — returns the set of boothIds the user has direct edit-share on; consumed by `GET /api/events/[id]` to stamp `canEdit` per booth on the response so the client can light up affordances without rerunning permission logic.
+  - **Share management**: `GET /api/booths/[id]/shares` returns `{ users, groups }` (mirrors `event_shares` response shape) — any logged-in viewer. `POST /api/booths/[id]/shares` accepts `{ userId?, groupId?, level }` and dispatches to either `booth_shares` or `booth_group_shares`. `DELETE /api/booths/[id]/shares/[shareId]` checks both tables since the URL shape is identical for user-shares and group-shares. Granting/revoking is owner-or-admin only — booth-edit-share users can't re-share onward. `boothShareLevel` (in permissions.ts) checks BOTH the direct user-share AND every group the user belongs to that has a booth-group-share, then picks the higher level (edit beats view).
+  - **Magic-link invites**: `GET/POST /api/booths/[id]/invites` (owner/admin only — invite tokens are credentials) + `DELETE /api/booths/[id]/invites/[inviteId]` to revoke. Public-facing pair `GET /api/booth-invites/[token]` (introspection — shows booth + event name + level) and `POST /api/booth-invites/[token]/accept` (logged-in: just upserts the `booth_shares` row; logged-out: also creates a user + session from `{ username, password }`). Mirror of the event-invite flow; `/booth-invite/[token]` is the landing page.
+- **Bulk permissions page** (`/admin/permissions`): admin-only matrix tool to grant share rights in bulk. Four independent sections — (1) users → events, (2) groups → events, (3) users → booths, (4) groups → booths — each with a multi-select user/group/event/booth list (checkbox lists with All / None shortcuts), a view/edit level picker, and a Grant button. The button fires `Promise.all` over the cross-product of selected subjects × targets, calling the existing per-resource share endpoints (`POST /api/events/[id]/shares` or `POST /api/booths/[id]/shares` — body shape decides user vs group). Reports `{ granted, failed }` counts in a small caption — failures usually mean the target already has equal-or-better access (the endpoints reject downgrades). Booth list is sourced from a dedicated `GET /api/admin/booths` (admin-only, flat list with parent event + location info baked in) so the multi-select can render "EventName › BoothName · H10 · S10L13" in one shot.
 - **Event delete** + **share management** require owner-or-admin specifically (edit-shared collaborators cannot delete the event or change shares).
 - **`persons` mutations** stay on `requireRole(['admin','editor'])` — they're global tags, not per-event.
 - **Auth endpoints**: `login`/`logout`/`me` public; `change-password` uses `requireUser`.

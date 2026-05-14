@@ -4,24 +4,21 @@ import { useDb } from '../../../db'
 import { catalogImages } from '../../../db/schema'
 import { eq } from 'drizzle-orm'
 import { generateId } from '../../../utils/id'
-import { requireEventEdit, eventIdForImage } from '../../../utils/permissions'
+import { requireBoothEdit } from '../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')!
 
-  const eventId = await eventIdForImage(id)
-  if (!eventId) throw createError({ statusCode: 404, message: 'Image not found' })
-  await requireEventEdit(event, eventId)
+  const db = useDb()
+  const existing = db.select().from(catalogImages).where(eq(catalogImages.id, id)).get()
+  if (!existing) throw createError({ statusCode: 404, message: 'Image not found' })
+  await requireBoothEdit(event, existing.boothId)
 
   const formData = await readMultipartFormData(event)
   if (!formData) throw createError({ statusCode: 400, message: 'No form data' })
 
   const imageFile = formData.find(f => f.name === 'image')
   if (!imageFile) throw createError({ statusCode: 400, message: 'image is required' })
-
-  const db = useDb()
-  const existing = db.select().from(catalogImages).where(eq(catalogImages.id, id)).get()
-  if (!existing) throw createError({ statusCode: 404, message: 'Image not found' })
 
   const ext = extname(imageFile.filename || '.jpg') || '.jpg'
   const filename = `${generateId()}${ext}`

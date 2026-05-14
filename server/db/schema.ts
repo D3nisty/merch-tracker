@@ -115,6 +115,11 @@ export const booths = sqliteTable('booths', {
   notes: text('notes'),
   shopCategory: text('shop_category'),
   personId: text('person_id').references(() => persons.id, { onDelete: 'set null' }),
+  // Optional booth icon — either a local upload (`/uploads/icon-xxx.png`) or
+  // an external URL (`https://…`). One image per booth; shown on the booth
+  // card on the event dashboard AND in the booth detail page header so the
+  // user can recognise an artist's branding at a glance.
+  iconPath: text('icon_path'),
   createdAt: text('created_at').notNull(),
 })
 
@@ -245,3 +250,49 @@ export type ProductPersonMark = typeof productPersonMarks.$inferSelect
 export type NewProductPersonMark = typeof productPersonMarks.$inferInsert
 export type BoothDiscount = typeof boothDiscounts.$inferSelect
 export type NewBoothDiscount = typeof boothDiscounts.$inferInsert
+
+// Per-booth share — lets the event owner grant a single artist edit access
+// to JUST their own booth without exposing the rest of the event. Layered
+// on top of (not replacing) event-level shares: if you have event-edit you
+// can edit every booth regardless. UNIQUE so granting twice is a no-op.
+export const boothShares = sqliteTable('booth_shares', {
+  id: text('id').primaryKey(),
+  boothId: text('booth_id').notNull().references(() => booths.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  level: text('level', { enum: ['view', 'edit'] }).notNull().default('edit'),
+  createdAt: text('created_at').notNull(),
+})
+
+export type BoothShareRow = typeof boothShares.$inferSelect
+export type NewBoothShareRow = typeof boothShares.$inferInsert
+
+// Per-booth group share — group members inherit the level (mirrors
+// event_group_shares for events). UNIQUE so granting twice updates rather
+// than duplicates. Combined with `boothShares` (user-direct) the booth's
+// edit pool is union(user-shares) ∪ union(group-shares).
+export const boothGroupShares = sqliteTable('booth_group_shares', {
+  id: text('id').primaryKey(),
+  boothId: text('booth_id').notNull().references(() => booths.id, { onDelete: 'cascade' }),
+  groupId: text('group_id').notNull().references(() => groups.id, { onDelete: 'cascade' }),
+  level: text('level', { enum: ['view', 'edit'] }).notNull().default('edit'),
+  createdAt: text('created_at').notNull(),
+})
+
+export type BoothGroupShareRow = typeof boothGroupShares.$inferSelect
+export type NewBoothGroupShareRow = typeof boothGroupShares.$inferInsert
+
+// Magic-link invites for booth-level access — mirrors `event_invites` but
+// scoped to a single booth. Redeeming creates a `boothShares` row for the
+// caller; the token stays valid (multi-use) until revoked or expired.
+export const boothInvites = sqliteTable('booth_invites', {
+  id: text('id').primaryKey(),
+  boothId: text('booth_id').notNull().references(() => booths.id, { onDelete: 'cascade' }),
+  token: text('token').notNull().unique(),
+  level: text('level', { enum: ['view', 'edit'] }).notNull().default('edit'),
+  createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: text('created_at').notNull(),
+  expiresAt: text('expires_at'),
+})
+
+export type BoothInviteRow = typeof boothInvites.$inferSelect
+export type NewBoothInviteRow = typeof boothInvites.$inferInsert

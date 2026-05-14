@@ -102,7 +102,20 @@ const progress = computed(() => totalCount.value ? (purchasedCount.value / total
   <NuxtLink :to="`/events/${route.params.slug}/booth/${booth.slug ?? booth.id}`">
     <UCard class="hover:border-purple-500/50 transition-colors cursor-pointer h-full">
       <div class="space-y-2">
-        <div class="flex items-start justify-between">
+        <div class="flex items-start justify-between gap-2">
+          <!-- Booth icon — same image surfaced on the booth detail header.
+               Falls back to a generic shopping-bag glyph when none uploaded. -->
+          <div class="shrink-0 w-9 h-9 rounded-md overflow-hidden flex items-center justify-center bg-gray-800 border border-gray-700">
+            <img
+              v-if="booth.iconPath"
+              :src="booth.iconPath"
+              alt=""
+              loading="lazy"
+              decoding="async"
+              class="w-full h-full object-cover"
+            />
+            <UIcon v-else name="i-heroicons-shopping-bag" class="w-4 h-4 text-gray-500" />
+          </div>
           <div class="flex-1 min-w-0">
             <h4 class="font-semibold text-white text-sm">{{ booth.name }}</h4>
             <div class="text-xs text-gray-500 mt-0.5">

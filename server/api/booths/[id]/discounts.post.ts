@@ -2,7 +2,7 @@ import { useDb } from '../../../db'
 import { boothDiscounts, booths } from '../../../db/schema'
 import { eq } from 'drizzle-orm'
 import { generateId, now } from '../../../utils/id'
-import { requireEventEdit, eventIdForBooth } from '../../../utils/permissions'
+import { requireBoothEdit, eventIdForBooth } from '../../../utils/permissions'
 
 // Create a discount on a booth. Two shapes:
 //
@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
 
   const eventId = await eventIdForBooth(boothId)
   if (!eventId) throw createError({ statusCode: 404, message: 'Booth not found' })
-  await requireEventEdit(event, eventId)
+  await requireBoothEdit(event, boothId)
 
   const body = await readBody(event) as {
     label?: string

@@ -10,6 +10,8 @@ import {
   products,
   boothPricePresets,
   boothDiscounts,
+  boothShares,
+  boothGroupShares,
   eventShares,
   eventGroupShares,
   groupMembers,
@@ -130,6 +132,103 @@ export async function requireEventMark(event: H3Event, eventId: string): Promise
   const ok = await canViewEvent(user, eventId)
   if (!ok) throw createError({ statusCode: 403, message: 'Forbidden' })
   return user
+}
+
+// ── Booth-level shares ────────────────────────────────────────────────
+// Per-booth shares layer ON TOP OF event-level access — they grant extra
+// edit rights to a single booth without exposing the rest of the event.
+// Use case: at a convention, the event owner invites each artist to manage
+// just their own booth. Event-edit users keep their full powers regardless;
+// a booth-share user with event-view (or even no event share, if the event
+// is public) gains edit rights only on the booths they're explicitly added
+// to.
+
+async function boothShareLevel(boothId: string, user: User): Promise<'view' | 'edit' | null> {
+  const db = useDb()
+  const levels: ('view' | 'edit')[] = []
+
+  const direct = await db.select({ level: boothShares.level })
+    .from(boothShares)
+    .where(and(eq(boothShares.boothId, boothId), eq(boothShares.userId, user.id)))
+    .get()
+  if (direct) levels.push(direct.level)
+
+  // Group memberships → booth_group_shares — same union pattern as event-level.
+  const groupIds = await userGroupIds(user.id)
+  if (groupIds.length > 0) {
+    const groupRows = await db.select({ level: boothGroupShares.level })
+      .from(boothGroupShares)
+      .where(and(eq(boothGroupShares.boothId, boothId), inArray(boothGroupShares.groupId, groupIds)))
+      .all()
+    for (const r of groupRows) levels.push(r.level)
+  }
+
+  if (levels.includes('edit')) return 'edit'
+  if (levels.includes('view')) return 'view'
+  return null
+}
+
+export async function canViewBooth(user: User | null, boothId: string): Promise<boolean> {
+  const eventId = await eventIdForBooth(boothId)
+  if (!eventId) return false
+  if (await canViewEvent(user, eventId)) return true
+  if (!user) return false
+  return (await boothShareLevel(boothId, user)) !== null
+}
+
+export async function canEditBooth(user: User | null, boothId: string): Promise<boolean> {
+  if (!user) return false
+  const eventId = await eventIdForBooth(boothId)
+  if (!eventId) return false
+  if (await canEditEvent(user, eventId)) return true
+  return (await boothShareLevel(boothId, user)) === 'edit'
+}
+
+export async function requireBoothEdit(event: H3Event, boothId: string): Promise<User> {
+  const user = await requireUser(event)
+  const ok = await canEditBooth(user, boothId)
+  if (!ok) throw createError({ statusCode: 403, message: 'Forbidden' })
+  return user
+}
+
+export async function requireBoothView(event: H3Event, boothId: string): Promise<User | null> {
+  const eventId = await eventIdForBooth(boothId)
+  if (!eventId) throw createError({ statusCode: 404, message: 'Booth not found' })
+  // If the event is public AND the user has no booth share, fall through to
+  // requireEventView which allows guests. Otherwise we need a session.
+  const evtRow = await useDb().select({ isPublic: events.isPublic }).from(events).where(eq(events.id, eventId)).get()
+  if (evtRow?.isPublic) {
+    try { return await requireUser(event) } catch { return null }
+  }
+  const user = await requireUser(event)
+  const ok = await canViewBooth(user, boothId)
+  if (!ok) throw createError({ statusCode: 403, message: 'Forbidden' })
+  return user
+}
+
+// Returns the set of booth IDs the user has booth-edit on through either a
+// direct user-share OR a group-share they're a member of. (Excludes what
+// they can edit via event-level access — that's covered by canEditEvent
+// separately.) Used by `GET /api/events/[id]` to stamp a `canEditBooth`
+// flag on each booth in the response.
+export async function userBoothEditIds(user: User | null): Promise<Set<string>> {
+  if (!user) return new Set()
+  const db = useDb()
+  const direct = await db.select({ boothId: boothShares.boothId })
+    .from(boothShares)
+    .where(and(eq(boothShares.userId, user.id), eq(boothShares.level, 'edit')))
+    .all()
+  const ids = new Set(direct.map(r => r.boothId))
+
+  const groupIds = await userGroupIds(user.id)
+  if (groupIds.length > 0) {
+    const groupRows = await db.select({ boothId: boothGroupShares.boothId })
+      .from(boothGroupShares)
+      .where(and(inArray(boothGroupShares.groupId, groupIds), eq(boothGroupShares.level, 'edit')))
+      .all()
+    for (const r of groupRows) ids.add(r.boothId)
+  }
+  return ids
 }
 
 // ── Resource → event lookup helpers ─────────────────────────────────────────

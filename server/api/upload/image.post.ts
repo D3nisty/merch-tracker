@@ -4,7 +4,7 @@ import { useDb } from '../../db'
 import { catalogImages } from '../../db/schema'
 import { eq, max } from 'drizzle-orm'
 import { generateId, now } from '../../utils/id'
-import { requireEventEdit, eventIdForBooth } from '../../utils/permissions'
+import { requireBoothEdit, eventIdForBooth } from '../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const formData = await readMultipartFormData(event)
@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
   const boothId = boothIdField.data.toString()
   const eventId = await eventIdForBooth(boothId)
   if (!eventId) throw createError({ statusCode: 404, message: 'Booth not found' })
-  await requireEventEdit(event, eventId)
+  await requireBoothEdit(event, boothId)
   const ext = extname(imageFile.filename || '.jpg') || '.jpg'
   const filename = `${generateId()}${ext}`
   const uploadDir = process.env.UPLOAD_DIR ?? join(process.cwd(), 'public', 'uploads')
