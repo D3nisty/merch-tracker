@@ -1,0 +1,123 @@
+/*
+ * Light-mode color overrides.
+ *
+ * The app was originally styled exclusively for dark mode — every custom
+ * component uses hardcoded `bg-gray-9X0`, `text-white`, `border-gray-700`,
+ * etc. Pairing each of those with a `dark:` variant would touch ~30 files.
+ *
+ * Instead, this stylesheet declares "when the user is in light mode (i.e.
+ * <html> does NOT have the `dark` class), treat these specific dark Tailwind
+ * utility classes as their light equivalents". The dark design is unchanged;
+ * light mode mirrors the visual hierarchy with inverted brightness.
+ *
+ * Mapping:
+ *   bg-gray-950 (darkest body)    → gray-50  (near-white body)
+ *   bg-gray-900 (cards / navbar)  → white
+ *   bg-gray-800 (inputs / badges) → gray-100
+ *
+ *   text-white   (brightest text) → gray-900 (near-black)
+ *   text-gray-300 → gray-700
+ *   text-gray-400 → gray-600
+ *   text-gray-500 → gray-500 (mid-tone, fine both ways)
+ *   text-gray-600 → gray-400
+ *
+ *   border-gray-700 → gray-300
+ *   border-gray-800 → gray-200
+ *
+ * Tailwind escapes `/` and `:` in class names with `\`, so e.g. `bg-gray-900/80`
+ * is `.bg-gray-900\/80` in CSS.
+ */
+
+/* ── Backgrounds ──────────────────────────────────────────────────────── */
+/* The body sits a step darker than surfaces so white cards/navbar pop. Using
+   gray-200 instead of gray-50 gives enough contrast for the eye to perceive
+   the elevation hierarchy. */
+:root:not(.dark) .bg-gray-950 { background-color: rgb(229 231 235); }   /* gray-200 — body */
+:root:not(.dark) .bg-gray-900 { background-color: rgb(255 255 255); }   /* white — cards / navbar */
+:root:not(.dark) .bg-gray-800 { background-color: rgb(243 244 246); }   /* gray-100 — inputs / form sections */
+
+:root:not(.dark) .bg-gray-900\/80 { background-color: rgb(255 255 255 / 0.85); }
+:root:not(.dark) .bg-gray-900\/50 { background-color: rgb(255 255 255 / 0.65); }
+:root:not(.dark) .bg-gray-800\/60 { background-color: rgb(243 244 246 / 0.6); }
+:root:not(.dark) .bg-gray-800\/80 { background-color: rgb(243 244 246 / 0.8); }
+:root:not(.dark) .bg-gray-800\/90 { background-color: rgb(243 244 246 / 0.9); }
+:root:not(.dark) .bg-gray-900\/90 { background-color: rgb(255 255 255 / 0.9); }
+:root:not(.dark) .bg-black\/50 { background-color: rgb(75 85 99 / 0.7); }
+:root:not(.dark) .bg-black\/80 { background-color: rgb(31 41 55 / 0.85); }
+
+/* ── Text ────────────────────────────────────────────────────────────── */
+:root:not(.dark) .text-white { color: rgb(17 24 39); }
+:root:not(.dark) .text-gray-300 { color: rgb(55 65 81); }
+:root:not(.dark) .text-gray-400 { color: rgb(75 85 99); }
+:root:not(.dark) .text-gray-600 { color: rgb(156 163 175); }
+
+/* hover:text-white → in light mode, hover stays text-gray-900 */
+:root:not(.dark) .hover\:text-white:hover { color: rgb(17 24 39); }
+:root:not(.dark) .hover\:text-gray-300:hover { color: rgb(55 65 81); }
+:root:not(.dark) .hover\:text-gray-100:hover { color: rgb(31 41 55); }
+
+/* ── Borders ─────────────────────────────────────────────────────────── */
+/* Borders are noticeably stronger than the original gray-200/300 mapping —
+   without enough contrast in light mode, cards visually melt into the body. */
+:root:not(.dark) .border-gray-700 { border-color: rgb(156 163 175); }   /* gray-400 */
+:root:not(.dark) .border-gray-800 { border-color: rgb(209 213 219); }   /* gray-300 */
+:root:not(.dark) .border-gray-900 { border-color: rgb(229 231 235); }
+
+:root:not(.dark) .hover\:border-gray-500:hover { border-color: rgb(75 85 99); }
+:root:not(.dark) .hover\:border-gray-600:hover { border-color: rgb(75 85 99); }
+:root:not(.dark) .hover\:border-gray-700:hover { border-color: rgb(107 114 128); }
+
+/* ── Card / surface elevation in light mode ─────────────────────────────
+   Dark mode gets visual hierarchy from brightness alone (deep black body,
+   slightly less-deep card). Light mode needs an explicit shadow to give
+   the same "card sits above the body" feel. Apply to any UCard / panel that
+   has a white-or-gray-900 background. */
+:root:not(.dark) .bg-gray-900 {
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04), 0 1px 3px 0 rgb(0 0 0 / 0.06);
+}
+/* …but NOT to the sticky navbar at the top — it should look like a flat bar
+   with a bottom border instead of a floating card. */
+:root:not(.dark) nav.bg-gray-900\/80 {
+  box-shadow: none;
+  border-bottom-color: rgb(209 213 219);
+}
+
+/* Background hover utilities */
+:root:not(.dark) .hover\:bg-gray-800:hover { background-color: rgb(229 231 235); }
+:root:not(.dark) .hover\:bg-gray-800\/80:hover { background-color: rgb(229 231 235 / 0.8); }
+:root:not(.dark) .hover\:bg-gray-800\/60:hover { background-color: rgb(229 231 235 / 0.6); }
+:root:not(.dark) .hover\:bg-gray-900:hover { background-color: rgb(243 244 246); }
+
+/* ── Divide utility (border between sibling children) ───────────────── */
+:root:not(.dark) .divide-gray-700 > :not([hidden]) ~ :not([hidden]) { border-color: rgb(209 213 219); }
+:root:not(.dark) .divide-gray-800 > :not([hidden]) ~ :not([hidden]) { border-color: rgb(229 231 235); }
+
+/* ── Ring / focus colors ────────────────────────────────────────────── */
+:root:not(.dark) .ring-gray-700 { --tw-ring-color: rgb(209 213 219); }
+:root:not(.dark) .ring-gray-800 { --tw-ring-color: rgb(229 231 235); }
+
+/* ── Accent text colors ─────────────────────────────────────────────────
+   The -400 shade reads fine on dark backgrounds but is too washed out on
+   white. Bump to -600 in light mode for the colors used heavily across the
+   app (prices, status indicators, etc.) */
+:root:not(.dark) .text-yellow-400 { color: rgb(202 138 4); }
+:root:not(.dark) .text-green-400 { color: rgb(22 163 74); }
+:root:not(.dark) .text-orange-400 { color: rgb(234 88 12); }
+:root:not(.dark) .text-blue-400 { color: rgb(37 99 235); }
+:root:not(.dark) .text-red-400 { color: rgb(220 38 38); }
+:root:not(.dark) .text-purple-400 { color: rgb(147 51 234); }
+:root:not(.dark) .text-pink-400 { color: rgb(219 39 119); }
+
+/* The -300 shades occasionally show up on hover or as muted accents — same
+   contrast issue, push them a notch darker. */
+:root:not(.dark) .text-purple-300 { color: rgb(168 85 247); }
+:root:not(.dark) .hover\:text-purple-300:hover { color: rgb(126 34 206); }
+:root:not(.dark) .hover\:text-orange-400:hover { color: rgb(194 65 12); }
+:root:not(.dark) .hover\:text-orange-300:hover { color: rgb(234 88 12); }
+:root:not(.dark) .hover\:text-green-400:hover { color: rgb(21 128 61); }
+:root:not(.dark) .hover\:text-green-300:hover { color: rgb(22 163 74); }
+
+/* ── Color-accented semi-transparent surfaces ───────────────────────────
+   These are mostly OK in light mode (purple-500/10 over white reads as a
+   pale lavender), so no overrides needed for /10, /20, /30 alpha tokens
+   of the accent colors. */

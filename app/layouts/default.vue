@@ -12,6 +12,16 @@ const router = useRouter()
 
 const showUserMenu = ref(false)
 
+// Color mode (default 'dark' is set in nuxt.config.ts). The button just flips
+// the preference; @nuxt/ui handles applying the `dark` class to <html> and
+// persisting the choice in localStorage.
+// @ts-expect-error useColorMode is a Nuxt auto-import; the TS server in this
+// editor occasionally doesn't resolve Nuxt's generated types in time. Works at runtime.
+const colorMode = useColorMode()
+function toggleColorMode() {
+  colorMode.preference = colorMode.value === 'dark' ? 'light' : 'dark'
+}
+
 onMounted(() => personsStore.fetchPersons())
 
 // Tie the "currently viewing as" filter to the logged-in user's own person:
@@ -151,6 +161,21 @@ async function handleLogout() {
     <main class="max-w-7xl mx-auto px-4 py-8">
       <slot />
     </main>
+
+    <!-- Color mode toggle: bottom-right floating button. Sits below the
+         fullscreen image overlay (z-[9999]) so it doesn't intrude there. -->
+    <button
+      type="button"
+      class="fixed bottom-4 right-4 z-40 w-11 h-11 rounded-full bg-gray-800 border border-gray-700 text-purple-400 hover:border-purple-500 hover:text-purple-300 flex items-center justify-center shadow-lg transition-colors"
+      :title="colorMode.value === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
+      :aria-label="colorMode.value === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
+      @click="toggleColorMode"
+    >
+      <UIcon
+        :name="colorMode.value === 'dark' ? 'i-heroicons-moon' : 'i-heroicons-sun'"
+        class="w-5 h-5"
+      />
+    </button>
 
     <!-- Click outside to close the user menu -->
     <div

@@ -17,6 +17,13 @@ export default defineNuxtConfig({
     preference: 'dark',
   },
 
+  css: [
+    // Light-mode color overrides. The app's custom components are styled with
+    // hardcoded dark-mode utility classes; this stylesheet remaps them to
+    // light equivalents when the `dark` class is absent from <html>.
+    '~/assets/css/light-mode.css',
+  ],
+
   runtimeConfig: {
     dbPath: './data/merch-tracker.db',
   },
