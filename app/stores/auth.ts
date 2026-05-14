@@ -22,7 +22,13 @@ export const useAuthStore = defineStore('auth', () => {
   async function fetchMe(headers?: Record<string, string>) {
     fetching.value = true
     try {
-      user.value = await $fetch<AuthUser | null>('/api/auth/me', { headers })
+      const u = await $fetch<AuthUser | null>('/api/auth/me', { headers })
+      // Defensive: the API contract is "null when not authed, fully-populated
+      // user otherwise". If we ever get a truthy object missing username or
+      // role (stale Pinia hydration, mid-flight session destroy, etc.), treat
+      // it as not-logged-in so the navbar/banners don't render with
+      // "(no name) (unknown role)" placeholders.
+      user.value = u && u.username && u.role ? u : null
     } catch {
       user.value = null
     } finally {

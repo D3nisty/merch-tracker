@@ -31,10 +31,17 @@ const canShare = computed(() =>
   authStore.isAdmin || event.value?.ownerId === authStore.user?.id,
 )
 
-// Totals — article-aware, filtered by selected person. Planned/paid amounts
-// already have discount savings subtracted; `savingsEntries` exposes the
-// dollar-value saved so the UI can show a green "− X saved" caption.
-const pid = computed(() => personsStore.currentPersonId)
+// Totals — filtered by the currently active "view as" person; falls back to
+// the viewer's own person so the default landing experience is "my budget,
+// my marks" (not the cross-account union). Planned/paid amounts already have
+// discount savings subtracted; `savingsEntries` exposes the dollar-value
+// saved for the green "− X saved" caption.
+const pid = computed(() =>
+  personsStore.currentPersonId
+  ?? store.currentEvent?.viewerPersonId
+  ?? authStore.user?.personId
+  ?? null,
+)
 const itemStats = computed(() => store.getItemStats(pid.value))
 const plannedEntries = computed(() => Object.entries(store.getPlannedCostByCurrency(pid.value)).filter(([, v]) => Math.abs(v) > 0.005))
 const paidEntries = computed(() => Object.entries(store.getPaidCostByCurrency(pid.value)).filter(([, v]) => Math.abs(v) > 0.005))

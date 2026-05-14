@@ -247,50 +247,79 @@ function formatCostMap(map: Record<string, number>) {
   return entries.map(([cur, amt]) => `${amt.toFixed(2)} ${cur}`).join(' · ')
 }
 
-// Booth header total: each product's contribution is `price × Σ mark.quantity`
-// across every person who has the matching flag set. For article galleries we
-// still pick ONE winning source per article (per-person "winners" are
-// summarised down to a single product on the booth header — full per-person
-// breakdown lives in the event-level totals).
-function buildCostMap(products: Product[], images: CatalogImage[], paidOnly: boolean) {
+// Booth header total — filtered by the currently active "view as" person so
+// each user sees THEIR own spend at this booth (no more "two accounts showing
+// each other's marks added together"). If no person is selected, falls back
+// to the viewer's own personId. If still unset (guests), shows the union
+// across all marks.
+function buildCostMap(
+  products: Product[],
+  images: CatalogImage[],
+  paidOnly: boolean,
+  personId: string | null,
+) {
   const map: Record<string, number> = {}
-  const articleWinners = new Map<string, string>() // imgId → winning productId
+  const matches = (m: { isPlanned: boolean; isPurchased: boolean }) =>
+    paidOnly ? m.isPurchased : (m.isPlanned || m.isPurchased)
+  const matchingQty = (p: Product) => {
+    const marks = p.marks ?? []
+    if (personId) {
+      const mine = marks.find(m => m.personId === personId)
+      return mine && matches(mine) ? Math.max(1, mine.quantity ?? 1) : 0
+    }
+    return marks.reduce((s, m) => s + (matches(m) ? Math.max(1, m.quantity ?? 1) : 0), 0)
+  }
+  // Article-winner pick is also per-person now: each viewer sees THEIR winning
+  // source for an article. With no personId, fall back to "any mark wins".
+  const articleWinners = new Map<string, string>()
   for (const img of images) {
     if (img.imageType !== 'article') continue
     const articleProducts = products.filter(q => q.catalogImageId === img.id && q.price)
-    const winner = paidOnly
-      ? articleProducts.find(q => (q.marks ?? []).some(m => m.isPurchased))
-      : (articleProducts.find(q => (q.marks ?? []).some(m => m.isPlanned))
-         ?? articleProducts.find(q => (q.marks ?? []).some(m => m.isPurchased)))
+    const winnerForPerson = (pid: string | null) => {
+      const pickPlanned = (q: Product) => (q.marks ?? []).some(m =>
+        (!pid || m.personId === pid) && m.isPlanned)
+      const pickPaid = (q: Product) => (q.marks ?? []).some(m =>
+        (!pid || m.personId === pid) && m.isPurchased)
+      return paidOnly
+        ? articleProducts.find(pickPaid)
+        : (articleProducts.find(pickPlanned) ?? articleProducts.find(pickPaid))
+    }
+    const winner = winnerForPerson(personId)
     if (winner) articleWinners.set(img.id, winner.id)
   }
   for (const p of products) {
     if (!p.price) continue
-    const marks = p.marks ?? []
-    const qtySum = marks.reduce((sum, m) => {
-      const matches = paidOnly ? m.isPurchased : (m.isPlanned || m.isPurchased)
-      return sum + (matches ? Math.max(1, m.quantity ?? 1) : 0)
-    }, 0)
-    if (qtySum === 0) continue
+    const qty = matchingQty(p)
+    if (qty === 0) continue
     const img = images.find(i => i.id === p.catalogImageId)
     if (img?.imageType === 'article' && articleWinners.get(img.id) !== p.id) continue
     const cur = p.currency || 'EUR'
-    map[cur] = (map[cur] ?? 0) + p.price * qtySum
+    map[cur] = (map[cur] ?? 0) + p.price * qty
   }
   return map
 }
 
+// Default the booth view to the user's OWN person (so "what does this booth
+// cost me?" is the natural answer). The View-as picker on /account overrides
+// via personsStore.currentPersonId.
+const effectivePersonId = computed<string | null>(() =>
+  personsStore.currentPersonId
+    ?? store.currentEvent?.viewerPersonId
+    ?? authStore.user?.personId
+    ?? null,
+)
+
 const costByCurrency = computed(() => {
-  const raw = buildCostMap(booth.value?.products ?? [], booth.value?.images ?? [], false)
-  const savings = booth.value ? store.getBoothSavingsByCurrency(booth.value.id, null) : {}
+  const raw = buildCostMap(booth.value?.products ?? [], booth.value?.images ?? [], false, effectivePersonId.value)
+  const savings = booth.value ? store.getBoothSavingsByCurrency(booth.value.id, effectivePersonId.value) : {}
   const out: Record<string, number> = { ...raw }
   for (const [cur, s] of Object.entries(savings)) out[cur] = (out[cur] ?? 0) - s
   return out
 })
 const purchasedByCurrency = computed(() =>
-  buildCostMap(booth.value?.products ?? [], booth.value?.images ?? [], true))
+  buildCostMap(booth.value?.products ?? [], booth.value?.images ?? [], true, effectivePersonId.value))
 const boothSavings = computed(() =>
-  booth.value ? store.getBoothSavingsByCurrency(booth.value.id, null) : {})
+  booth.value ? store.getBoothSavingsByCurrency(booth.value.id, effectivePersonId.value) : {})
 
 async function handleToggle(product: Product) {
   await store.togglePurchased(product)
@@ -554,8 +583,10 @@ const personBreakdown = computed(() => {
       <p v-else-if="authStore.isEditing" class="text-xs text-gray-600">{{ t('discount.empty') }}</p>
     </div>
 
-    <!-- Per-person breakdown -->
-    <div v-if="personBreakdown.length > 1" class="mb-6 p-4 rounded-xl bg-gray-900 border border-gray-800">
+    <!-- Per-person breakdown — admin-only for privacy. Regular users see only
+         their own totals in the booth header (filtered via effectivePersonId);
+         we don't expose what other people are buying. -->
+    <div v-if="authStore.isAdmin && personBreakdown.length > 1" class="mb-6 p-4 rounded-xl bg-gray-900 border border-gray-800">
       <h3 class="text-sm font-semibold text-gray-400 mb-3">{{ t('booth.costByPerson') }}</h3>
       <div class="space-y-2">
         <div v-for="item in personBreakdown" :key="item.label" class="flex items-center justify-between text-sm">

@@ -47,12 +47,15 @@ async function logoutAndStay() {
 
 <template>
   <div class="max-w-sm mx-auto mt-12">
-    <!-- Already-logged-in banner -->
-    <UCard v-if="authStore.isLoggedIn" class="mb-4 border-purple-500/40">
+    <!-- Already-logged-in banner — only when the store has a FULLY-formed
+         user. Partial states (e.g. stale hydration with empty username/role)
+         are filtered out by `fetchMe` upstream, but this guard belts-and-
+         braces the banner so we never render "(no username)" placeholders. -->
+    <UCard v-if="authStore.user?.username && authStore.user?.role" class="mb-4 border-purple-500/40">
       <div class="space-y-1">
         <p class="text-sm text-gray-300">
-          Signed in as <span class="font-semibold text-white">{{ authStore.user?.username || '(no username)' }}</span>
-          <span class="text-xs text-gray-500 ml-1">({{ authStore.user?.role || 'unknown role' }})</span>
+          Signed in as <span class="font-semibold text-white">{{ authStore.user.username }}</span>
+          <span class="text-xs text-gray-500 ml-1">({{ authStore.user.role }})</span>
         </p>
         <div class="flex gap-2 pt-2">
           <UButton size="sm" color="purple" :to="redirectTo">Continue</UButton>

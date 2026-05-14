@@ -51,15 +51,16 @@ async function adjustQty(delta: number) {
   await store.setMark(props.product.id, { isPurchased: wasPurchased ? undefined : true, quantity: next })
 }
 
-// Other persons who have planned or purchased this item (excluding the
-// viewer's own person — that's the checkbox).
-const otherMarkers = computed(() => {
-  const marks = props.product.marks ?? []
-  return marks
-    .filter(m => m.personId !== viewerPersonId.value && (m.isPlanned || m.isPurchased))
-    .map(m => ({ mark: m, person: personsStore.persons.find(p => p.id === m.personId) }))
-    .filter((x): x is { mark: typeof x.mark; person: NonNullable<typeof x.person> } => !!x.person)
-})
+// Plan? toggle — independent from Bought? (you can plan, buy, or both).
+async function togglePlanned() {
+  if (!canMark.value) return
+  await store.setMark(props.product.id, { isPlanned: !props.product.isPlanned })
+}
+
+// (Privacy) We intentionally do NOT expose who else has marked this product.
+// Each viewer sees only their own mark state — the marks array is still
+// served by the API so admins can see things via /admin tooling, but the
+// rest of the UI keeps it private.
 
 const COLOR_MAP: Record<string, string> = {
   purple: 'bg-purple-500',
@@ -96,6 +97,17 @@ const canMark = computed(() => authStore.isLoggedIn && !!viewerPersonId.value)
       @change="canMark && emit('toggle')"
     />
 
+    <!-- Plan? toggle (orange). Independent from Bought — you can plan AND
+         buy. Same UX as the article-gallery Plan? button so view-share users
+         already know what to do. Hidden for guests with no person. -->
+    <button
+      v-if="canMark"
+      type="button"
+      class="text-xs px-2 py-0.5 rounded-full border transition-colors font-medium shrink-0"
+      :class="product.isPlanned ? 'bg-orange-600 border-orange-500 text-white' : 'border-gray-700 text-gray-400 hover:border-orange-500 hover:text-orange-400'"
+      @click="togglePlanned"
+    >{{ product.isPlanned ? t('catalog.planned') : t('catalog.planQ') }}</button>
+
     <!-- Per-person qty stepper, shown only when the viewer's own mark is set.
          `−` at qty=1 un-marks the product entirely. `+` increments. -->
     <div
@@ -125,19 +137,6 @@ const canMark = computed(() => authStore.isLoggedIn && !!viewerPersonId.value)
           :class="['w-2.5 h-2.5 rounded-full shrink-0', COLOR_MAP[person.color] ?? 'bg-purple-500']"
           :title="person.name"
         />
-        <!-- Other-person marks: small dot per person who's planned/purchased -->
-        <span v-if="otherMarkers.length && authStore.isLoggedIn" class="flex items-center gap-0.5 shrink-0">
-          <span
-            v-for="m in otherMarkers"
-            :key="m.mark.personId"
-            :class="[
-              'w-2 h-2 rounded-full',
-              COLOR_MAP[m.person.color] ?? 'bg-purple-500',
-              m.mark.isPurchased ? 'ring-1 ring-green-400' : '',
-            ]"
-            :title="`${m.person.name}${m.mark.isPurchased ? ' · purchased' : ' · planned'}`"
-          />
-        </span>
         <span :class="['font-medium text-sm', product.isPurchased ? 'line-through text-gray-500' : 'text-white']">
           {{ product.name }}
         </span>
