@@ -5,6 +5,7 @@ import { booths } from '../../../db/schema'
 import { eq } from 'drizzle-orm'
 import { generateId } from '../../../utils/id'
 import { requireBoothEdit } from '../../../utils/permissions'
+import { deleteUploadedFile } from '../../../utils/uploads'
 
 /**
  * Upload a small icon image for a booth (shown on the dashboard tile + the
@@ -38,6 +39,11 @@ export default defineEventHandler(async (event) => {
 
   const path = `/uploads/${filename}`
   db.update(booths).set({ iconPath: path }).where(eq(booths.id, boothId)).run()
+
+  // If this upload is replacing a previous local icon, free the old file.
+  if (existing.iconPath && existing.iconPath !== path) {
+    await deleteUploadedFile(existing.iconPath)
+  }
 
   return { iconPath: path }
 })

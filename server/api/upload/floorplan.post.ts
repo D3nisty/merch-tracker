@@ -5,6 +5,7 @@ import { locations } from '../../db/schema'
 import { eq } from 'drizzle-orm'
 import { generateId } from '../../utils/id'
 import { requireEventEdit, eventIdForLocation } from '../../utils/permissions'
+import { deleteUploadedFile } from '../../utils/uploads'
 
 export default defineEventHandler(async (event) => {
   const formData = await readMultipartFormData(event)
@@ -35,6 +36,11 @@ export default defineEventHandler(async (event) => {
 
   const path = `/uploads/${filename}`
   db.update(locations).set({ floorPlanImage: path }).where(eq(locations.id, locationId)).run()
+
+  // If this upload replaced an earlier local floor plan, free the previous file.
+  if (existing.floorPlanImage && existing.floorPlanImage !== path) {
+    await deleteUploadedFile(existing.floorPlanImage)
+  }
 
   return { path }
 })

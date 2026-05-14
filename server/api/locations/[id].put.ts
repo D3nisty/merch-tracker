@@ -2,6 +2,7 @@ import { useDb } from '../../db'
 import { locations } from '../../db/schema'
 import { eq } from 'drizzle-orm'
 import { requireEventEdit } from '../../utils/permissions'
+import { deleteUploadedFile } from '../../utils/uploads'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')!
@@ -24,6 +25,12 @@ export default defineEventHandler(async (event) => {
   }
 
   db.update(locations).set(updated).where(eq(locations.id, id)).run()
+
+  // If the floor plan was cleared OR swapped to a different value, the
+  // previous local file is no longer referenced — drop it.
+  if (existing.floorPlanImage && existing.floorPlanImage !== updated.floorPlanImage) {
+    await deleteUploadedFile(existing.floorPlanImage)
+  }
 
   return { ...existing, ...updated }
 })

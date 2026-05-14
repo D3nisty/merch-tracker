@@ -5,6 +5,7 @@ import { catalogImages } from '../../../db/schema'
 import { eq } from 'drizzle-orm'
 import { generateId } from '../../../utils/id'
 import { requireBoothEdit } from '../../../utils/permissions'
+import { deleteUploadedFile } from '../../../utils/uploads'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')!
@@ -33,6 +34,9 @@ export default defineEventHandler(async (event) => {
   }
 
   db.update(catalogImages).set(updates).where(eq(catalogImages.id, id)).run()
+  // Drop the previous local file after the row update succeeds. Helper
+  // no-ops for external URLs / missing files.
+  await deleteUploadedFile(existing.path)
 
   return { ...existing, ...updates }
 })

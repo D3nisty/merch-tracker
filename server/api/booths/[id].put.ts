@@ -2,6 +2,7 @@ import { useDb } from '../../db'
 import { booths } from '../../db/schema'
 import { eq } from 'drizzle-orm'
 import { requireBoothEdit } from '../../utils/permissions'
+import { deleteUploadedFile } from '../../utils/uploads'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')!
@@ -34,6 +35,13 @@ export default defineEventHandler(async (event) => {
   }
 
   db.update(booths).set(updated).where(eq(booths.id, id)).run()
+
+  // If the iconPath actually changed (cleared OR swapped for an external
+  // URL OR replaced by a new local path), the previous local file is no
+  // longer referenced — free it from disk.
+  if (existing.iconPath && existing.iconPath !== updated.iconPath) {
+    await deleteUploadedFile(existing.iconPath)
+  }
 
   return { ...existing, ...updated }
 })
