@@ -528,8 +528,8 @@ const personBreakdown = computed(() => {
               />
             </div>
           <div class="flex items-center gap-3 mt-1 text-gray-400 text-sm">
-            <span v-if="booth.hallNr">Hall {{ booth.hallNr }}</span>
-            <span v-if="booth.boothNr">Booth {{ booth.boothNr }}</span>
+            <span v-if="booth.hallNr">{{ t('booth.hallLabel') }} {{ booth.hallNr }}</span>
+            <span v-if="booth.boothNr">{{ t('booth.boothOf') }} {{ booth.boothNr }}</span>
             <a v-if="booth.website" :href="booth.website" target="_blank" class="text-purple-400 hover:underline">
               Website
             </a>
