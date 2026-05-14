@@ -556,6 +556,7 @@ function boothBorderColor(booth: Booth): string {
               :width="currentPlanImage.naturalWidth"
               :height="currentPlanImage.naturalHeight"
               draggable="false"
+              decoding="async"
             />
             <!-- Map-only mode: render a clean light background where the image
                  would normally sit, so SVG rects + labels read on their own. -->

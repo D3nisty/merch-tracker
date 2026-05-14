@@ -903,7 +903,7 @@ function openAddSource() {
           @touchmove="onImgTouchMove"
           @touchend="onImgTouchEnd"
         >
-          <img ref="imgRef" :src="image.path" class="w-full h-auto block" draggable="false" />
+          <img ref="imgRef" :src="image.path" class="w-full h-auto block" draggable="false" loading="lazy" decoding="async" />
 
           <template v-if="mode === 'split' && image.imageType === 'catalog'">
             <div v-for="(_, i) in splits" :key="i" :style="splitStyle(i)"
@@ -979,7 +979,7 @@ function openAddSource() {
         <div v-else class="bg-black divide-y divide-gray-800 self-start">
           <!-- Primary image -->
           <div class="relative group/img0">
-            <img :src="image.path" class="w-full h-auto block" draggable="false" />
+            <img :src="image.path" class="w-full h-auto block" draggable="false" loading="lazy" decoding="async" />
             <div v-if="authStore.isEditing" class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/img0:opacity-100 transition-opacity">
               <button
                 type="button"
@@ -1002,7 +1002,7 @@ function openAddSource() {
           </div>
           <!-- Sub-images -->
           <div v-for="sub in subImages" :key="sub.id" class="relative group/subimg">
-            <img :src="sub.path" class="w-full h-auto block" draggable="false" />
+            <img :src="sub.path" class="w-full h-auto block" draggable="false" loading="lazy" decoding="async" />
             <div v-if="authStore.isEditing" class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/subimg:opacity-100 transition-opacity">
               <button
                 type="button"
@@ -1563,7 +1563,7 @@ function openAddSource() {
         <!-- Image: article gallery (fullscreen) -->
         <div v-if="image.imageType === 'article'" class="flex-1 overflow-auto bg-black divide-y divide-gray-800">
           <div class="relative group/img0">
-            <img :src="image.path" class="w-full h-auto block" draggable="false" />
+            <img :src="image.path" class="w-full h-auto block" draggable="false" loading="lazy" decoding="async" />
             <div v-if="authStore.isEditing" class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/img0:opacity-100 transition-opacity">
               <button type="button"
                 class="px-2 py-1 text-xs rounded bg-gray-900/90 border border-gray-700 text-gray-300 hover:text-white transition-colors"
@@ -1571,7 +1571,7 @@ function openAddSource() {
             </div>
           </div>
           <div v-for="sub in subImages" :key="`fs-sub-${sub.id}`" class="relative group/subfs">
-            <img :src="sub.path" class="w-full h-auto block" draggable="false" />
+            <img :src="sub.path" class="w-full h-auto block" draggable="false" loading="lazy" decoding="async" />
             <div v-if="authStore.isEditing" class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/subfs:opacity-100 transition-opacity">
               <button type="button"
                 class="px-2 py-1 text-xs rounded bg-gray-900/90 border border-gray-700 text-gray-300 hover:text-white transition-colors"
@@ -1602,7 +1602,7 @@ function openAddSource() {
           @touchend="onImgTouchEnd"
         >
           <div class="relative inline-block min-w-full">
-            <img ref="fsImgRef" :src="image.path" class="w-full h-auto block" draggable="false" />
+            <img ref="fsImgRef" :src="image.path" class="w-full h-auto block" draggable="false" decoding="async" />
 
             <template v-if="image.imageType === 'catalog'">
               <div v-for="group in regionGroups" :key="`fs-region-${group[0].id}`"

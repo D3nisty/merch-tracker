@@ -284,6 +284,7 @@ const en = {
     hallNrLabel: 'Hall Nr',
     boothNrLabel: 'Booth Nr',
     categoriesLabel: 'Categories',
+    buyEverything: 'all items',
   },
   catalog: {
     catalog: 'Catalog',
@@ -771,6 +772,7 @@ const de: typeof en = {
     hallNrLabel: 'Hallen-Nr.',
     boothNrLabel: 'Stand-Nr.',
     categoriesLabel: 'Kategorien',
+    buyEverything: 'alles',
   },
   catalog: {
     catalog: 'Katalog',

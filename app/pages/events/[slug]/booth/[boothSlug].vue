@@ -309,17 +309,19 @@ const effectivePersonId = computed<string | null>(() =>
     ?? null,
 )
 
-const costByCurrency = computed(() => {
-  const raw = buildCostMap(booth.value?.products ?? [], booth.value?.images ?? [], false, effectivePersonId.value)
-  const savings = booth.value ? store.getBoothSavingsByCurrency(booth.value.id, effectivePersonId.value) : {}
-  const out: Record<string, number> = { ...raw }
-  for (const [cur, s] of Object.entries(savings)) out[cur] = (out[cur] ?? 0) - s
-  return out
-})
+// Header totals are GROSS — the savings line below (`discountSavingsLabel`)
+// shows the per-booth discount value separately, so the user always sees both
+// "what these items cost" and "what the discount will knock off".
+const costByCurrency = computed(() =>
+  buildCostMap(booth.value?.products ?? [], booth.value?.images ?? [], false, effectivePersonId.value))
 const purchasedByCurrency = computed(() =>
   buildCostMap(booth.value?.products ?? [], booth.value?.images ?? [], true, effectivePersonId.value))
 const boothSavings = computed(() =>
   booth.value ? store.getBoothSavingsByCurrency(booth.value.id, effectivePersonId.value) : {})
+// "What would buying one of everything at this booth cost?" — see the store
+// helper for the article-source handling rule.
+const buyEverythingByCurrency = computed(() =>
+  booth.value ? store.getBoothBuyEverythingByCurrency(booth.value.id) : {})
 
 async function handleToggle(product: Product) {
   await store.togglePurchased(product)
@@ -456,6 +458,12 @@ const personBreakdown = computed(() => {
           <div v-else class="text-xl font-bold text-yellow-400">—</div>
           <div class="text-sm text-gray-400 mt-0.5">
             {{ formatCostMap(purchasedByCurrency) ?? '0.00' }} {{ t('booth.spent') }}
+          </div>
+          <!-- Hypothetical "buy everything once" total — independent of any
+               viewer's marks. Cheapest source per article + each catalog
+               product at unit price. -->
+          <div v-if="formatCostMap(buyEverythingByCurrency)" class="text-xs text-gray-500 mt-1">
+            {{ formatCostMap(buyEverythingByCurrency) }} {{ t('booth.buyEverything') }}
           </div>
         </div>
       </div>

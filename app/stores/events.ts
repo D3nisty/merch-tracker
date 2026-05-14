@@ -773,8 +773,11 @@ export const useEventsStore = defineStore('events', () => {
     for (const [k, v] of Object.entries(source)) target[k] = (target[k] ?? 0) + v
   }
 
-  // Planned budget MINUS discount savings. Discounts apply to a person's own
-  // marked items per booth.
+  // Planned budget — GROSS (no discount applied). The UI shows the gross
+  // figure as "Planned Budget" plus a separate "− X saved" caption fed by
+  // `getDiscountSavingsByCurrency`, so the user can see both the worst-case
+  // cost and the savings the discount engine will realise. To get the
+  // net (effective) planned cost, subtract `getDiscountSavingsByCurrency`.
   function getPlannedCostByCurrency(personId?: string | null): Record<string, number> {
     if (!currentEvent.value?.locations) return {}
     const total: Record<string, number> = {}
@@ -782,15 +785,13 @@ export const useEventsStore = defineStore('events', () => {
       for (const booth of loc.booths ?? []) {
         const units = unitsForBooth(booth, personId, 'planned')
         for (const u of units) total[u.currency] = (total[u.currency] ?? 0) + u.price
-        const savings = applyBoothDiscounts(units, booth.discounts ?? [])
-        for (const [cur, save] of Object.entries(savings)) {
-          total[cur] = (total[cur] ?? 0) - save
-        }
       }
     }
     return total
   }
 
+  // Paid budget — also GROSS for symmetry with planned. The "− X saved" line
+  // shown alongside is the same number computed by getDiscountSavingsByCurrency.
   function getPaidCostByCurrency(personId?: string | null): Record<string, number> {
     if (!currentEvent.value?.locations) return {}
     const total: Record<string, number> = {}
@@ -798,13 +799,75 @@ export const useEventsStore = defineStore('events', () => {
       for (const booth of loc.booths ?? []) {
         const units = unitsForBooth(booth, personId, 'purchased')
         for (const u of units) total[u.currency] = (total[u.currency] ?? 0) + u.price
-        const savings = applyBoothDiscounts(units, booth.discounts ?? [])
-        for (const [cur, save] of Object.entries(savings)) {
-          total[cur] = (total[cur] ?? 0) - save
-        }
       }
     }
     return total
+  }
+
+  // Per-booth planned/paid GROSS — used by `BoothCard.vue` on the dashboard to
+  // show two values per card (planned + spent) filtered to the viewing person.
+  function getBoothPlannedByCurrency(boothId: string, personId?: string | null): Record<string, number> {
+    if (!currentEvent.value?.locations) return {}
+    for (const loc of currentEvent.value.locations) {
+      const booth = loc.booths?.find(b => b.id === boothId)
+      if (!booth) continue
+      const total: Record<string, number> = {}
+      const units = unitsForBooth(booth, personId, 'planned')
+      for (const u of units) total[u.currency] = (total[u.currency] ?? 0) + u.price
+      return total
+    }
+    return {}
+  }
+  function getBoothPaidByCurrency(boothId: string, personId?: string | null): Record<string, number> {
+    if (!currentEvent.value?.locations) return {}
+    for (const loc of currentEvent.value.locations) {
+      const booth = loc.booths?.find(b => b.id === boothId)
+      if (!booth) continue
+      const total: Record<string, number> = {}
+      const units = unitsForBooth(booth, personId, 'purchased')
+      for (const u of units) total[u.currency] = (total[u.currency] ?? 0) + u.price
+      return total
+    }
+    return {}
+  }
+
+  // Hypothetical "buy one of everything at this booth" total — independent of
+  // any person's marks. For articles (multiple sources for one item) we use
+  // the CHEAPEST source's price since you'd realistically buy from one
+  // vendor. Catalogue / standalone products each contribute their price once
+  // (qty=1, not multiplied by `product.quantity`). Products without a price
+  // are skipped.
+  function getBoothBuyEverythingByCurrency(boothId: string): Record<string, number> {
+    if (!currentEvent.value?.locations) return {}
+    for (const loc of currentEvent.value.locations) {
+      const booth = loc.booths?.find(b => b.id === boothId)
+      if (!booth) continue
+      const total: Record<string, number> = {}
+      const images = booth.images ?? []
+      const claimedArticleSourceIds = new Set<string>()
+      for (const img of images) {
+        if (img.imageType !== 'article') continue
+        const sources = (booth.products ?? []).filter(p => p.catalogImageId === img.id && p.price != null && p.price > 0)
+        if (sources.length === 0) continue
+        let cheapest = sources[0]!
+        for (const s of sources) if ((s.price ?? Infinity) < (cheapest.price ?? Infinity)) cheapest = s
+        const cur = cheapest.currency || 'EUR'
+        total[cur] = (total[cur] ?? 0) + (cheapest.price ?? 0)
+        // Claim every source on this article so the non-article loop below
+        // doesn't double-count any of them.
+        for (const s of sources) claimedArticleSourceIds.add(s.id)
+      }
+      for (const p of (booth.products ?? [])) {
+        if (!p.price) continue
+        if (claimedArticleSourceIds.has(p.id)) continue
+        const img = images.find(i => i.id === p.catalogImageId)
+        if (img?.imageType === 'article') continue
+        const cur = p.currency || 'EUR'
+        total[cur] = (total[cur] ?? 0) + p.price
+      }
+      return total
+    }
+    return {}
   }
 
   // The total savings discounts produced across the event for the given person
@@ -960,6 +1023,9 @@ export const useEventsStore = defineStore('events', () => {
     deleteDiscount,
     getDiscountSavingsByCurrency,
     getBoothSavingsByCurrency,
+    getBoothPlannedByCurrency,
+    getBoothPaidByCurrency,
+    getBoothBuyEverythingByCurrency,
     updateImage,
     deleteImage,
     uploadSubImage,

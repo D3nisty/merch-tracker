@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { Booth, Product, CatalogImage } from '~/stores/events'
+import type { Booth } from '~/stores/events'
+import { useEventsStore } from '~/stores/events'
 import { usePersonsStore } from '~/stores/persons'
 import { useAuthStore } from '~/stores/auth'
 import { useLocale } from '~/composables/useLocale'
@@ -10,6 +11,7 @@ const props = defineProps<{
 }>()
 
 const route = useRoute()
+const store = useEventsStore()
 const personsStore = usePersonsStore()
 const authStore = useAuthStore()
 const { t } = useLocale()
@@ -24,24 +26,35 @@ const boothPerson = computed(() =>
   props.booth.personId ? personsStore.persons.find(p => p.id === props.booth.personId) ?? null : null,
 )
 
-function isArticleSource(p: Product, images: CatalogImage[]) {
-  return images.find(i => i.id === p.catalogImageId)?.imageType === 'article'
-}
+// Filter to the same person the event header uses — view-as picker on /account
+// takes priority; otherwise fall back to the viewer's own person. Without a
+// filter we'd show the union across all marks and the booth card would look
+// inflated for someone who's only personally marked a few items.
+const effectivePersonId = computed<string | null>(() =>
+  personsStore.currentPersonId
+  ?? store.currentEvent?.viewerPersonId
+  ?? authStore.user?.personId
+  ?? null,
+)
 
-const costByCurrency = computed(() => {
-  const images = props.booth.images ?? []
-  const map: Record<string, number> = {}
-  for (const p of props.booth.products ?? []) {
-    if (!p.price) continue
-    if (isArticleSource(p, images) && !p.isPurchased) continue
-    const cur = p.currency || 'EUR'
-    map[cur] = (map[cur] ?? 0) + p.price * p.quantity
-  }
-  return map
-})
+const plannedByCurrency = computed(() =>
+  store.getBoothPlannedByCurrency(props.booth.id, effectivePersonId.value),
+)
+const paidByCurrency = computed(() =>
+  store.getBoothPaidByCurrency(props.booth.id, effectivePersonId.value),
+)
+// Hypothetical cost to buy one of everything at this booth — same across
+// viewers, doesn't depend on marks. Useful for "is this vendor worth a trip?"
+const buyEverythingByCurrency = computed(() =>
+  store.getBoothBuyEverythingByCurrency(props.booth.id),
+)
+const hasPlanned = computed(() => Object.keys(plannedByCurrency.value).some(k => Math.abs(plannedByCurrency.value[k]!) > 0.005))
+const hasPaid = computed(() => Object.keys(paidByCurrency.value).some(k => Math.abs(paidByCurrency.value[k]!) > 0.005))
+const hasBuyEverything = computed(() => Object.keys(buyEverythingByCurrency.value).some(k => Math.abs(buyEverythingByCurrency.value[k]!) > 0.005))
 
-const hasCost = computed(() => Object.keys(costByCurrency.value).length > 0)
-
+// Progress reflects the active person's marks too — gross item count
+// (articles = 1, non-article products = each one) for total; their purchased
+// items for the numerator.
 const totalCount = computed(() => {
   const images = props.booth.images ?? []
   const articleImageIds = new Set(images.filter(i => i.imageType === 'article').map(i => i.id))
@@ -50,18 +63,27 @@ const totalCount = computed(() => {
   return articleImageCount + nonArticleProductCount
 })
 
+function markedPurchasedByPerson(productId: string, personId: string | null): boolean {
+  const product = (props.booth.products ?? []).find(p => p.id === productId)
+  if (!product) return false
+  const marks = product.marks ?? []
+  if (!personId) return marks.some(m => m.isPurchased)
+  return marks.some(m => m.personId === personId && m.isPurchased)
+}
+
 const purchasedCount = computed(() => {
+  const pid = effectivePersonId.value
   const images = props.booth.images ?? []
   const products = props.booth.products ?? []
   let count = 0
   for (const img of images) {
     if (img.imageType !== 'article') continue
-    if (products.some(p => p.catalogImageId === img.id && p.isPurchased)) count++
+    if (products.some(p => p.catalogImageId === img.id && markedPurchasedByPerson(p.id, pid))) count++
   }
   for (const p of products) {
     const img = images.find(i => i.id === p.catalogImageId)
     if (img?.imageType === 'article') continue
-    if (p.isPurchased) count++
+    if (markedPurchasedByPerson(p.id, pid)) count++
   }
   return count
 })
@@ -96,11 +118,39 @@ const progress = computed(() => totalCount.value ? (purchasedCount.value / total
               <span :class="['w-2 h-2 rounded-full', COLOR_MAP[boothPerson.color] ?? 'bg-purple-500']" />
               {{ boothPerson.name }}
             </div>
-            <div v-if="hasCost && authStore.isEditing" class="text-yellow-400 text-xs font-semibold text-right leading-tight">
-              <div v-for="[cur, amt] in Object.entries(costByCurrency)" :key="cur">
-                {{ amt.toFixed(2) }} {{ cur }}
+            <template v-if="authStore.isLoggedIn">
+              <!-- Planned (yellow) — what the viewing person plans to spend
+                   at this booth. Gross of any discount; the event header
+                   shows the savings line separately. -->
+              <div v-if="hasPlanned" class="text-right leading-tight">
+                <div class="text-[10px] uppercase tracking-wide text-gray-500">{{ t('booth.planned') }}</div>
+                <div class="text-yellow-400 text-xs font-semibold">
+                  <div v-for="[cur, amt] in Object.entries(plannedByCurrency)" :key="cur">
+                    {{ amt.toFixed(2) }} {{ cur }}
+                  </div>
+                </div>
               </div>
-            </div>
+              <!-- Spent (green) — items the viewing person has marked
+                   purchased. Hidden when zero so cards stay compact. -->
+              <div v-if="hasPaid" class="text-right leading-tight">
+                <div class="text-[10px] uppercase tracking-wide text-gray-500">{{ t('booth.spent') }}</div>
+                <div class="text-green-400 text-xs font-semibold">
+                  <div v-for="[cur, amt] in Object.entries(paidByCurrency)" :key="cur">
+                    {{ amt.toFixed(2) }} {{ cur }}
+                  </div>
+                </div>
+              </div>
+              <!-- Hypothetical "buy one of each" total — same for everyone,
+                   independent of marks. Dimmed since it's reference data. -->
+              <div v-if="hasBuyEverything" class="text-right leading-tight">
+                <div class="text-[10px] uppercase tracking-wide text-gray-500">{{ t('booth.buyEverything') }}</div>
+                <div class="text-gray-400 text-xs font-medium">
+                  <div v-for="[cur, amt] in Object.entries(buyEverythingByCurrency)" :key="cur">
+                    {{ amt.toFixed(2) }} {{ cur }}
+                  </div>
+                </div>
+              </div>
+            </template>
           </div>
         </div>
 
