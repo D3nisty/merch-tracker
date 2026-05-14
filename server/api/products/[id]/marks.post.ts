@@ -1,5 +1,5 @@
 import { useDb } from '../../../db'
-import { products, productPersonMarks, persons, users } from '../../../db/schema'
+import { products, productPersonMarks, persons } from '../../../db/schema'
 import { eq, and } from 'drizzle-orm'
 import { generateId, now } from '../../../utils/id'
 import { requireEventMark, eventIdForProduct, canEditEvent } from '../../../utils/permissions'
@@ -22,83 +22,86 @@ export default defineEventHandler(async (event) => {
 
   const body = await readBody(event) as { personId?: string; isPlanned?: boolean; isPurchased?: boolean; quantity?: number }
 
-  // Resolve target person. Default: requester's own person.
+  // Resolve target person. `user.personId` is already on the User row (from
+  // getSessionUser), so we don't need to re-SELECT it. Editors can mark for
+  // any person; view-share users can only mark their own.
   let targetPersonId: string | null
   if (body.personId) {
-    const isEditor = await canEditEvent(user, eventId)
-    if (!isEditor) {
-      // View-share / public-event users can only mark their own person.
-      const me = db.select({ personId: users.personId }).from(users).where(eq(users.id, user.id)).get()
-      if (me?.personId !== body.personId) {
+    if (body.personId !== user.personId) {
+      const isEditor = await canEditEvent(user, eventId)
+      if (!isEditor) {
         throw createError({ statusCode: 403, message: 'Can only mark for your own person' })
       }
     }
     targetPersonId = body.personId
   } else {
-    const me = db.select({ personId: users.personId }).from(users).where(eq(users.id, user.id)).get()
-    targetPersonId = me?.personId ?? null
+    targetPersonId = user.personId ?? null
   }
 
   if (!targetPersonId) {
-    throw createError({ statusCode: 400, message: 'No person to mark for' })
+    throw createError({ statusCode: 400, message: 'No person linked to this account — ask an admin to create one.' })
   }
 
   // Confirm the person exists (defensive; users.personId is a FK so this is rare).
   const personExists = db.select({ id: persons.id }).from(persons).where(eq(persons.id, targetPersonId)).get()
   if (!personExists) throw createError({ statusCode: 404, message: 'Person not found' })
 
-  // Upsert the mark row.
-  const existing = db.select().from(productPersonMarks)
-    .where(and(eq(productPersonMarks.productId, productId), eq(productPersonMarks.personId, targetPersonId)))
-    .get()
+  // Wrap upsert + aggregate recompute in a single transaction so the
+  // legacy `products.isPlanned`/`isPurchased` aggregates stay in sync with
+  // `product_person_marks` even under concurrent writes — and an error
+  // mid-recompute rolls back the upsert instead of leaving the row written
+  // with a stale aggregate.
+  const ts = now()
+  // Cast targetPersonId to string — TS doesn't see the throw-on-null above
+  // narrowing into the closure scope.
+  const personId = targetPersonId
+  const { allMarks, anyPlanned, anyPurchased } = db.transaction((tx) => {
+    const existing = tx.select().from(productPersonMarks)
+      .where(and(eq(productPersonMarks.productId, productId), eq(productPersonMarks.personId, personId)))
+      .get()
 
-  const nextPlanned = body.isPlanned ?? existing?.isPlanned ?? false
-  const nextPurchased = body.isPurchased ?? existing?.isPurchased ?? false
-  // Quantity behavior:
-  //   - explicit qty in body → that (clamped ≥ 1)
-  //   - existing row → preserve its qty
-  //   - first time mark flips on → default 1
-  let nextQuantity: number
-  if (typeof body.quantity === 'number' && Number.isFinite(body.quantity)) {
-    nextQuantity = Math.max(1, Math.floor(body.quantity))
-  } else {
-    nextQuantity = existing?.quantity ?? 1
-  }
-
-  if (!nextPlanned && !nextPurchased) {
-    // No flags left: delete the row to keep the table lean.
-    if (existing) {
-      db.delete(productPersonMarks).where(eq(productPersonMarks.id, existing.id)).run()
+    const nextPlanned = body.isPlanned ?? existing?.isPlanned ?? false
+    const nextPurchased = body.isPurchased ?? existing?.isPurchased ?? false
+    let nextQuantity: number
+    if (typeof body.quantity === 'number' && Number.isFinite(body.quantity)) {
+      nextQuantity = Math.max(1, Math.floor(body.quantity))
+    } else {
+      nextQuantity = existing?.quantity ?? 1
     }
-  } else if (existing) {
-    db.update(productPersonMarks)
-      .set({ isPlanned: nextPlanned, isPurchased: nextPurchased, quantity: nextQuantity, updatedAt: now() })
-      .where(eq(productPersonMarks.id, existing.id))
-      .run()
-  } else {
-    db.insert(productPersonMarks).values({
-      id: generateId(),
-      productId,
-      personId: targetPersonId,
-      isPlanned: nextPlanned,
-      isPurchased: nextPurchased,
-      quantity: nextQuantity,
-      createdAt: now(),
-      updatedAt: now(),
-    }).run()
-  }
 
-  // Recompute the legacy aggregate on the product so single-person UIs that
-  // still read isPlanned/isPurchased keep showing "anyone has it" state.
-  const allMarks = db.select().from(productPersonMarks)
-    .where(eq(productPersonMarks.productId, productId))
-    .all()
-  const anyPlanned = allMarks.some(m => m.isPlanned)
-  const anyPurchased = allMarks.some(m => m.isPurchased)
-  db.update(products)
-    .set({ isPlanned: anyPlanned, isPurchased: anyPurchased, updatedAt: now() })
-    .where(eq(products.id, productId))
-    .run()
+    if (!nextPlanned && !nextPurchased) {
+      if (existing) {
+        tx.delete(productPersonMarks).where(eq(productPersonMarks.id, existing.id)).run()
+      }
+    } else if (existing) {
+      tx.update(productPersonMarks)
+        .set({ isPlanned: nextPlanned, isPurchased: nextPurchased, quantity: nextQuantity, updatedAt: ts })
+        .where(eq(productPersonMarks.id, existing.id))
+        .run()
+    } else {
+      tx.insert(productPersonMarks).values({
+        id: generateId(),
+        productId,
+        personId,
+        isPlanned: nextPlanned,
+        isPurchased: nextPurchased,
+        quantity: nextQuantity,
+        createdAt: ts,
+        updatedAt: ts,
+      }).run()
+    }
+
+    const marks = tx.select().from(productPersonMarks)
+      .where(eq(productPersonMarks.productId, productId))
+      .all()
+    const planned = marks.some(m => m.isPlanned)
+    const purchased = marks.some(m => m.isPurchased)
+    tx.update(products)
+      .set({ isPlanned: planned, isPurchased: purchased, updatedAt: ts })
+      .where(eq(products.id, productId))
+      .run()
+    return { allMarks: marks, anyPlanned: planned, anyPurchased: purchased }
+  })
 
   return {
     productId,

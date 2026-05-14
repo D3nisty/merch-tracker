@@ -25,6 +25,12 @@ const loading = ref(false)
 const error = ref('')
 const confirmOrphanDelete = ref(false)
 const deleteTarget = ref<AdminPerson | null>(null)
+// UModal needs a boolean v-model (project quirk). Keep the target object as
+// state and use a writable boolean alias for the modal.
+const showDeleteTarget = computed({
+  get: () => deleteTarget.value !== null,
+  set: (v: boolean) => { if (!v) deleteTarget.value = null },
+})
 
 const COLOR_BG: Record<string, string> = {
   purple: 'bg-purple-500',
@@ -155,7 +161,7 @@ const orphans = computed(() => persons.value.filter(p => !p.linkedUser))
       </table>
     </div>
 
-    <UModal v-model="deleteTarget" :ui="{ width: 'sm:max-w-sm' }">
+    <UModal v-model="showDeleteTarget" :ui="{ width: 'sm:max-w-sm' }">
       <UCard v-if="deleteTarget">
         <template #header>
           <h3 class="font-semibold text-white">{{ t('admin.deletePerson') }}</h3>

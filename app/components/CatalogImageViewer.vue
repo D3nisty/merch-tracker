@@ -1442,7 +1442,7 @@ function openAddSource() {
               :key="p.id"
               class="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-900 cursor-pointer transition-colors"
             >
-              <UCheckbox :model-value="p.isPurchased" :disabled="!authStore.isEditing" @change="authStore.isEditing && toggleReceiptProduct(p)" />
+              <UCheckbox :model-value="p.isPurchased" :disabled="!canMark" @change="canMark && toggleReceiptProduct(p)" />
               <div class="flex-1 min-w-0">
                 <span :class="['text-sm', p.isPurchased ? 'line-through text-gray-500' : 'text-white']">{{ p.name }}</span>
                 <span v-if="p.size" class="ml-2 text-xs text-gray-500">{{ p.size }}</span>
@@ -2049,7 +2049,7 @@ function openAddSource() {
             <div class="flex-1 overflow-y-auto p-3 space-y-1">
               <label v-for="p in receiptProducts" :key="`fs-receipt-${p.id}`"
                 class="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-800 cursor-pointer transition-colors">
-                <UCheckbox :model-value="p.isPurchased" :disabled="!authStore.isEditing" @change="authStore.isEditing && toggleReceiptProduct(p)" />
+                <UCheckbox :model-value="p.isPurchased" :disabled="!canMark" @change="canMark && toggleReceiptProduct(p)" />
                 <div class="flex-1 min-w-0">
                   <span :class="['text-sm', p.isPurchased ? 'line-through text-gray-500' : 'text-white']">{{ p.name }}</span>
                 </div>

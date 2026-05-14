@@ -6,10 +6,14 @@ import { eq } from 'drizzle-orm'
 // account (i.e. `users.personId` points at them). Orphan / legacy standalone
 // persons are admin-only via /api/admin/persons so they don't pollute pickers
 // like the /account "View as" dropdown.
+//
+// `selectDistinct` guards the (unlikely but unconstrained) case where two
+// users.personId rows point at the same person — the INNER JOIN would
+// otherwise duplicate that person in the response.
 export default defineEventHandler(() => {
   const db = useDb()
   return db
-    .select({
+    .selectDistinct({
       id: persons.id,
       name: persons.name,
       color: persons.color,

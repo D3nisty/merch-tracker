@@ -41,14 +41,17 @@ async function adjustQty(delta: number) {
   const current = myOwnMark.value?.quantity ?? 1
   const next = current + delta
   if (next < 1) {
-    // Going below 1 means "un-mark" — drop the purchased flag entirely.
-    await store.setMark(props.product.id, { isPurchased: false })
+    // Going below 1 means "un-mark everything" — drop BOTH flags. The server
+    // deletes the row when both are false. This avoids stranded
+    // planned-only rows when the user only intended "I'm buying 0 now".
+    await store.setMark(props.product.id, { isPlanned: false, isPurchased: false })
     return
   }
-  // If we don't have a mark yet (defensive), creating one with qty>1 still
-  // requires flipping isPurchased on. The server preserves both fields.
-  const wasPurchased = props.product.isPurchased
-  await store.setMark(props.product.id, { isPurchased: wasPurchased ? undefined : true, quantity: next })
+  // Quantity-only update: server preserves both flag fields when they're
+  // omitted from the body, so the user's planned-vs-purchased state is
+  // unchanged (this is important: bumping qty must NOT silently flip
+  // "planned" to "bought").
+  await store.setMark(props.product.id, { quantity: next })
 }
 
 // Plan? toggle — independent from Bought? (you can plan, buy, or both).
@@ -108,10 +111,12 @@ const canMark = computed(() => authStore.isLoggedIn && !!viewerPersonId.value)
       @click="togglePlanned"
     >{{ product.isPlanned ? t('catalog.planned') : t('catalog.planQ') }}</button>
 
-    <!-- Per-person qty stepper, shown only when the viewer's own mark is set.
-         `−` at qty=1 un-marks the product entirely. `+` increments. -->
+    <!-- Per-person qty stepper, shown whenever the viewer has ANY mark on
+         this product (planned, purchased, or both). `−` at qty=1 un-marks
+         entirely (drops both flags). `+` only updates quantity, never flips
+         a planned-only mark into "purchased". -->
     <div
-      v-if="product.isPurchased && canMark"
+      v-if="(product.isPlanned || product.isPurchased) && canMark"
       class="flex items-center gap-0.5 shrink-0 rounded border border-gray-700 bg-gray-800/60"
     >
       <button
@@ -158,7 +163,7 @@ const canMark = computed(() => authStore.isLoggedIn && !!viewerPersonId.value)
           :class="authStore.isEditing ? 'cursor-pointer hover:underline' : ''"
           @click="authStore.isEditing && (editing = true, editPrice = product.price ?? 0)"
         >
-          {{ (product.price * (product.isPurchased ? myDisplayQty : product.quantity)).toFixed(2) }}{{ product.currency }}
+          {{ (product.price * ((product.isPurchased || product.isPlanned) ? myDisplayQty : product.quantity)).toFixed(2) }}{{ product.currency }}
         </span>
         <UButton
           v-else-if="authStore.isEditing"

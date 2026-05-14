@@ -1,5 +1,5 @@
 import { useDb } from '../../db'
-import { events, locations, booths, products, catalogImages, productPersonMarks, boothDiscounts, users } from '../../db/schema'
+import { events, locations, booths, products, catalogImages, productPersonMarks, boothDiscounts } from '../../db/schema'
 import { eq, or } from 'drizzle-orm'
 import { requireEventView, canEditEvent } from '../../utils/permissions'
 
@@ -57,9 +57,11 @@ export default defineEventHandler(async (event) => {
   // the requesting user's OWN mark, so existing per-product checkboxes naturally
   // show "have I marked this?" without changing every UI call site. Other
   // people's marks are exposed via the `marks` array.
-  const viewerPersonId = viewer
-    ? (db.select({ personId: users.personId }).from(users).where(eq(users.id, viewer.id)).get()?.personId ?? null)
-    : null
+  // `viewer` came from `getSessionUser` which selects the full users row, so
+  // its `.personId` is the same field a second SELECT would return — using it
+  // directly avoids a TOCTOU window where an admin updating their personId
+  // between the two reads would yield inconsistent results.
+  const viewerPersonId = viewer?.personId ?? null
 
   const productsWithMarks = productRows.map(p => {
     const productMarks = markRows.filter(m => m.productId === p.id)

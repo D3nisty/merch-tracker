@@ -390,19 +390,25 @@ export const useEventsStore = defineStore('events', () => {
       { method: 'POST', body: flags },
     )
     if (currentEvent.value?.locations) {
+      // Derive the viewer's `isPlanned`/`isPurchased` from the FRESH server
+      // response (`res.marks`) instead of trying to predict the delta from
+      // `flags`. This is correct in both directions: marking for self (the
+      // viewer's mark is in res.marks with the new state) AND marking for
+      // someone else (viewer's mark in res.marks is unchanged but kept in
+      // sync). Avoids stale-flag bugs when other-person marks arrive.
       const viewerPersonId = currentEvent.value.viewerPersonId ?? null
-      const targetPersonId = flags.personId ?? viewerPersonId
       for (const loc of currentEvent.value.locations) {
         for (const booth of loc.booths ?? []) {
           const idx = booth.products?.findIndex(p => p.id === productId) ?? -1
           if (idx === -1 || !booth.products) continue
-          const old = booth.products[idx]
-          const isForMe = !!viewerPersonId && targetPersonId === viewerPersonId
+          const myMarkAfter = viewerPersonId
+            ? res.marks.find(m => m.personId === viewerPersonId)
+            : undefined
           booth.products[idx] = {
-            ...old,
+            ...booth.products[idx],
             marks: res.marks,
-            isPlanned: isForMe ? (flags.isPlanned ?? old.isPlanned) : old.isPlanned,
-            isPurchased: isForMe ? (flags.isPurchased ?? old.isPurchased) : old.isPurchased,
+            isPlanned: myMarkAfter?.isPlanned ?? false,
+            isPurchased: myMarkAfter?.isPurchased ?? false,
           }
         }
       }
@@ -509,8 +515,10 @@ export const useEventsStore = defineStore('events', () => {
           if (save > 0) savings[cur] = (savings[cur] ?? 0) + save
         }
       } else {
-        // buy_get_free
-        if (!d.freeQty || d.freeQty < 1) continue
+        // buy_get_free. Server validates `1 ≤ freeQty < triggerQty`, but
+        // guard defensively in case a corrupt/legacy row slips through —
+        // otherwise a negative index would yield NaN savings.
+        if (!d.freeQty || d.freeQty < 1 || d.freeQty >= d.triggerQty) continue
         const byCurrency = new Map<string, number[]>()
         for (const u of matchingUnits) {
           if (!byCurrency.has(u.currency)) byCurrency.set(u.currency, [])
@@ -523,7 +531,9 @@ export const useEventsStore = defineStore('events', () => {
             const batchEnd = (i + 1) * d.triggerQty
             for (let j = 0; j < d.freeQty; j++) {
               const idx = batchEnd - 1 - j
-              savings[cur] = (savings[cur] ?? 0) + prices[idx]!
+              const price = prices[idx]
+              if (typeof price !== 'number') continue
+              savings[cur] = (savings[cur] ?? 0) + price
             }
           }
         }
@@ -671,19 +681,32 @@ export const useEventsStore = defineStore('events', () => {
     for (const loc of currentEvent.value.locations) {
       for (const booth of loc.booths ?? []) {
         const images = booth.images ?? []
+        // Articles: count via WINNING source per person (mirrors unitsForBooth's
+        // rule — "only one source per article counts, planned > paid"). Naive
+        // summing across sources double-counts when a person has marks on
+        // multiple sources of the same article.
         for (const img of images) {
           if (img.imageType !== 'article' || img.parentId) continue
           const articleProducts = (booth.products ?? []).filter(p => p.catalogImageId === img.id)
-          const plannedQty = articleProducts.reduce((s, p) => s + matchingQty(p, personId, 'planned'), 0)
-          if (plannedQty === 0 && personId) continue
-          if (plannedQty === 0 && !personId) {
-            // Show unmarked items in the unfiltered totals (legacy "X items in this event").
-            total++
+          const personIds = personId
+            ? [personId]
+            : Array.from(new Set(articleProducts.flatMap(p => (p.marks ?? []).map(m => m.personId))))
+          if (personIds.length === 0) {
+            if (!personId) total++ // unmarked articles still count in the global total
             continue
           }
-          total += plannedQty
-          purchased += articleProducts.reduce((s, p) => s + matchingQty(p, personId, 'purchased'), 0)
+          for (const pid of personIds) {
+            const plannedWinner = articleProducts.find(p => (p.marks ?? []).some(m => m.personId === pid && m.isPlanned))
+              ?? articleProducts.find(p => (p.marks ?? []).some(m => m.personId === pid && m.isPurchased))
+            if (!plannedWinner) continue
+            total += Math.max(1, (plannedWinner.marks ?? []).find(m => m.personId === pid)?.quantity ?? 1)
+            const paidWinner = articleProducts.find(p => (p.marks ?? []).some(m => m.personId === pid && m.isPurchased))
+            if (paidWinner) {
+              purchased += Math.max(1, (paidWinner.marks ?? []).find(m => m.personId === pid)?.quantity ?? 1)
+            }
+          }
         }
+        // Non-article products: each line contributes its per-person qty.
         for (const p of (booth.products ?? [])) {
           const img = images.find(i => i.id === p.catalogImageId)
           if (img?.imageType === 'article') continue

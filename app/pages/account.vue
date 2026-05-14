@@ -150,6 +150,12 @@ const purchasesLoading = ref(false)
 const purchasesError = ref('')
 const collapsedEvents = ref<Record<string, boolean>>({})
 const confirmClearTarget = ref<{ scope: 'all' | 'event'; eventId?: string; eventName?: string } | null>(null)
+// UModal needs a boolean v-model (project quirk in CLAUDE.md); we keep the
+// target object as state and expose a writable boolean alias for the modal.
+const showConfirmClear = computed({
+  get: () => confirmClearTarget.value !== null,
+  set: (v: boolean) => { if (!v) confirmClearTarget.value = null },
+})
 
 async function loadPurchases() {
   purchasesLoading.value = true
@@ -211,7 +217,7 @@ async function adjustItemQty(item: PurchaseItem, next: number) {
   }
 }
 
-async function confirmClear(group: PurchaseGroup | null) {
+function confirmClear(group: PurchaseGroup | null) {
   confirmClearTarget.value = group
     ? { scope: 'event', eventId: group.eventId, eventName: group.eventName }
     : { scope: 'all' }
@@ -449,7 +455,7 @@ onMounted(() => { loadPurchases() })
       </template>
     </UCard>
 
-    <UModal v-model="confirmClearTarget" :ui="{ width: 'sm:max-w-sm' }">
+    <UModal v-model="showConfirmClear" :ui="{ width: 'sm:max-w-sm' }">
       <UCard v-if="confirmClearTarget">
         <template #header>
           <h3 class="font-semibold text-white">{{ t('purchases.confirmTitle') }}</h3>
