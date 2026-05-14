@@ -122,6 +122,46 @@ async function handleReplaceFile(e: Event) {
   ;(e.target as HTMLInputElement).value = ''
 }
 
+// ── Article gallery carousel: one image at a time, arrows + swipe ──────
+// Primary image is index 0; sub-images follow in order. Index is clamped
+// whenever the gallery shrinks (e.g. a sub-image is deleted).
+const gallery = computed(() => [props.image, ...(props.subImages ?? [])])
+const galleryIndex = ref(0)
+const galleryCurrent = computed(() => gallery.value[galleryIndex.value] ?? props.image)
+watch(() => gallery.value.length, (len) => {
+  if (galleryIndex.value >= len) galleryIndex.value = Math.max(0, len - 1)
+})
+function galleryPrev() {
+  if (!gallery.value.length) return
+  galleryIndex.value = (galleryIndex.value - 1 + gallery.value.length) % gallery.value.length
+}
+function galleryNext() {
+  if (!gallery.value.length) return
+  galleryIndex.value = (galleryIndex.value + 1) % gallery.value.length
+}
+// Swipe: horizontal drag of ≥ 40px wins; vertical drags are ignored so the
+// page can still scroll normally on a tall image.
+const swipeStartX = ref<number | null>(null)
+const swipeStartY = ref<number | null>(null)
+function onGalleryTouchStart(e: TouchEvent) {
+  const t = e.touches[0]
+  if (!t) return
+  swipeStartX.value = t.clientX
+  swipeStartY.value = t.clientY
+}
+function onGalleryTouchEnd(e: TouchEvent) {
+  if (swipeStartX.value == null || swipeStartY.value == null) return
+  const t = e.changedTouches[0]
+  if (!t) { swipeStartX.value = null; swipeStartY.value = null; return }
+  const dx = t.clientX - swipeStartX.value
+  const dy = t.clientY - swipeStartY.value
+  swipeStartX.value = null
+  swipeStartY.value = null
+  if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy)) return
+  if (dx > 0) galleryPrev()
+  else galleryNext()
+}
+
 // ── Name editing ──────────────────────────────────────────────────────
 const editingName = ref(false)
 const nameInput = ref(props.image.customName || props.image.originalName)
@@ -171,7 +211,16 @@ function onKey(e: KeyboardEvent) {
   if (e.key === 'Escape') {
     if (fullscreen.value) closeFullscreen()
     else if (annotateMode.value) { annotateMode.value = false; cancelAnnotation() }
+    return
   }
+  // Arrow-key gallery navigation: only while the fullscreen viewer is open
+  // and the user isn't typing in a form field, so it doesn't fight with
+  // caret movement in the inline editors.
+  if (!fullscreen.value || props.image.imageType !== 'article') return
+  const tag = (e.target as HTMLElement | null)?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+  if (e.key === 'ArrowLeft') { e.preventDefault(); galleryPrev() }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); galleryNext() }
 }
 
 function closeFullscreen() {
@@ -975,20 +1024,72 @@ function openAddSource() {
           </button>
         </div>
 
-        <!-- Image panel: article gallery -->
-        <div v-else class="bg-black divide-y divide-gray-800 self-start">
-          <!-- Primary image -->
-          <div class="relative group/img0">
-            <img :src="image.path" class="w-full h-auto block" draggable="false" loading="lazy" decoding="async" />
-            <div v-if="authStore.isEditing" class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/img0:opacity-100 transition-opacity">
+        <!-- Image panel: article gallery (carousel) -->
+        <div v-else class="bg-black self-start">
+          <div
+            class="relative group/gal"
+            @touchstart.passive="onGalleryTouchStart"
+            @touchend.passive="onGalleryTouchEnd"
+          >
+            <img :src="galleryCurrent.path" class="w-full h-auto block select-none" draggable="false" loading="lazy" decoding="async" />
+
+            <!-- Prev / Next arrows (hidden when only 1 image) -->
+            <template v-if="gallery.length > 1">
+              <button
+                type="button"
+                :aria-label="t('catalog.prevImage')"
+                class="absolute top-1/2 left-2 -translate-y-1/2 w-9 h-9 flex items-center justify-center rounded-full bg-gray-900/70 border border-gray-700 text-white hover:bg-gray-900/90 hover:border-gray-500 transition-colors backdrop-blur-sm"
+                @click.stop="galleryPrev"
+              >
+                <UIcon name="i-heroicons-chevron-left" class="w-5 h-5" />
+              </button>
+              <button
+                type="button"
+                :aria-label="t('catalog.nextImage')"
+                class="absolute top-1/2 right-2 -translate-y-1/2 w-9 h-9 flex items-center justify-center rounded-full bg-gray-900/70 border border-gray-700 text-white hover:bg-gray-900/90 hover:border-gray-500 transition-colors backdrop-blur-sm"
+                @click.stop="galleryNext"
+              >
+                <UIcon name="i-heroicons-chevron-right" class="w-5 h-5" />
+              </button>
+
+              <!-- Counter -->
+              <div class="absolute top-2 left-2 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-900/80 border border-gray-700 text-gray-200 backdrop-blur-sm">
+                {{ galleryIndex + 1 }} / {{ gallery.length }}
+              </div>
+
+              <!-- Dot pagination -->
+              <div class="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-1 rounded-full bg-gray-900/70 border border-gray-700 backdrop-blur-sm">
+                <button
+                  v-for="(g, i) in gallery"
+                  :key="`dot-${g.id}`"
+                  type="button"
+                  :aria-label="`Image ${i + 1}`"
+                  class="w-1.5 h-1.5 rounded-full transition-colors"
+                  :class="i === galleryIndex ? 'bg-white' : 'bg-gray-500 hover:bg-gray-300'"
+                  @click.stop="galleryIndex = i"
+                />
+              </div>
+            </template>
+
+            <!-- Edit affordances for the current image -->
+            <div v-if="authStore.isEditing" class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/gal:opacity-100 transition-opacity">
               <button
                 type="button"
                 class="px-2 py-1 text-xs rounded bg-gray-900/90 border border-gray-700 text-gray-300 hover:text-white hover:border-gray-500 transition-colors"
-                @click="triggerReplace(image.id)"
+                @click="triggerReplace(galleryCurrent.id)"
               >
                 {{ t('catalog.replace') }}
               </button>
+              <button
+                v-if="galleryIndex > 0"
+                type="button"
+                class="px-2 py-1 text-xs rounded bg-red-900/90 border border-red-700 text-red-300 hover:text-white hover:border-red-500 transition-colors"
+                @click="store.deleteImage(galleryCurrent.id, galleryCurrent.boothId)"
+              >
+                {{ t('common.delete') }}
+              </button>
             </div>
+
             <!-- Toggle sources panel button -->
             <button
               v-if="!showProductsPanel"
@@ -1000,28 +1101,9 @@ function openAddSource() {
               {{ t('catalog.sources') }}
             </button>
           </div>
-          <!-- Sub-images -->
-          <div v-for="sub in subImages" :key="sub.id" class="relative group/subimg">
-            <img :src="sub.path" class="w-full h-auto block" draggable="false" loading="lazy" decoding="async" />
-            <div v-if="authStore.isEditing" class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/subimg:opacity-100 transition-opacity">
-              <button
-                type="button"
-                class="px-2 py-1 text-xs rounded bg-gray-900/90 border border-gray-700 text-gray-300 hover:text-white hover:border-gray-500 transition-colors"
-                @click="triggerReplace(sub.id)"
-              >
-                {{ t('catalog.replace') }}
-              </button>
-              <button
-                type="button"
-                class="px-2 py-1 text-xs rounded bg-red-900/90 border border-red-700 text-red-300 hover:text-white hover:border-red-500 transition-colors"
-                @click="store.deleteImage(sub.id, sub.boothId)"
-              >
-                {{ t('common.delete') }}
-              </button>
-            </div>
-          </div>
+
           <!-- Add image -->
-          <div v-if="authStore.isEditing" class="p-3">
+          <div v-if="authStore.isEditing" class="p-3 border-t border-gray-800">
             <UButton
               icon="i-heroicons-plus"
               size="sm"
@@ -1560,28 +1642,60 @@ function openAddSource() {
       </div>
 
       <div class="flex flex-col sm:flex-row flex-1 min-h-0 relative">
-        <!-- Image: article gallery (fullscreen) -->
-        <div v-if="image.imageType === 'article'" class="flex-1 overflow-auto bg-black divide-y divide-gray-800">
-          <div class="relative group/img0">
-            <img :src="image.path" class="w-full h-auto block" draggable="false" loading="lazy" decoding="async" />
-            <div v-if="authStore.isEditing" class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/img0:opacity-100 transition-opacity">
+        <!-- Image: article gallery (fullscreen carousel) -->
+        <div v-if="image.imageType === 'article'" class="flex-1 overflow-auto bg-black">
+          <div
+            class="relative group/galfs"
+            @touchstart.passive="onGalleryTouchStart"
+            @touchend.passive="onGalleryTouchEnd"
+          >
+            <img :src="galleryCurrent.path" class="w-full h-auto block select-none" draggable="false" loading="lazy" decoding="async" />
+
+            <template v-if="gallery.length > 1">
+              <button
+                type="button"
+                :aria-label="t('catalog.prevImage')"
+                class="absolute top-1/2 left-3 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-900/70 border border-gray-700 text-white hover:bg-gray-900/90 hover:border-gray-500 transition-colors backdrop-blur-sm"
+                @click.stop="galleryPrev"
+              >
+                <UIcon name="i-heroicons-chevron-left" class="w-6 h-6" />
+              </button>
+              <button
+                type="button"
+                :aria-label="t('catalog.nextImage')"
+                class="absolute top-1/2 right-3 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-900/70 border border-gray-700 text-white hover:bg-gray-900/90 hover:border-gray-500 transition-colors backdrop-blur-sm"
+                @click.stop="galleryNext"
+              >
+                <UIcon name="i-heroicons-chevron-right" class="w-6 h-6" />
+              </button>
+
+              <div class="absolute top-3 left-3 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-900/80 border border-gray-700 text-gray-200 backdrop-blur-sm">
+                {{ galleryIndex + 1 }} / {{ gallery.length }}
+              </div>
+
+              <div class="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-1 rounded-full bg-gray-900/70 border border-gray-700 backdrop-blur-sm">
+                <button
+                  v-for="(g, i) in gallery"
+                  :key="`fs-dot-${g.id}`"
+                  type="button"
+                  :aria-label="`Image ${i + 1}`"
+                  class="w-2 h-2 rounded-full transition-colors"
+                  :class="i === galleryIndex ? 'bg-white' : 'bg-gray-500 hover:bg-gray-300'"
+                  @click.stop="galleryIndex = i"
+                />
+              </div>
+            </template>
+
+            <div v-if="authStore.isEditing" class="absolute top-3 right-3 flex gap-1 opacity-0 group-hover/galfs:opacity-100 transition-opacity">
               <button type="button"
                 class="px-2 py-1 text-xs rounded bg-gray-900/90 border border-gray-700 text-gray-300 hover:text-white transition-colors"
-                @click="triggerReplace(image.id)">{{ t('catalog.replace') }}</button>
-            </div>
-          </div>
-          <div v-for="sub in subImages" :key="`fs-sub-${sub.id}`" class="relative group/subfs">
-            <img :src="sub.path" class="w-full h-auto block" draggable="false" loading="lazy" decoding="async" />
-            <div v-if="authStore.isEditing" class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/subfs:opacity-100 transition-opacity">
-              <button type="button"
-                class="px-2 py-1 text-xs rounded bg-gray-900/90 border border-gray-700 text-gray-300 hover:text-white transition-colors"
-                @click="triggerReplace(sub.id)">{{ t('catalog.replace') }}</button>
-              <button type="button"
+                @click="triggerReplace(galleryCurrent.id)">{{ t('catalog.replace') }}</button>
+              <button v-if="galleryIndex > 0" type="button"
                 class="px-2 py-1 text-xs rounded bg-red-900/90 border border-red-700 text-red-300 hover:text-white transition-colors"
-                @click="store.deleteImage(sub.id, sub.boothId)">{{ t('common.delete') }}</button>
+                @click="store.deleteImage(galleryCurrent.id, galleryCurrent.boothId)">{{ t('common.delete') }}</button>
             </div>
           </div>
-          <div v-if="authStore.isEditing" class="p-4">
+          <div v-if="authStore.isEditing" class="p-4 border-t border-gray-800">
             <UButton icon="i-heroicons-plus" variant="ghost" color="gray" block :loading="addingSubImage" @click="subImageInput?.click()">
               {{ t('catalog.addImage') }}
             </UButton>
