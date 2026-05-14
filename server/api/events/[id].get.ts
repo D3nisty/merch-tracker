@@ -1,5 +1,5 @@
 import { useDb } from '../../db'
-import { events, locations, booths, products, catalogImages } from '../../db/schema'
+import { events, locations, booths, products, catalogImages, productPersonMarks, boothDiscounts, users } from '../../db/schema'
 import { eq, or } from 'drizzle-orm'
 import { requireEventView, canEditEvent } from '../../utils/permissions'
 
@@ -44,6 +44,41 @@ export default defineEventHandler(async (event) => {
     ? db.select().from(catalogImages).all().filter(i => boothIds.includes(i.boothId))
     : []
 
+  const productIds = productRows.map(p => p.id)
+  const markRows = productIds.length
+    ? db.select().from(productPersonMarks).all().filter(m => productIds.includes(m.productId))
+    : []
+
+  const discountRows = boothIds.length
+    ? db.select().from(boothDiscounts).all().filter(d => boothIds.includes(d.boothId))
+    : []
+
+  // Substitute the legacy aggregate isPlanned/isPurchased on each product with
+  // the requesting user's OWN mark, so existing per-product checkboxes naturally
+  // show "have I marked this?" without changing every UI call site. Other
+  // people's marks are exposed via the `marks` array.
+  const viewerPersonId = viewer
+    ? (db.select({ personId: users.personId }).from(users).where(eq(users.id, viewer.id)).get()?.personId ?? null)
+    : null
+
+  const productsWithMarks = productRows.map(p => {
+    const productMarks = markRows.filter(m => m.productId === p.id)
+    const myMark = viewerPersonId ? productMarks.find(m => m.personId === viewerPersonId) : undefined
+    return {
+      ...p,
+      // Override aggregates with the requesting user's perspective.
+      isPlanned: myMark?.isPlanned ?? false,
+      isPurchased: myMark?.isPurchased ?? false,
+      // Surface raw per-person marks so the UI can show other-person dots and
+      // compute per-person totals.
+      marks: productMarks.map(m => ({
+        personId: m.personId,
+        isPlanned: m.isPlanned,
+        isPurchased: m.isPurchased,
+      })),
+    }
+  })
+
   // Assemble nested structure
   const locationsWithBooths = locationRows.map(loc => ({
     ...loc,
@@ -51,13 +86,15 @@ export default defineEventHandler(async (event) => {
       .filter(b => b.locationId === loc.id)
       .map(booth => ({
         ...booth,
-        products: productRows.filter(p => p.boothId === booth.id),
+        products: productsWithMarks.filter(p => p.boothId === booth.id),
         images: imageRows.filter(i => i.boothId === booth.id),
+        discounts: discountRows.filter(d => d.boothId === booth.id),
       })),
   }))
 
   return {
     ...eventRow,
     locations: locationsWithBooths,
+    viewerPersonId,
   }
 })

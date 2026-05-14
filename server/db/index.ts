@@ -172,6 +172,31 @@ export function useDb() {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS product_person_marks (
+      id TEXT PRIMARY KEY,
+      product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      person_id TEXT NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+      is_planned INTEGER NOT NULL DEFAULT 0,
+      is_purchased INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(product_id, person_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS booth_discounts (
+      id TEXT PRIMARY KEY,
+      booth_id TEXT NOT NULL REFERENCES booths(id) ON DELETE CASCADE,
+      label TEXT NOT NULL,
+      scope_type TEXT NOT NULL CHECK(scope_type IN ('size','category')),
+      scope_value TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'buy_get_free' CHECK(type IN ('buy_get_free','bundle')),
+      trigger_qty INTEGER NOT NULL,
+      free_qty INTEGER,
+      bundle_price REAL,
+      bundle_currency TEXT,
+      created_at TEXT NOT NULL
+    );
   `)
 
   // Column migrations for existing databases (ALTER TABLE is idempotent via try/catch)
@@ -194,6 +219,13 @@ export function useDb() {
   try { sqlite.exec(`ALTER TABLE events ADD COLUMN owner_id TEXT REFERENCES users(id) ON DELETE SET NULL`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE products ADD COLUMN owner_id TEXT REFERENCES users(id) ON DELETE SET NULL`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE users ADD COLUMN person_id TEXT REFERENCES persons(id) ON DELETE SET NULL`) } catch { /* already exists */ }
+  // booth_discounts gained bundle-discount support after the initial release.
+  // The original schema only had free_qty (NOT NULL); subsequent rows may set
+  // bundle_price/bundle_currency instead. We can't drop the NOT NULL via
+  // ALTER, but SQLite is forgiving and the API enforces consistency.
+  try { sqlite.exec(`ALTER TABLE booth_discounts ADD COLUMN type TEXT NOT NULL DEFAULT 'buy_get_free'`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE booth_discounts ADD COLUMN bundle_price REAL`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE booth_discounts ADD COLUMN bundle_currency TEXT`) } catch { /* already exists */ }
 
   // Backfill slugs for existing events that don't have one
   const needsSlug = sqlite.prepare('SELECT id, name FROM events WHERE slug IS NULL').all() as { id: string; name: string }[]
@@ -304,6 +336,33 @@ export function useDb() {
       sqlite.prepare(`UPDATE events SET owner_id = ? WHERE owner_id IS NULL`).run(firstAdmin.id)
       console.log(`Backfilled owner_id on ${orphanEvents} legacy event(s) → admin user ${firstAdmin.id}`)
     }
+  }
+
+  // Indices for the new join tables (idempotent)
+  try { sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_marks_product ON product_person_marks(product_id)`) } catch { /* noop */ }
+  try { sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_marks_person ON product_person_marks(person_id)`) } catch { /* noop */ }
+  try { sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_discounts_booth ON booth_discounts(booth_id)`) } catch { /* noop */ }
+
+  // Backfill per-person marks from the legacy single-person columns. For each
+  // product where personId is set and isPlanned or isPurchased is true, ensure
+  // there's a mark row for that person carrying those flags. Idempotent: skips
+  // products that already have any mark row.
+  const legacyProducts = sqlite.prepare(`
+    SELECT p.id, p.person_id, p.is_planned, p.is_purchased
+    FROM products p
+    WHERE p.person_id IS NOT NULL
+      AND (p.is_planned = 1 OR p.is_purchased = 1)
+      AND NOT EXISTS (SELECT 1 FROM product_person_marks m WHERE m.product_id = p.id)
+  `).all() as { id: string; person_id: string; is_planned: number; is_purchased: number }[]
+  if (legacyProducts.length > 0) {
+    const stmt = sqlite.prepare(`
+      INSERT INTO product_person_marks (id, product_id, person_id, is_planned, is_purchased, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `)
+    for (const p of legacyProducts) {
+      stmt.run(generateId(), p.id, p.person_id, p.is_planned, p.is_purchased, now(), now())
+    }
+    console.log(`Backfilled ${legacyProducts.length} per-person mark row(s) from legacy product flags.`)
   }
 
   return _db

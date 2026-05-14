@@ -17,6 +17,36 @@ export interface Event {
   totalProducts?: number
   purchasedProducts?: number
   locations?: Location[]
+  // The Person id linked to the requesting user (or null for guests). The
+  // server stamps this so the client can route "mark for me" actions without
+  // a separate /api/auth/me call.
+  viewerPersonId?: string | null
+}
+
+// Per-person planned/purchased mark on a product. Multiple persons can
+// independently mark the same product without owning the rectangle.
+export interface ProductMark {
+  personId: string
+  isPlanned: boolean
+  isPurchased: boolean
+}
+
+// Discount rule attached to a booth, narrowed to products with the given size
+// or category. Two shapes: "buy N get M free" (cheapest M in each batch are
+// free) and "N for bundle price" (every batch of N is charged a fixed total
+// instead of the sum of unit prices).
+export interface BoothDiscount {
+  id: string
+  boothId: string
+  label: string
+  scopeType: 'size' | 'category'
+  scopeValue: string
+  type: 'buy_get_free' | 'bundle'
+  triggerQty: number
+  freeQty: number | null         // used when type='buy_get_free'
+  bundlePrice: number | null     // used when type='bundle'
+  bundleCurrency: string | null  // used when type='bundle'
+  createdAt: string
 }
 
 export interface AdminUser {
@@ -143,6 +173,7 @@ export interface Booth {
   createdAt: string
   products?: Product[]
   images?: CatalogImage[]
+  discounts?: BoothDiscount[]
 }
 
 export interface CatalogImage {
@@ -174,6 +205,9 @@ export interface Product {
   quantity: number
   size: string | null
   category: string | null
+  // Server substitutes these to reflect the REQUESTING USER's per-person mark.
+  // (The legacy DB columns now act as ANY-person aggregates internally, but
+  // this is the per-viewer perspective the API exposes.)
   isPurchased: boolean
   isPlanned: boolean
   priority: number
@@ -185,6 +219,9 @@ export interface Product {
   regionH: number | null
   createdAt: string
   updatedAt: string
+  // All per-person marks on this product. Includes the requesting user's own
+  // mark too, so UIs that want "everyone except me" must filter on personId.
+  marks?: ProductMark[]
 }
 
 export interface BoothPreset {
@@ -326,8 +363,146 @@ export const useEventsStore = defineStore('events', () => {
     }
   }
 
+  // ── Per-person marks ──────────────────────────────────────────────────
+  // Set or update the requesting user's planned/purchased flags on a product.
+  // Pass `personId` to mark FOR ANOTHER person (only allowed if you have edit
+  // access to the event; otherwise the server 403s).
+  async function setMark(productId: string, flags: { isPlanned?: boolean; isPurchased?: boolean; personId?: string }) {
+    const res = await $fetch<{ productId: string; marks: ProductMark[]; aggregate: { isPlanned: boolean; isPurchased: boolean } }>(
+      `/api/products/${productId}/marks`,
+      { method: 'POST', body: flags },
+    )
+    if (currentEvent.value?.locations) {
+      const viewerPersonId = currentEvent.value.viewerPersonId ?? null
+      const targetPersonId = flags.personId ?? viewerPersonId
+      for (const loc of currentEvent.value.locations) {
+        for (const booth of loc.booths ?? []) {
+          const idx = booth.products?.findIndex(p => p.id === productId) ?? -1
+          if (idx === -1 || !booth.products) continue
+          const old = booth.products[idx]
+          // If the change was for the viewer's own person, reflect it on the
+          // viewer-perspective `isPlanned`/`isPurchased`. Otherwise keep the
+          // existing viewer state (their mark didn't change).
+          const isForMe = !!viewerPersonId && targetPersonId === viewerPersonId
+          booth.products[idx] = {
+            ...old,
+            marks: res.marks,
+            isPlanned: isForMe ? (flags.isPlanned ?? old.isPlanned) : old.isPlanned,
+            isPurchased: isForMe ? (flags.isPurchased ?? old.isPurchased) : old.isPurchased,
+          }
+        }
+      }
+    }
+    return res
+  }
+
+  // Toggles the requesting user's `isPurchased` mark. Replaces the older
+  // single-aggregate flip — multiple people can each have their own state.
   async function togglePurchased(product: Product) {
-    return updateProduct(product.id, { isPurchased: !product.isPurchased })
+    return setMark(product.id, { isPurchased: !product.isPurchased })
+  }
+
+  // ── Booth discounts ───────────────────────────────────────────────────
+  async function createDiscount(boothId: string, data: Omit<BoothDiscount, 'id' | 'boothId' | 'createdAt'>) {
+    const created = await $fetch<BoothDiscount>(`/api/booths/${boothId}/discounts`, { method: 'POST', body: data })
+    if (currentEvent.value?.locations) {
+      for (const loc of currentEvent.value.locations) {
+        const booth = loc.booths?.find(b => b.id === boothId)
+        if (booth) booth.discounts = [...(booth.discounts ?? []), created]
+      }
+    }
+    return created
+  }
+
+  async function updateDiscount(id: string, data: Partial<BoothDiscount>) {
+    const updated = await $fetch<BoothDiscount>(`/api/discounts/${id}`, { method: 'PUT', body: data })
+    if (currentEvent.value?.locations) {
+      for (const loc of currentEvent.value.locations) {
+        for (const booth of loc.booths ?? []) {
+          const idx = booth.discounts?.findIndex(d => d.id === id) ?? -1
+          if (idx !== -1 && booth.discounts) booth.discounts[idx] = { ...booth.discounts[idx], ...updated }
+        }
+      }
+    }
+    return updated
+  }
+
+  async function deleteDiscount(id: string) {
+    await $fetch(`/api/discounts/${id}`, { method: 'DELETE' })
+    if (currentEvent.value?.locations) {
+      for (const loc of currentEvent.value.locations) {
+        for (const booth of loc.booths ?? []) {
+          booth.discounts = booth.discounts?.filter(d => d.id !== id)
+        }
+      }
+    }
+  }
+
+  // ── Discount engine ───────────────────────────────────────────────────
+  // Given a set of products considered "in play" for a person (e.g. planned
+  // or purchased), figure out how much each booth's discounts save. Returns
+  // savings keyed by currency.
+  //
+  // Two discount shapes (per discount.type):
+  //
+  //   'buy_get_free':
+  //     1. Filter units matching the scope AND with price > 0
+  //     2. Group by currency (each currency gets its own batches — you can't
+  //        mix EUR and USD into one discount group)
+  //     3. Sort descending. For every batch of `triggerQty`, the cheapest
+  //        `freeQty` items in that batch (end of the sorted-desc slice) are
+  //        free — sum their prices into savings for that currency.
+  //
+  //   'bundle':
+  //     1. Filter units matching the scope AND priced in `bundleCurrency`
+  //     2. Sort descending. For every batch of `triggerQty`, savings =
+  //        max(0, sum(batch) - bundlePrice). Never penalise: if the bundle
+  //        price is HIGHER than the cheapest possible batch, the user simply
+  //        doesn't take the bundle and we report 0 savings for that batch.
+  function applyBoothDiscounts(
+    units: Array<{ price: number; currency: string; size: string | null; category: string | null }>,
+    discounts: BoothDiscount[],
+  ): Record<string, number> {
+    const savings: Record<string, number> = {}
+    for (const d of discounts) {
+      const matchingUnits = units.filter(u => {
+        if (!u.price || u.price <= 0) return false
+        return d.scopeType === 'size' ? u.size === d.scopeValue : u.category === d.scopeValue
+      })
+      if (d.type === 'bundle') {
+        if (d.bundlePrice == null || !d.bundleCurrency) continue
+        const cur = d.bundleCurrency
+        const prices = matchingUnits.filter(u => u.currency === cur).map(u => u.price)
+        prices.sort((a, b) => b - a)
+        const batches = Math.floor(prices.length / d.triggerQty)
+        for (let i = 0; i < batches; i++) {
+          const slice = prices.slice(i * d.triggerQty, (i + 1) * d.triggerQty)
+          const sum = slice.reduce((a, b) => a + b, 0)
+          const save = sum - d.bundlePrice
+          if (save > 0) savings[cur] = (savings[cur] ?? 0) + save
+        }
+      } else {
+        // buy_get_free
+        if (!d.freeQty || d.freeQty < 1) continue
+        const byCurrency = new Map<string, number[]>()
+        for (const u of matchingUnits) {
+          if (!byCurrency.has(u.currency)) byCurrency.set(u.currency, [])
+          byCurrency.get(u.currency)!.push(u.price)
+        }
+        for (const [cur, prices] of byCurrency) {
+          prices.sort((a, b) => b - a)
+          const batches = Math.floor(prices.length / d.triggerQty)
+          for (let i = 0; i < batches; i++) {
+            const batchEnd = (i + 1) * d.triggerQty
+            for (let j = 0; j < d.freeQty; j++) {
+              const idx = batchEnd - 1 - j
+              savings[cur] = (savings[cur] ?? 0) + prices[idx]!
+            }
+          }
+        }
+      }
+    }
+    return savings
   }
 
   async function updateImage(id: string, data: Partial<CatalogImage>) {
@@ -444,9 +619,24 @@ export const useEventsStore = defineStore('events', () => {
     return updated
   }
 
-  // Article-aware cost helpers:
+  // Per-person mark accessors. If `personId` is null/undefined, we treat it
+  // as "anyone has it marked" (the union across all persons).
+  function isPlannedFor(p: Product, personId?: string | null): boolean {
+    const marks = p.marks ?? []
+    if (!personId) return marks.some(m => m.isPlanned)
+    return marks.some(m => m.personId === personId && m.isPlanned)
+  }
+  function isPurchasedFor(p: Product, personId?: string | null): boolean {
+    const marks = p.marks ?? []
+    if (!personId) return marks.some(m => m.isPurchased)
+    return marks.some(m => m.personId === personId && m.isPurchased)
+  }
+
+  // Article-aware cost helpers (per-person):
   // - root article image (no parentId) = 1 item; planned/paid source drives budget
   // - catalog products / unlinked products = each counts individually
+  // - filtering is by MARK now, not by p.personId (creator). So "Person X's
+  //   totals" reflects what X has marked, regardless of who drew the item.
 
   function getItemStats(personId?: string | null): { total: number; purchased: number } {
     if (!currentEvent.value?.locations) return { total: 0, purchased: 0 }
@@ -454,68 +644,122 @@ export const useEventsStore = defineStore('events', () => {
     for (const loc of currentEvent.value.locations) {
       for (const booth of loc.booths ?? []) {
         const images = booth.images ?? []
-        const products = (booth.products ?? []).filter(p => !personId || p.personId === personId)
+        const products = (booth.products ?? []).filter(p => {
+          if (!personId) return true
+          return isPlannedFor(p, personId) || isPurchasedFor(p, personId)
+        })
         for (const img of images) {
           if (img.imageType !== 'article' || img.parentId) continue
+          const articleProducts = products.filter(p => p.catalogImageId === img.id)
+          if (!articleProducts.length && personId) continue
           total++
-          if (products.some(p => p.catalogImageId === img.id && p.isPurchased)) purchased++
+          if (articleProducts.some(p => isPurchasedFor(p, personId))) purchased++
         }
         for (const p of products) {
           const img = images.find(i => i.id === p.catalogImageId)
           if (img?.imageType === 'article') continue
           total++
-          if (p.isPurchased) purchased++
+          if (isPurchasedFor(p, personId)) purchased++
         }
       }
     }
     return { total, purchased }
   }
 
-  // Planned budget: catalog products (all) + article planned/paid source
-  function getPlannedCostByCurrency(personId?: string | null): Record<string, number> {
-    if (!currentEvent.value?.locations) return {}
-    const map: Record<string, number> = {}
-    for (const loc of currentEvent.value.locations) {
-      for (const booth of loc.booths ?? []) {
-        const images = booth.images ?? []
-        const products = (booth.products ?? []).filter(p => !personId || p.personId === personId)
-        for (const img of images) {
-          if (img.imageType !== 'article' || img.parentId) continue
-          // Use planned source first, fall back to paid source
-          const source = products.find(p => p.catalogImageId === img.id && p.isPlanned)
-            ?? products.find(p => p.catalogImageId === img.id && p.isPurchased)
-          if (source?.price) {
-            const cur = source.currency || 'EUR'
-            map[cur] = (map[cur] ?? 0) + source.price * source.quantity
-          }
-        }
-        for (const p of products) {
-          const img = images.find(i => i.id === p.catalogImageId)
-          if (img?.imageType === 'article') continue
-          if (!p.price) continue
-          const cur = p.currency || 'EUR'
-          map[cur] = (map[cur] ?? 0) + p.price * p.quantity
-        }
+  // Internal: collect priced units (each line item, multiplied by quantity)
+  // for a booth that belong to the given person under the given filter.
+  function unitsForBooth(
+    booth: Booth,
+    personId: string | null | undefined,
+    pick: 'planned' | 'purchased',
+  ): Array<{ price: number; currency: string; size: string | null; category: string | null }> {
+    const images = booth.images ?? []
+    const out: Array<{ price: number; currency: string; size: string | null; category: string | null }> = []
+    for (const p of (booth.products ?? [])) {
+      if (!p.price) continue
+      const matches = pick === 'planned'
+        ? (isPlannedFor(p, personId) || isPurchasedFor(p, personId))
+        : isPurchasedFor(p, personId)
+      if (!matches) continue
+      // Article gallery: only one source per article counts (planned > paid)
+      const img = images.find(i => i.id === p.catalogImageId)
+      if (img?.imageType === 'article') {
+        // Find the "winning" source for this article for the given person
+        const articleProducts = (booth.products ?? []).filter(q => q.catalogImageId === img.id && q.price)
+        const winner = pick === 'planned'
+          ? (articleProducts.find(q => isPlannedFor(q, personId)) ?? articleProducts.find(q => isPurchasedFor(q, personId)))
+          : articleProducts.find(q => isPurchasedFor(q, personId))
+        if (winner?.id !== p.id) continue
+      }
+      for (let i = 0; i < p.quantity; i++) {
+        out.push({ price: p.price, currency: p.currency || 'EUR', size: p.size, category: p.category })
       }
     }
-    return map
+    return out
   }
 
-  // Paid budget: only isPurchased items (same for both catalog and articles)
-  function getPaidCostByCurrency(personId?: string | null): Record<string, number> {
+  function addInto(target: Record<string, number>, source: Record<string, number>) {
+    for (const [k, v] of Object.entries(source)) target[k] = (target[k] ?? 0) + v
+  }
+
+  // Planned budget MINUS discount savings. Discounts apply to a person's own
+  // marked items per booth.
+  function getPlannedCostByCurrency(personId?: string | null): Record<string, number> {
     if (!currentEvent.value?.locations) return {}
-    const map: Record<string, number> = {}
+    const total: Record<string, number> = {}
     for (const loc of currentEvent.value.locations) {
       for (const booth of loc.booths ?? []) {
-        for (const p of (booth.products ?? [])) {
-          if (!p.isPurchased || !p.price) continue
-          if (personId && p.personId !== personId) continue
-          const cur = p.currency || 'EUR'
-          map[cur] = (map[cur] ?? 0) + p.price * p.quantity
+        const units = unitsForBooth(booth, personId, 'planned')
+        for (const u of units) total[u.currency] = (total[u.currency] ?? 0) + u.price
+        const savings = applyBoothDiscounts(units, booth.discounts ?? [])
+        for (const [cur, save] of Object.entries(savings)) {
+          total[cur] = (total[cur] ?? 0) - save
         }
       }
     }
-    return map
+    return total
+  }
+
+  function getPaidCostByCurrency(personId?: string | null): Record<string, number> {
+    if (!currentEvent.value?.locations) return {}
+    const total: Record<string, number> = {}
+    for (const loc of currentEvent.value.locations) {
+      for (const booth of loc.booths ?? []) {
+        const units = unitsForBooth(booth, personId, 'purchased')
+        for (const u of units) total[u.currency] = (total[u.currency] ?? 0) + u.price
+        const savings = applyBoothDiscounts(units, booth.discounts ?? [])
+        for (const [cur, save] of Object.entries(savings)) {
+          total[cur] = (total[cur] ?? 0) - save
+        }
+      }
+    }
+    return total
+  }
+
+  // The total savings discounts produced across the event for the given person
+  // (planned + paid combined view = planned, since planned subsumes purchased).
+  function getDiscountSavingsByCurrency(personId?: string | null): Record<string, number> {
+    if (!currentEvent.value?.locations) return {}
+    const total: Record<string, number> = {}
+    for (const loc of currentEvent.value.locations) {
+      for (const booth of loc.booths ?? []) {
+        const units = unitsForBooth(booth, personId, 'planned')
+        addInto(total, applyBoothDiscounts(units, booth.discounts ?? []))
+      }
+    }
+    return total
+  }
+
+  // Per-booth savings for the booth detail / card UIs.
+  function getBoothSavingsByCurrency(boothId: string, personId?: string | null): Record<string, number> {
+    if (!currentEvent.value?.locations) return {}
+    for (const loc of currentEvent.value.locations) {
+      const booth = loc.booths?.find(b => b.id === boothId)
+      if (!booth) continue
+      const units = unitsForBooth(booth, personId, 'planned')
+      return applyBoothDiscounts(units, booth.discounts ?? [])
+    }
+    return {}
   }
 
   // ── Sharing / groups / admin users ─────────────────────────────────────
@@ -634,6 +878,14 @@ export const useEventsStore = defineStore('events', () => {
     updateProduct,
     deleteProduct,
     togglePurchased,
+    setMark,
+    isPlannedFor,
+    isPurchasedFor,
+    createDiscount,
+    updateDiscount,
+    deleteDiscount,
+    getDiscountSavingsByCurrency,
+    getBoothSavingsByCurrency,
     updateImage,
     deleteImage,
     uploadSubImage,

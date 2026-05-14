@@ -417,6 +417,42 @@ const en = {
     noCamera: 'No camera found on this device.',
     retry: 'Retry',
   },
+  discount: {
+    title: 'Discounts',
+    add: 'Add discount',
+    edit: 'Edit discount',
+    empty: 'No discounts yet. Add one like "Buy 2 A4 get the 3rd free" or "3 keychains for €40".',
+    label: 'Label',
+    labelPlaceholder: 'e.g. 3 A4 prints for the price of 2',
+    scope: 'Applies to',
+    byScopeSize: 'A size',
+    byScopeCategory: 'A category',
+    size: 'Size',
+    category: 'Category',
+    triggerQty: 'Per group of',
+    triggerHelp: 'Items needed per discount batch',
+    freeQty: 'Free items',
+    freeHelp: 'How many are free per batch',
+    previewLine: 'Buy {pay} {scope}, get {free} more free (every group of {trigger}).',
+    buyN: 'buy {n}',
+    getM: 'get {m} free',
+    saved: 'saved',
+    confirmDelete: 'Delete this discount?',
+    // Discount type picker
+    kind: 'Type',
+    kindFree: 'Buy N, get M free',
+    kindFreeHint: 'The cheapest items in each batch go free',
+    kindBundle: 'N for fixed price',
+    kindBundleHint: 'Every batch of N costs a flat total',
+    // Bundle-specific
+    bundleTriggerQty: 'Buy',
+    bundleTriggerHelp: 'Items per bundle batch',
+    bundlePrice: 'For total',
+    bundlePriceHelp: 'Bundle price per batch',
+    currency: 'Currency',
+    bundlePreviewLine: 'Every {trigger} {scope} cost {price} {cur} (you save the difference).',
+    bundleSummary: '{n} {scope} for {price} {cur}',
+  },
 }
 
 const de: typeof en = {
@@ -836,6 +872,42 @@ const de: typeof en = {
     noCamera: 'Keine Kamera auf diesem Gerät gefunden.',
     retry: 'Erneut versuchen',
   },
+  discount: {
+    title: 'Rabatte',
+    add: 'Rabatt hinzufügen',
+    edit: 'Rabatt bearbeiten',
+    empty: 'Noch keine Rabatte. Füge z.B. „Kaufe 2 A4, das 3. gratis" oder „3 Keychains für 40 €" hinzu.',
+    label: 'Bezeichnung',
+    labelPlaceholder: 'z.B. 3 A4-Drucke zum Preis von 2',
+    scope: 'Gilt für',
+    byScopeSize: 'Eine Größe',
+    byScopeCategory: 'Eine Kategorie',
+    size: 'Größe',
+    category: 'Kategorie',
+    triggerQty: 'Pro Gruppe von',
+    triggerHelp: 'Artikel pro Rabattgruppe',
+    freeQty: 'Gratis-Artikel',
+    freeHelp: 'Wie viele sind pro Gruppe gratis',
+    previewLine: 'Kaufe {pay} {scope}, erhalte {free} gratis (pro Gruppe von {trigger}).',
+    buyN: 'kaufe {n}',
+    getM: 'erhalte {m} gratis',
+    saved: 'gespart',
+    confirmDelete: 'Diesen Rabatt löschen?',
+    // Rabatttyp-Auswahl
+    kind: 'Art',
+    kindFree: 'Kaufe N, erhalte M gratis',
+    kindFreeHint: 'Die günstigsten Artikel pro Gruppe sind gratis',
+    kindBundle: 'N zum Festpreis',
+    kindBundleHint: 'Jede Gruppe von N kostet einen Pauschalbetrag',
+    // Bündel-spezifisch
+    bundleTriggerQty: 'Kaufe',
+    bundleTriggerHelp: 'Artikel pro Bündel',
+    bundlePrice: 'Für Gesamtpreis',
+    bundlePriceHelp: 'Bündelpreis pro Gruppe',
+    currency: 'Währung',
+    bundlePreviewLine: 'Je {trigger} {scope} kosten {price} {cur} (die Differenz sparst du).',
+    bundleSummary: '{n} {scope} für {price} {cur}',
+  },
 }
 
 const translations: Record<Locale, typeof en> = { en, de }
@@ -861,14 +933,16 @@ export function useLocale() {
     if (import.meta.client) localStorage.setItem('locale', l)
   }
 
-  function t(path: string): string {
+  function t(path: string, vars?: Record<string, string | number>): string {
     const keys = path.split('.')
     let val: unknown = translations[locale.value]
     for (const k of keys) {
       if (val && typeof val === 'object') val = (val as Record<string, unknown>)[k]
       else return path
     }
-    return typeof val === 'string' ? val : path
+    if (typeof val !== 'string') return path
+    if (!vars) return val
+    return val.replace(/\{(\w+)\}/g, (_, k) => (k in vars ? String(vars[k]) : `{${k}}`))
   }
 
   return { locale, setLocale, t }

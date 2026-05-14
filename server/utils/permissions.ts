@@ -9,6 +9,7 @@ import {
   catalogImages,
   products,
   boothPricePresets,
+  boothDiscounts,
   eventShares,
   eventGroupShares,
   groupMembers,
@@ -120,6 +121,17 @@ export async function requireEventEdit(event: H3Event, eventId: string): Promise
   return user
 }
 
+// Marking a product for a person is a softer permission than editing the
+// event: any logged-in user who can VIEW the event may mark a product for
+// their own person. This lets view-share collaborators tick "I want this"
+// without earning edit rights.
+export async function requireEventMark(event: H3Event, eventId: string): Promise<User> {
+  const user = await requireUser(event)
+  const ok = await canViewEvent(user, eventId)
+  if (!ok) throw createError({ statusCode: 403, message: 'Forbidden' })
+  return user
+}
+
 // ── Resource → event lookup helpers ─────────────────────────────────────────
 // Each returns the eventId that owns the given resource, or null if the
 // resource doesn't exist. Used by mutation endpoints to gate access.
@@ -173,6 +185,18 @@ export async function eventIdForPreset(presetId: string): Promise<string | null>
     .innerJoin(booths, eq(boothPricePresets.boothId, booths.id))
     .innerJoin(locations, eq(booths.locationId, locations.id))
     .where(eq(boothPricePresets.id, presetId))
+    .get()
+  return row?.eventId ?? null
+}
+
+export async function eventIdForDiscount(discountId: string): Promise<string | null> {
+  const db = useDb()
+  const row = await db
+    .select({ eventId: locations.eventId })
+    .from(boothDiscounts)
+    .innerJoin(booths, eq(boothDiscounts.boothId, booths.id))
+    .innerJoin(locations, eq(booths.locationId, locations.id))
+    .where(eq(boothDiscounts.id, discountId))
     .get()
   return row?.eventId ?? null
 }

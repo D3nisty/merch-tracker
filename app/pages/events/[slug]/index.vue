@@ -31,11 +31,14 @@ const canShare = computed(() =>
   authStore.isAdmin || event.value?.ownerId === authStore.user?.id,
 )
 
-// Totals — article-aware, filtered by selected person
+// Totals — article-aware, filtered by selected person. Planned/paid amounts
+// already have discount savings subtracted; `savingsEntries` exposes the
+// dollar-value saved so the UI can show a green "− X saved" caption.
 const pid = computed(() => personsStore.currentPersonId)
 const itemStats = computed(() => store.getItemStats(pid.value))
-const plannedEntries = computed(() => Object.entries(store.getPlannedCostByCurrency(pid.value)))
-const paidEntries = computed(() => Object.entries(store.getPaidCostByCurrency(pid.value)))
+const plannedEntries = computed(() => Object.entries(store.getPlannedCostByCurrency(pid.value)).filter(([, v]) => Math.abs(v) > 0.005))
+const paidEntries = computed(() => Object.entries(store.getPaidCostByCurrency(pid.value)).filter(([, v]) => Math.abs(v) > 0.005))
+const savingsEntries = computed(() => Object.entries(store.getDiscountSavingsByCurrency(pid.value)).filter(([, v]) => Math.abs(v) > 0.005))
 
 async function handleDeleteLocation() {
   if (!deleteLocationId.value) return
@@ -155,6 +158,12 @@ function locationIcon(type: Location['type']) {
         </div>
         <div v-else class="text-xl font-bold text-yellow-400">—</div>
         <div class="text-xs text-gray-400 mt-1">{{ t('event.plannedBudget') }}</div>
+        <div v-if="savingsEntries.length" class="text-xs text-green-400 mt-1">
+          <span v-for="([cur, amt], i) in savingsEntries" :key="cur">
+            <span v-if="i > 0" class="text-gray-600"> · </span>− {{ amt.toFixed(2) }} {{ cur }}
+          </span>
+          {{ t('discount.saved') }}
+        </div>
       </UCard>
       <UCard v-if="authStore.isEditing" class="text-center p-4">
         <div v-if="paidEntries.length" class="font-bold text-green-400 leading-snug">

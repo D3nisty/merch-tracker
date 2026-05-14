@@ -194,3 +194,43 @@ export type CatalogImage = typeof catalogImages.$inferSelect
 export type NewCatalogImage = typeof catalogImages.$inferInsert
 export type Product = typeof products.$inferSelect
 export type NewProduct = typeof products.$inferInsert
+
+// Per-person mark on a product: each person independently tracks whether
+// they plan to buy it / have bought it. Multiple persons can mark the same
+// product without owning the catalog rectangle.
+export const productPersonMarks = sqliteTable('product_person_marks', {
+  id: text('id').primaryKey(),
+  productId: text('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  personId: text('person_id').notNull().references(() => persons.id, { onDelete: 'cascade' }),
+  isPlanned: integer('is_planned', { mode: 'boolean' }).notNull().default(false),
+  isPurchased: integer('is_purchased', { mode: 'boolean' }).notNull().default(false),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+// Booth-level discount rules. Two shapes, distinguished by `type`:
+//   - 'buy_get_free': every batch of `triggerQty` matching units, the cheapest
+//     `freeQty` go free. e.g. triggerQty=3, freeQty=1 → "buy 2, get 3rd free".
+//   - 'bundle': every batch of `triggerQty` matching units is charged a flat
+//     `bundlePrice` (in `bundleCurrency`) instead of the sum of unit prices.
+//     Only matches products priced in the same currency. e.g. triggerQty=3,
+//     bundlePrice=40, bundleCurrency='EUR' → "3 keychains for €40 (save €5)".
+// scopeType + scopeValue narrows the matching products inside the booth.
+export const boothDiscounts = sqliteTable('booth_discounts', {
+  id: text('id').primaryKey(),
+  boothId: text('booth_id').notNull().references(() => booths.id, { onDelete: 'cascade' }),
+  label: text('label').notNull(),
+  scopeType: text('scope_type').notNull(), // 'size' | 'category'
+  scopeValue: text('scope_value').notNull(),
+  type: text('type').notNull().default('buy_get_free'), // 'buy_get_free' | 'bundle'
+  triggerQty: integer('trigger_qty').notNull(),
+  freeQty: integer('free_qty'),               // required for 'buy_get_free'
+  bundlePrice: real('bundle_price'),          // required for 'bundle'
+  bundleCurrency: text('bundle_currency'),    // required for 'bundle'
+  createdAt: text('created_at').notNull(),
+})
+
+export type ProductPersonMark = typeof productPersonMarks.$inferSelect
+export type NewProductPersonMark = typeof productPersonMarks.$inferInsert
+export type BoothDiscount = typeof boothDiscounts.$inferSelect
+export type NewBoothDiscount = typeof boothDiscounts.$inferInsert

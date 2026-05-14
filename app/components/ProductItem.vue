@@ -25,6 +25,19 @@ const person = computed(() =>
   props.product.personId ? personsStore.persons.find(p => p.id === props.product.personId) : null,
 )
 
+// The viewer's own person id (server-stamped on the event response).
+const viewerPersonId = computed(() => store.currentEvent?.viewerPersonId ?? null)
+
+// Other persons who have planned or purchased this item (excluding the
+// viewer's own person — that's the checkbox).
+const otherMarkers = computed(() => {
+  const marks = props.product.marks ?? []
+  return marks
+    .filter(m => m.personId !== viewerPersonId.value && (m.isPlanned || m.isPurchased))
+    .map(m => ({ mark: m, person: personsStore.persons.find(p => p.id === m.personId) }))
+    .filter((x): x is { mark: typeof x.mark; person: NonNullable<typeof x.person> } => !!x.person)
+})
+
 const COLOR_MAP: Record<string, string> = {
   purple: 'bg-purple-500',
   blue: 'bg-blue-500',
@@ -41,6 +54,10 @@ const priorityColors: Record<number, string> = {
   1: 'border-l-2 border-l-yellow-500',
   2: 'border-l-2 border-l-red-500',
 }
+
+// Any logged-in viewer with a person can mark for themselves — view-share
+// users included. Guests (no session) still see a disabled checkbox.
+const canMark = computed(() => authStore.isLoggedIn && !!viewerPersonId.value)
 </script>
 
 <template>
@@ -52,18 +69,31 @@ const priorityColors: Record<number, string> = {
   >
     <UCheckbox
       :model-value="product.isPurchased"
-      :disabled="!authStore.isEditing"
-      @change="authStore.isEditing && emit('toggle')"
+      :disabled="!canMark"
+      @change="canMark && emit('toggle')"
     />
 
     <div class="flex-1 min-w-0">
-      <div class="flex items-center gap-2">
-        <!-- Person dot (hidden for guests) -->
+      <div class="flex items-center gap-2 flex-wrap">
+        <!-- Creator dot (hidden for guests) -->
         <span
           v-if="person && authStore.isEditing"
           :class="['w-2.5 h-2.5 rounded-full shrink-0', COLOR_MAP[person.color] ?? 'bg-purple-500']"
           :title="person.name"
         />
+        <!-- Other-person marks: small dot per person who's planned/purchased -->
+        <span v-if="otherMarkers.length && authStore.isLoggedIn" class="flex items-center gap-0.5 shrink-0">
+          <span
+            v-for="m in otherMarkers"
+            :key="m.mark.personId"
+            :class="[
+              'w-2 h-2 rounded-full',
+              COLOR_MAP[m.person.color] ?? 'bg-purple-500',
+              m.mark.isPurchased ? 'ring-1 ring-green-400' : '',
+            ]"
+            :title="`${m.person.name}${m.mark.isPurchased ? ' · purchased' : ' · planned'}`"
+          />
+        </span>
         <span :class="['font-medium text-sm', product.isPurchased ? 'line-through text-gray-500' : 'text-white']">
           {{ product.name }}
         </span>

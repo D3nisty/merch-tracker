@@ -3,7 +3,7 @@ import { useEventsStore } from '~/stores/events'
 import { useAuthStore } from '~/stores/auth'
 import { usePersonsStore } from '~/stores/persons'
 import { useLocale } from '~/composables/useLocale'
-import type { Booth, Product, CatalogImage, BoothPreset } from '~/stores/events'
+import type { Booth, Product, CatalogImage, BoothPreset, BoothDiscount } from '~/stores/events'
 
 const route = useRoute()
 const store = useEventsStore()
@@ -68,43 +68,244 @@ async function deletePreset(id: string) {
 
 onMounted(loadPresets)
 
+// ── Discounts ─────────────────────────────────────────────────────────
+const DISCOUNT_CURRENCIES = ['EUR', 'JPY', 'USD', 'GBP', 'CHF', 'KRW']
+const showDiscountModal = ref(false)
+const editingDiscountId = ref<string | null>(null)
+type DiscountFormShape = {
+  label: string
+  scopeType: 'size' | 'category'
+  scopeValue: string
+  type: 'buy_get_free' | 'bundle'
+  triggerQty: number
+  freeQty: number
+  bundlePrice: number
+  bundleCurrency: string
+}
+const discountForm = reactive<DiscountFormShape>({
+  label: '', scopeType: 'size', scopeValue: '',
+  type: 'buy_get_free',
+  triggerQty: 3, freeQty: 1,
+  bundlePrice: 0, bundleCurrency: 'EUR',
+})
+const discountSavingsLabel = computed(() => formatCostMap(boothSavings.value))
+
+function openCreateDiscount() {
+  editingDiscountId.value = null
+  Object.assign(discountForm, {
+    label: '', scopeType: 'size', scopeValue: '',
+    type: 'buy_get_free',
+    triggerQty: 3, freeQty: 1,
+    bundlePrice: 0, bundleCurrency: 'EUR',
+  })
+  cancelAddCustomScope()
+  showDiscountModal.value = true
+}
+function openEditDiscount(d: BoothDiscount) {
+  editingDiscountId.value = d.id
+  Object.assign(discountForm, {
+    label: d.label, scopeType: d.scopeType, scopeValue: d.scopeValue,
+    type: d.type,
+    triggerQty: d.triggerQty,
+    freeQty: d.freeQty ?? 1,
+    bundlePrice: d.bundlePrice ?? 0,
+    bundleCurrency: d.bundleCurrency ?? 'EUR',
+  })
+  cancelAddCustomScope()
+  // If the discount's scopeValue isn't in the defaults or already used on the
+  // booth (e.g. the original product was deleted), stash it as a custom entry
+  // so its pill stays visible and pre-selected when the modal opens.
+  if (d.scopeValue) {
+    const defaults = d.scopeType === 'size' ? DEFAULT_DISCOUNT_SIZES : DEFAULT_DISCOUNT_CATS
+    const used = d.scopeType === 'size' ? boothSizes.value : boothCategories.value
+    if (!defaults.includes(d.scopeValue) && !used.includes(d.scopeValue)) {
+      const target = d.scopeType === 'size' ? customSizes : customCategories
+      if (!target.value.includes(d.scopeValue)) target.value.push(d.scopeValue)
+    }
+  }
+  showDiscountModal.value = true
+}
+const discountFormValid = computed(() => {
+  if (!discountForm.label.trim() || !discountForm.scopeValue.trim()) return false
+  if (discountForm.triggerQty < 2) return false
+  if (discountForm.type === 'buy_get_free') {
+    return discountForm.freeQty >= 1 && discountForm.freeQty < discountForm.triggerQty
+  }
+  return discountForm.bundlePrice >= 0 && !!discountForm.bundleCurrency
+})
+async function saveDiscount() {
+  if (!booth.value || !discountFormValid.value) return
+  const payload = discountForm.type === 'buy_get_free'
+    ? {
+        label: discountForm.label,
+        scopeType: discountForm.scopeType,
+        scopeValue: discountForm.scopeValue,
+        type: 'buy_get_free' as const,
+        triggerQty: discountForm.triggerQty,
+        freeQty: discountForm.freeQty,
+      }
+    : {
+        label: discountForm.label,
+        scopeType: discountForm.scopeType,
+        scopeValue: discountForm.scopeValue,
+        type: 'bundle' as const,
+        triggerQty: discountForm.triggerQty,
+        bundlePrice: discountForm.bundlePrice,
+        bundleCurrency: discountForm.bundleCurrency,
+      }
+  if (editingDiscountId.value) {
+    await store.updateDiscount(editingDiscountId.value, payload as Partial<BoothDiscount>)
+  } else {
+    await store.createDiscount(booth.value.id, payload as Omit<BoothDiscount, 'id' | 'boothId' | 'createdAt'>)
+  }
+  showDiscountModal.value = false
+}
+async function deleteDiscount(id: string) {
+  if (!confirm(t('discount.confirmDelete'))) return
+  await store.deleteDiscount(id)
+}
+
+// Pill-chip pickers for size + category (mirrors the Quick Add form in the
+// catalog viewer). The pool is: DEFAULT_SIZES / DEFAULT_CATS  ∪  values
+// already used on this booth's products  ∪  values already used on the
+// booth's discounts  ∪  session-only custom additions via the "+" pill.
+const DEFAULT_DISCOUNT_SIZES = ['A6', 'A5', 'A4', 'A3', 'A2', 'B2', 'B3', '90×50cm', '40×23.5cm', '25cm', '20cm', '15cm', '10cm']
+const DEFAULT_DISCOUNT_CATS = ['Print', 'Keychain', 'Sticker', 'Acrylic Figure', 'Figure', 'Mousepad', 'Shirt', 'Pin', 'Plush', 'Other']
+const customSizes = ref<string[]>([])
+const customCategories = ref<string[]>([])
+
+function uniqueOrdered(...lists: string[][]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const list of lists) for (const v of list) {
+    if (v && !seen.has(v)) { seen.add(v); out.push(v) }
+  }
+  return out
+}
+
+const boothSizes = computed(() => {
+  const used: string[] = []
+  for (const p of booth.value?.products ?? []) if (p.size) used.push(p.size)
+  for (const d of booth.value?.discounts ?? []) if (d.scopeType === 'size' && d.scopeValue) used.push(d.scopeValue)
+  return used
+})
+const boothCategories = computed(() => {
+  const used: string[] = []
+  for (const p of booth.value?.products ?? []) if (p.category) used.push(p.category)
+  for (const d of booth.value?.discounts ?? []) if (d.scopeType === 'category' && d.scopeValue) used.push(d.scopeValue)
+  return used
+})
+const sizePills = computed(() => uniqueOrdered(DEFAULT_DISCOUNT_SIZES, boothSizes.value, customSizes.value))
+const categoryPills = computed(() => uniqueOrdered(DEFAULT_DISCOUNT_CATS, boothCategories.value, customCategories.value))
+
+// Inline "+" add-custom mode for the active pill row.
+const addingCustomScope = ref(false)
+const customScopeDraft = ref('')
+function startAddCustomScope() {
+  customScopeDraft.value = ''
+  addingCustomScope.value = true
+}
+function cancelAddCustomScope() {
+  addingCustomScope.value = false
+  customScopeDraft.value = ''
+}
+function commitCustomScope() {
+  const v = customScopeDraft.value.trim()
+  addingCustomScope.value = false
+  customScopeDraft.value = ''
+  if (!v) return
+  if (discountForm.scopeType === 'size') {
+    if (!sizePills.value.includes(v)) customSizes.value.push(v)
+  } else {
+    if (!categoryPills.value.includes(v)) customCategories.value.push(v)
+  }
+  discountForm.scopeValue = v
+}
+function pickScopePill(v: string) {
+  // Toggle: clicking the selected pill deselects.
+  discountForm.scopeValue = discountForm.scopeValue === v ? '' : v
+}
+
+// Switching scope type cancels any half-typed custom value and clears the
+// selection if it doesn't exist in the new pill list.
+watch(() => discountForm.scopeType, () => {
+  cancelAddCustomScope()
+  const list = discountForm.scopeType === 'size' ? sizePills.value : categoryPills.value
+  if (discountForm.scopeValue && !list.includes(discountForm.scopeValue)) {
+    discountForm.scopeValue = ''
+  }
+})
+
 function confirmDeleteProduct(id: string) {
   deleteProductId.value = id
   showDeleteProductModal.value = true
 }
 
 function formatCostMap(map: Record<string, number>) {
-  const entries = Object.entries(map)
+  const entries = Object.entries(map).filter(([, v]) => Math.abs(v) > 0.005)
   if (!entries.length) return null
   return entries.map(([cur, amt]) => `${amt.toFixed(2)} ${cur}`).join(' · ')
 }
 
+// Multi-person aware booth total. Each (product, person-who-marked) pair
+// counts one unit of the product's price × quantity. For article galleries,
+// only the WINNING source per person is counted (planned > paid).
 function buildCostMap(products: Product[], images: CatalogImage[], paidOnly: boolean) {
   const map: Record<string, number> = {}
-  const countedArticles = new Set<string>()
+  // For articles, gather { imgId → personId → winning-product-id }
+  const articleWinners = new Map<string, Map<string, string>>()
+  for (const img of images) {
+    if (img.imageType !== 'article') continue
+    const articleProducts = products.filter(q => q.catalogImageId === img.id && q.price)
+    const winnersForImg = new Map<string, string>()
+    const personIds = new Set<string>()
+    for (const q of articleProducts) for (const m of (q.marks ?? [])) personIds.add(m.personId)
+    for (const pid of personIds) {
+      const winner = paidOnly
+        ? articleProducts.find(q => (q.marks ?? []).some(m => m.personId === pid && m.isPurchased))
+        : (articleProducts.find(q => (q.marks ?? []).some(m => m.personId === pid && m.isPlanned))
+           ?? articleProducts.find(q => (q.marks ?? []).some(m => m.personId === pid && m.isPurchased)))
+      if (winner) winnersForImg.set(pid, winner.id)
+    }
+    articleWinners.set(img.id, winnersForImg)
+  }
   for (const p of products) {
     if (!p.price) continue
-    if (paidOnly && !p.isPurchased) continue
+    const marks = p.marks ?? []
     const img = images.find(i => i.id === p.catalogImageId)
+    let countingPersons = 0
     if (img?.imageType === 'article') {
-      if (paidOnly) {
-        if (!p.isPurchased) continue
-      } else {
-        if (countedArticles.has(img.id)) continue
-        if (!p.isPlanned && !p.isPurchased) continue
-        countedArticles.add(img.id)
+      const winners = articleWinners.get(img.id)
+      if (!winners) continue
+      for (const [pid, winnerId] of winners) {
+        if (winnerId !== p.id) continue
+        const mark = marks.find(m => m.personId === pid)
+        if (!mark) continue
+        if (paidOnly ? mark.isPurchased : (mark.isPlanned || mark.isPurchased)) countingPersons++
+      }
+    } else {
+      for (const m of marks) {
+        if (paidOnly ? m.isPurchased : (m.isPlanned || m.isPurchased)) countingPersons++
       }
     }
+    if (!countingPersons) continue
     const cur = p.currency || 'EUR'
-    map[cur] = (map[cur] ?? 0) + p.price * p.quantity
+    map[cur] = (map[cur] ?? 0) + p.price * p.quantity * countingPersons
   }
   return map
 }
 
-const costByCurrency = computed(() =>
-  buildCostMap(booth.value?.products ?? [], booth.value?.images ?? [], false))
+const costByCurrency = computed(() => {
+  const raw = buildCostMap(booth.value?.products ?? [], booth.value?.images ?? [], false)
+  const savings = booth.value ? store.getBoothSavingsByCurrency(booth.value.id, null) : {}
+  const out: Record<string, number> = { ...raw }
+  for (const [cur, s] of Object.entries(savings)) out[cur] = (out[cur] ?? 0) - s
+  return out
+})
 const purchasedByCurrency = computed(() =>
   buildCostMap(booth.value?.products ?? [], booth.value?.images ?? [], true))
+const boothSavings = computed(() =>
+  booth.value ? store.getBoothSavingsByCurrency(booth.value.id, null) : {})
 
 async function handleToggle(product: Product) {
   await store.togglePurchased(product)
@@ -312,6 +513,62 @@ const personBreakdown = computed(() => {
       </div>
     </div>
 
+    <!-- Discounts -->
+    <div v-if="(booth.discounts?.length ?? 0) > 0 || authStore.isEditing" class="mb-6">
+      <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+        <h3 class="text-sm font-semibold text-gray-400 flex items-center gap-2">
+          <UIcon name="i-heroicons-tag" class="w-4 h-4" />
+          {{ t('discount.title') }}
+          <span v-if="discountSavingsLabel" class="text-xs text-green-400 font-normal">
+            − {{ discountSavingsLabel }} {{ t('discount.saved') }}
+          </span>
+        </h3>
+        <UButton
+          v-if="authStore.isEditing"
+          icon="i-heroicons-plus"
+          variant="ghost"
+          color="gray"
+          size="xs"
+          @click="openCreateDiscount"
+        >
+          {{ t('discount.add') }}
+        </UButton>
+      </div>
+      <div v-if="(booth.discounts?.length ?? 0) > 0" class="flex flex-wrap gap-2">
+        <div
+          v-for="d in booth.discounts"
+          :key="d.id"
+          class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-gray-900 border border-gray-700 text-sm group"
+        >
+          <UIcon name="i-heroicons-tag" class="w-3.5 h-3.5 text-green-400 shrink-0" />
+          <span class="text-gray-200">{{ d.label }}</span>
+          <span v-if="d.type === 'bundle'" class="text-xs text-gray-500">
+            ({{ t('discount.bundleSummary', { n: d.triggerQty, price: d.bundlePrice?.toFixed(2) ?? '0.00', cur: d.bundleCurrency ?? '', scope: d.scopeValue }) }})
+          </span>
+          <span v-else class="text-xs text-gray-500">
+            ({{ t('discount.buyN', { n: d.triggerQty - (d.freeQty ?? 0) }) }} {{ d.scopeValue }} {{ t('discount.getM', { m: d.freeQty ?? 0 }) }})
+          </span>
+          <template v-if="authStore.isEditing">
+            <button
+              class="text-gray-500 hover:text-purple-400 opacity-0 group-hover:opacity-100 transition-opacity"
+              :title="t('common.edit')"
+              @click="openEditDiscount(d)"
+            >
+              <UIcon name="i-heroicons-pencil-square" class="w-3.5 h-3.5" />
+            </button>
+            <button
+              class="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+              :title="t('common.delete')"
+              @click="deleteDiscount(d.id)"
+            >
+              <UIcon name="i-heroicons-trash" class="w-3.5 h-3.5" />
+            </button>
+          </template>
+        </div>
+      </div>
+      <p v-else-if="authStore.isEditing" class="text-xs text-gray-600">{{ t('discount.empty') }}</p>
+    </div>
+
     <!-- Per-person breakdown -->
     <div v-if="personBreakdown.length > 1" class="mb-6 p-4 rounded-xl bg-gray-900 border border-gray-800">
       <h3 class="text-sm font-semibold text-gray-400 mb-3">{{ t('booth.costByPerson') }}</h3>
@@ -410,6 +667,169 @@ const personBreakdown = computed(() => {
           <div class="flex gap-2 justify-end">
             <UButton variant="ghost" color="gray" @click="showDeleteProductModal = false">{{ t('common.cancel') }}</UButton>
             <UButton color="red" @click="handleDeleteProduct">{{ t('common.delete') }}</UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
+
+    <UModal v-model="showDiscountModal" :ui="{ width: 'sm:max-w-md' }">
+      <UCard>
+        <template #header>
+          <h3 class="font-semibold text-white">
+            {{ editingDiscountId ? t('discount.edit') : t('discount.add') }}
+          </h3>
+        </template>
+        <div class="space-y-3">
+          <UFormGroup :label="t('discount.label')">
+            <UInput v-model="discountForm.label" :placeholder="t('discount.labelPlaceholder')" autofocus />
+          </UFormGroup>
+
+          <!-- Discount type picker -->
+          <UFormGroup :label="t('discount.kind')">
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                :class="[
+                  'p-2 rounded border text-left text-sm transition-colors',
+                  discountForm.type === 'buy_get_free'
+                    ? 'border-purple-500 bg-purple-600/20 text-white'
+                    : 'border-gray-700 bg-gray-900 text-gray-400 hover:border-gray-500',
+                ]"
+                @click="discountForm.type = 'buy_get_free'"
+              >
+                <div class="font-medium">{{ t('discount.kindFree') }}</div>
+                <div class="text-xs opacity-70 mt-0.5">{{ t('discount.kindFreeHint') }}</div>
+              </button>
+              <button
+                type="button"
+                :class="[
+                  'p-2 rounded border text-left text-sm transition-colors',
+                  discountForm.type === 'bundle'
+                    ? 'border-purple-500 bg-purple-600/20 text-white'
+                    : 'border-gray-700 bg-gray-900 text-gray-400 hover:border-gray-500',
+                ]"
+                @click="discountForm.type = 'bundle'"
+              >
+                <div class="font-medium">{{ t('discount.kindBundle') }}</div>
+                <div class="text-xs opacity-70 mt-0.5">{{ t('discount.kindBundleHint') }}</div>
+              </button>
+            </div>
+          </UFormGroup>
+
+          <UFormGroup :label="t('discount.scope')">
+            <USelect
+              v-model="discountForm.scopeType"
+              :options="[{ value: 'size', label: t('discount.byScopeSize') }, { value: 'category', label: t('discount.byScopeCategory') }]"
+              option-attribute="label"
+              value-attribute="value"
+            />
+          </UFormGroup>
+
+          <!-- Scope value: pill-chip picker (mirrors Quick Add). Single-select
+               — clicking the active pill deselects. "+" opens an inline input. -->
+          <UFormGroup :label="discountForm.scopeType === 'size' ? t('discount.size') : t('discount.category')">
+            <div v-if="discountForm.scopeType === 'size'" class="flex flex-wrap gap-1 items-center">
+              <button
+                v-for="s in sizePills" :key="s" type="button"
+                class="px-2 py-1 text-xs rounded border transition-colors"
+                :class="discountForm.scopeValue === s ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'"
+                @click="pickScopePill(s)"
+              >{{ s }}</button>
+              <template v-if="addingCustomScope">
+                <UInput
+                  v-model="customScopeDraft" :placeholder="t('catalog.addCustomSize')"
+                  size="xs" class="w-24" autofocus
+                  @keyup.enter="commitCustomScope" @keyup.escape="cancelAddCustomScope"
+                />
+                <button type="button" class="px-1 text-xs text-gray-400 hover:text-white" @click="cancelAddCustomScope">✕</button>
+              </template>
+              <button
+                v-else type="button" :title="t('catalog.addCustomSize')"
+                class="px-2 py-1 text-xs rounded border border-dashed border-gray-600 text-gray-500 hover:border-purple-500 hover:text-purple-300 transition-colors"
+                @click="startAddCustomScope"
+              >+</button>
+            </div>
+            <div v-else class="flex flex-wrap gap-1 items-center">
+              <button
+                v-for="c in categoryPills" :key="c" type="button"
+                class="px-1.5 py-0.5 text-xs rounded border transition-colors"
+                :class="discountForm.scopeValue === c ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'"
+                @click="pickScopePill(c)"
+              >{{ c }}</button>
+              <template v-if="addingCustomScope">
+                <UInput
+                  v-model="customScopeDraft" :placeholder="t('catalog.addCustomCategory')"
+                  size="xs" class="w-28" autofocus
+                  @keyup.enter="commitCustomScope" @keyup.escape="cancelAddCustomScope"
+                />
+                <button type="button" class="px-1 text-xs text-gray-400 hover:text-white" @click="cancelAddCustomScope">✕</button>
+              </template>
+              <button
+                v-else type="button" :title="t('catalog.addCustomCategory')"
+                class="px-1.5 py-0.5 text-xs rounded border border-dashed border-gray-600 text-gray-500 hover:border-purple-500 hover:text-purple-300 transition-colors"
+                @click="startAddCustomScope"
+              >+</button>
+            </div>
+          </UFormGroup>
+
+          <!-- buy_get_free fields -->
+          <div v-if="discountForm.type === 'buy_get_free'" class="grid grid-cols-2 gap-3">
+            <UFormGroup :label="t('discount.triggerQty')" :help="t('discount.triggerHelp')">
+              <UInput v-model.number="discountForm.triggerQty" type="number" min="2" max="20" />
+            </UFormGroup>
+            <UFormGroup :label="t('discount.freeQty')" :help="t('discount.freeHelp')">
+              <UInput v-model.number="discountForm.freeQty" type="number" min="1" :max="discountForm.triggerQty - 1" />
+            </UFormGroup>
+          </div>
+
+          <!-- bundle fields -->
+          <div v-else class="grid grid-cols-3 gap-3">
+            <UFormGroup :label="t('discount.bundleTriggerQty')" :help="t('discount.bundleTriggerHelp')">
+              <UInput v-model.number="discountForm.triggerQty" type="number" min="2" max="20" />
+            </UFormGroup>
+            <UFormGroup :label="t('discount.bundlePrice')" :help="t('discount.bundlePriceHelp')">
+              <UInput v-model.number="discountForm.bundlePrice" type="number" step="0.01" min="0" />
+            </UFormGroup>
+            <UFormGroup :label="t('discount.currency')">
+              <USelect
+                v-model="discountForm.bundleCurrency"
+                :options="DISCOUNT_CURRENCIES.map(c => ({ value: c, label: c }))"
+                option-attribute="label"
+                value-attribute="value"
+              />
+            </UFormGroup>
+          </div>
+
+          <div class="text-xs text-gray-400 px-2 py-1.5 rounded bg-gray-900/60 border border-gray-800">
+            <UIcon name="i-heroicons-information-circle" class="w-3.5 h-3.5 inline mr-1" />
+            <span v-if="discountForm.type === 'buy_get_free'">
+              {{ t('discount.previewLine', {
+                  pay: Math.max(0, discountForm.triggerQty - discountForm.freeQty),
+                  trigger: discountForm.triggerQty,
+                  free: discountForm.freeQty,
+                  scope: discountForm.scopeValue || (discountForm.scopeType === 'size' ? t('discount.size') : t('discount.category')),
+                }) }}
+            </span>
+            <span v-else>
+              {{ t('discount.bundlePreviewLine', {
+                  trigger: discountForm.triggerQty,
+                  price: Number(discountForm.bundlePrice || 0).toFixed(2),
+                  cur: discountForm.bundleCurrency,
+                  scope: discountForm.scopeValue || (discountForm.scopeType === 'size' ? t('discount.size') : t('discount.category')),
+                }) }}
+            </span>
+          </div>
+        </div>
+        <template #footer>
+          <div class="flex gap-2 justify-end">
+            <UButton variant="ghost" color="gray" @click="showDiscountModal = false">{{ t('common.cancel') }}</UButton>
+            <UButton
+              color="purple"
+              :disabled="!discountFormValid"
+              @click="saveDiscount"
+            >
+              {{ t('common.save') }}
+            </UButton>
           </div>
         </template>
       </UCard>

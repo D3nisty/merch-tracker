@@ -614,28 +614,32 @@ async function saveSource() {
   Object.assign(sourceForm, { name: '', price: '', currency: 'EUR', website: '', notes: '', personId: defaultPersonId() })
 }
 
+// markAsPaid / markAsPlanned route through the per-person marks endpoint so
+// each viewer has their own "winning source" for an article. The "only one
+// at a time" rule applies per-viewer, not globally — two people can plan
+// different sources for the same article without stepping on each other.
 async function markAsPaid(product: Product) {
   if (product.isPurchased) {
-    await store.updateProduct(product.id, { isPurchased: false })
+    await store.setMark(product.id, { isPurchased: false })
     return
   }
   const currentPaid = props.products.find(p => p.isPurchased && p.id !== product.id)
   if (currentPaid) {
-    await store.updateProduct(currentPaid.id, { isPurchased: false })
+    await store.setMark(currentPaid.id, { isPurchased: false })
   }
-  await store.updateProduct(product.id, { isPurchased: true })
+  await store.setMark(product.id, { isPurchased: true })
 }
 
 async function markAsPlanned(product: Product) {
   if (product.isPlanned) {
-    await store.updateProduct(product.id, { isPlanned: false })
+    await store.setMark(product.id, { isPlanned: false })
     return
   }
   const currentPlanned = props.products.find(p => p.isPlanned && p.id !== product.id)
   if (currentPlanned) {
-    await store.updateProduct(currentPlanned.id, { isPlanned: false })
+    await store.setMark(currentPlanned.id, { isPlanned: false })
   }
-  await store.updateProduct(product.id, { isPlanned: true })
+  await store.setMark(product.id, { isPlanned: true })
 }
 
 const paidSource = computed(() => props.products.find(p => p.isPurchased))
