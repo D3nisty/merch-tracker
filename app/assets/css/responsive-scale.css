@@ -1,0 +1,24 @@
+/*
+ * Responsive base font scaling.
+ *
+ * The mobile design is the primary target and assumes a 16px root, so phones
+ * and tablets stay untouched. On wider screens (laptops and desktops) the
+ * base font-size scales up smoothly — because Tailwind's spacing / sizing
+ * utilities (text-*, p-*, gap-*, w-*, etc.) are rem-based, EVERYTHING scales
+ * together. Visually equivalent to the user manually bumping the browser
+ * zoom to ~125% on 1080p or ~150% on 1440p, but without forcing them to do
+ * so per machine.
+ *
+ * The clamp() avoids a hard step at a breakpoint — it interpolates linearly
+ * between min and max as the viewport widens. At 1024px viewport we still
+ * resolve to the 16px floor; the curve really kicks in past ~1280px.
+ */
+@media (min-width: 1024px) {
+  html {
+    /* 16px floor (mobile-like density), 24px ceiling (4K-ish). Slope picked
+       so 1080p ≈ 21-22px, 1440p ≈ 23px, anything past ~2400px stays clamped
+       at 24px. Bumped one notch from the first pass (was 22px ceiling) so
+       wide-screen density feels a bit more comfortable. */
+    font-size: clamp(16px, 0.5vw + 12px, 24px);
+  }
+}

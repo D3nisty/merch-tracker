@@ -22,6 +22,11 @@ export default defineNuxtConfig({
     // hardcoded dark-mode utility classes; this stylesheet remaps them to
     // light equivalents when the `dark` class is absent from <html>.
     '~/assets/css/light-mode.css',
+    // Scales the root font-size up on wide screens so rem-based Tailwind
+    // utilities (text, spacing, sizing) all grow together — equivalent to a
+    // built-in 125-150% browser zoom on big displays. Mobile/tablet keep
+    // the 16px default.
+    '~/assets/css/responsive-scale.css',
   ],
 
   runtimeConfig: {
