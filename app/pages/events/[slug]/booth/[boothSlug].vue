@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import draggable from 'vuedraggable'
 import { useEventsStore } from '~/stores/events'
 import { useAuthStore } from '~/stores/auth'
 import { usePersonsStore } from '~/stores/persons'
@@ -409,20 +410,43 @@ const groupedByImage = computed(() => {
   return groups
 })
 
-async function moveImage(imageId: string, direction: 'up' | 'down') {
-  const images = sortedImages.value
-  const idx = images.findIndex(i => i.id === imageId)
-  if (idx === -1) return
-  const swapIdx = direction === 'up' ? idx - 1 : idx + 1
-  if (swapIdx < 0 || swapIdx >= images.length) return
-  const orders = images.map((_, i) => i * 10)
-  const tmp = orders[idx]
-  orders[idx] = orders[swapIdx]
-  orders[swapIdx] = tmp
-  await Promise.all([
-    store.updateImage(images[idx].id, { sortOrder: orders[idx] }),
-    store.updateImage(images[swapIdx].id, { sortOrder: orders[swapIdx] }),
-  ])
+// vuedraggable splices into the array bound via `:list`, but computeds return
+// a fresh array each call so the splice would be on a throwaway. We mirror
+// `filteredImages` into a real ref and let vuedraggable mutate THAT in place;
+// a watcher keeps it in sync whenever the underlying data shifts (image
+// added/deleted, person filter switched, etc.).
+const draggableImages = ref<CatalogImage[]>([])
+watch(filteredImages, (fresh) => {
+  // Avoid clobbering the in-progress drag: if the IDs are already the same
+  // set in the same order, leave the array alone so we don't re-render the
+  // ghost element under the user's cursor.
+  const sameIds =
+    fresh.length === draggableImages.value.length &&
+    fresh.every((img, i) => draggableImages.value[i]?.id === img.id)
+  if (!sameIds) draggableImages.value = [...fresh]
+}, { immediate: true })
+
+async function onImagesDragEnd() {
+  if (!booth.value) return
+  // Reproject the visible drag back onto the full parent-image list. Hidden
+  // (person-filtered) images keep their original slots; visible slots get
+  // filled in order from `draggableImages`.
+  const allParents = sortedImages.value
+  const visibleIds = new Set(filteredImages.value.map(i => i.id))
+  let visIdx = 0
+  const newOrderedIds = allParents.map(img => {
+    if (visibleIds.has(img.id)) {
+      const next = draggableImages.value[visIdx]
+      visIdx++
+      return next?.id ?? img.id
+    }
+    return img.id
+  })
+  try {
+    await store.reorderImages(booth.value.id, newOrderedIds, route.params.slug as string)
+  } catch (e) {
+    console.error('Failed to save image order', e)
+  }
 }
 
 const COLOR_MAP: Record<string, string> = {
@@ -727,32 +751,41 @@ const personBreakdown = computed(() => {
         <span class="text-gray-600">({{ sortedImages.length - filteredImages.length }} {{ t('booth.hidden') }})</span>
       </div>
 
-      <div v-for="img in filteredImages" :key="img.id" class="relative group/img">
-        <!-- Reorder controls -->
-        <div v-if="canEdit && sortedImages.length > 1" class="absolute -left-8 top-2 flex flex-col gap-0.5 opacity-0 group-hover/img:opacity-100 transition-opacity z-10">
-          <button
-            :disabled="sortedImages.findIndex(i => i.id === img.id) === 0"
-            class="w-6 h-6 flex items-center justify-center rounded bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 disabled:opacity-20 disabled:cursor-not-allowed"
-            @click="moveImage(img.id, 'up')"
-          >
-            <UIcon name="i-heroicons-chevron-up" class="w-3.5 h-3.5" />
-          </button>
-          <button
-            :disabled="sortedImages.findIndex(i => i.id === img.id) === sortedImages.length - 1"
-            class="w-6 h-6 flex items-center justify-center rounded bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 disabled:opacity-20 disabled:cursor-not-allowed"
-            @click="moveImage(img.id, 'down')"
-          >
-            <UIcon name="i-heroicons-chevron-down" class="w-3.5 h-3.5" />
-          </button>
-        </div>
-        <CatalogImageViewer
-          :image="img"
-          :products="groupedByImage[img.id] ?? []"
-          :presets="presets"
-          :booth-products="img.imageType === 'receipt' ? booth.products : undefined"
-          :sub-images="img.imageType === 'article' ? subImagesFor(img.id) : undefined"
-        />
-      </div>
+      <draggable
+        :list="draggableImages"
+        item-key="id"
+        tag="div"
+        class="space-y-8"
+        handle=".image-drag-handle"
+        :animation="180"
+        :disabled="!canEdit || filteredImages.length < 2"
+        ghost-class="opacity-40"
+        drag-class="cursor-grabbing"
+        @end="onImagesDragEnd"
+      >
+        <template #item="{ element: img }">
+          <div class="relative group/img">
+            <!-- Drag handle (replaces the old chevron-up/down arrows). Only
+                 rendered when the user can edit and there's more than one
+                 image to reorder. -->
+            <button
+              v-if="canEdit && sortedImages.length > 1"
+              type="button"
+              class="image-drag-handle absolute -left-8 top-2 w-6 h-6 flex items-center justify-center rounded bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 cursor-grab active:cursor-grabbing touch-none opacity-70 hover:opacity-100 transition-opacity z-10"
+              :title="t('common.drag')"
+            >
+              <UIcon name="i-heroicons-bars-3" class="w-3.5 h-3.5" />
+            </button>
+            <CatalogImageViewer
+              :image="img"
+              :products="groupedByImage[img.id] ?? []"
+              :presets="presets"
+              :booth-products="img.imageType === 'receipt' ? booth.products : undefined"
+              :sub-images="img.imageType === 'article' ? subImagesFor(img.id) : undefined"
+            />
+          </div>
+        </template>
+      </draggable>
 
       <!-- Products not linked to any image -->
       <div v-if="(groupedByImage['none'] ?? []).length > 0 || booth.images?.length === 0">

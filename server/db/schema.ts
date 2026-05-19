@@ -96,6 +96,7 @@ export const locations = sqliteTable('locations', {
   notes: text('notes'),
   dateFrom: text('date_from'),
   dateTo: text('date_to'),
+  sortOrder: integer('sort_order').notNull().default(0),
   createdAt: text('created_at').notNull(),
 })
 
@@ -120,6 +121,7 @@ export const booths = sqliteTable('booths', {
   // card on the event dashboard AND in the booth detail page header so the
   // user can recognise an artist's branding at a glance.
   iconPath: text('icon_path'),
+  sortOrder: integer('sort_order').notNull().default(0),
   createdAt: text('created_at').notNull(),
 })
 

@@ -2,6 +2,7 @@ import { useDb } from '../../db'
 import { locations } from '../../db/schema'
 import { generateId, now } from '../../utils/id'
 import { requireEventEdit } from '../../utils/permissions'
+import { eq, sql } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
@@ -14,6 +15,11 @@ export default defineEventHandler(async (event) => {
   const db = useDb()
   const id = generateId()
 
+  // Append to the end of the event's location list.
+  const maxRow = db.select({ m: sql<number>`COALESCE(MAX(${locations.sortOrder}), -1)` })
+    .from(locations).where(eq(locations.eventId, body.eventId)).get()
+  const sortOrder = (maxRow?.m ?? -1) + 1
+
   const newLocation = {
     id,
     eventId: body.eventId,
@@ -23,6 +29,7 @@ export default defineEventHandler(async (event) => {
     notes: body.notes ?? null,
     dateFrom: body.dateFrom ?? null,
     dateTo: body.dateTo ?? null,
+    sortOrder,
     createdAt: now(),
   }
 

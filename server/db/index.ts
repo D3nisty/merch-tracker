@@ -268,6 +268,11 @@ export function useDb() {
   // the full range. Pre-existing single-day events keep `date` populated and
   // `date_to` NULL — the UI treats that as "single day".
   try { sqlite.exec(`ALTER TABLE events ADD COLUMN date_to TEXT`) } catch { /* already exists */ }
+  // Locations + booths gained an explicit `sort_order` so the user can
+  // drag-and-drop them into a custom order on the event page. Defaults to 0;
+  // existing rows are backfilled below in creation order.
+  try { sqlite.exec(`ALTER TABLE locations ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE booths ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`) } catch { /* already exists */ }
 
   // Backfill slugs for existing events that don't have one
   const needsSlug = sqlite.prepare('SELECT id, name FROM events WHERE slug IS NULL').all() as { id: string; name: string }[]
@@ -378,6 +383,30 @@ export function useDb() {
       sqlite.prepare(`UPDATE events SET owner_id = ? WHERE owner_id IS NULL`).run(firstAdmin.id)
       console.log(`Backfilled owner_id on ${orphanEvents} legacy event(s) → admin user ${firstAdmin.id}`)
     }
+  }
+
+  // Backfill sort_order on legacy locations + booths: if every row in a parent
+  // has sort_order=0, assign 0,1,2,… by created_at so the existing visual
+  // order is preserved before the user starts dragging.
+  const locsAllZero = sqlite.prepare(`
+    SELECT event_id FROM locations
+    GROUP BY event_id
+    HAVING MAX(sort_order) = 0 AND COUNT(*) > 1
+  `).all() as { event_id: string }[]
+  for (const row of locsAllZero) {
+    const ordered = sqlite.prepare(`SELECT id FROM locations WHERE event_id = ? ORDER BY created_at ASC`).all(row.event_id) as { id: string }[]
+    const upd = sqlite.prepare(`UPDATE locations SET sort_order = ? WHERE id = ?`)
+    ordered.forEach((r, i) => upd.run(i, r.id))
+  }
+  const boothsAllZero = sqlite.prepare(`
+    SELECT location_id FROM booths
+    GROUP BY location_id
+    HAVING MAX(sort_order) = 0 AND COUNT(*) > 1
+  `).all() as { location_id: string }[]
+  for (const row of boothsAllZero) {
+    const ordered = sqlite.prepare(`SELECT id FROM booths WHERE location_id = ? ORDER BY created_at ASC`).all(row.location_id) as { id: string }[]
+    const upd = sqlite.prepare(`UPDATE booths SET sort_order = ? WHERE id = ?`)
+    ordered.forEach((r, i) => upd.run(i, r.id))
   }
 
   // Indices for the new join tables (idempotent)

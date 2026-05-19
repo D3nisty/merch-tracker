@@ -1,6 +1,6 @@
 import { useDb } from '../../db'
 import { events, locations, booths, products, catalogImages, productPersonMarks, boothDiscounts } from '../../db/schema'
-import { eq, or } from 'drizzle-orm'
+import { eq, or, asc } from 'drizzle-orm'
 import { requireEventView, canEditEvent, userBoothEditIds } from '../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
@@ -13,11 +13,14 @@ export default defineEventHandler(async (event) => {
   const viewer = await requireEventView(event, eventRow.id)
   const canEdit = await canEditEvent(viewer, eventRow.id)
 
-  const locationRows = db.select().from(locations).where(eq(locations.eventId, eventRow.id)).all()
+  const locationRows = db.select().from(locations)
+    .where(eq(locations.eventId, eventRow.id))
+    .orderBy(asc(locations.sortOrder), asc(locations.createdAt))
+    .all()
 
   const locationIds = locationRows.map(l => l.id)
   const boothRows = locationIds.length
-    ? db.select().from(booths).all().filter(b => locationIds.includes(b.locationId))
+    ? db.select().from(booths).orderBy(asc(booths.sortOrder), asc(booths.createdAt)).all().filter(b => locationIds.includes(b.locationId))
     : []
 
   const boothIds = boothRows.map(b => b.id)

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import draggable from 'vuedraggable'
 import type { Location, Product, CatalogImage } from '~/stores/events'
 import { useEventsStore } from '~/stores/events'
 import { useAuthStore } from '~/stores/auth'
@@ -7,9 +8,15 @@ import { useLocale } from '~/composables/useLocale'
 const props = defineProps<{
   location: Location
   eventType: 'convention' | 'travel'
+  showDragHandle?: boolean
 }>()
 
-const emit = defineEmits<{ delete: [id: string] }>()
+const emit = defineEmits<{
+  delete: [id: string]
+  // Bubbles up to the page so it can persist booth order across ALL locations
+  // in one shot — needed because a drag can move a booth into a sibling card.
+  boothDragEnd: []
+}>()
 
 const route = useRoute()
 const store = useEventsStore()
@@ -83,6 +90,15 @@ function formatDateRange(from: string | null, to: string | null) {
   <UCard>
     <template #header>
       <div class="flex items-center justify-between gap-2">
+        <button
+          v-if="showDragHandle"
+          type="button"
+          class="location-drag-handle shrink-0 px-1 py-1 -ml-1 text-gray-500 hover:text-gray-300 cursor-grab active:cursor-grabbing touch-none"
+          :title="t('common.drag')"
+          @click.stop
+        >
+          <UIcon name="i-heroicons-bars-3" class="w-4 h-4" />
+        </button>
         <div class="flex items-center gap-3 cursor-pointer min-w-0 flex-1" @click="expanded = !expanded">
           <UIcon
             :name="expanded ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'"
@@ -158,18 +174,40 @@ function formatDateRange(from: string | null, to: string | null) {
     </template>
 
     <div v-show="expanded">
-      <div v-if="!location.booths?.length" class="text-center py-6 text-gray-500 text-sm">
+      <p v-if="!location.booths?.length" class="text-center py-2 text-gray-500 text-sm">
         {{ eventType === 'convention' ? t('event.noBoothsYet') : t('event.noShopsYet') }}
-      </div>
+      </p>
 
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        <BoothCard
-          v-for="booth in location.booths"
-          :key="booth.id"
-          :booth="booth"
-          :event-type="eventType"
-        />
-      </div>
+      <!-- min-h ensures an empty hall still presents a drop zone wide enough
+           to release onto on mobile, even before any booths exist. -->
+      <draggable
+        :list="location.booths ?? []"
+        item-key="id"
+        tag="div"
+        class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 min-h-[3rem]"
+        :group="{ name: 'booths', pull: authStore.isEditing, put: authStore.isEditing }"
+        handle=".booth-drag-handle"
+        :animation="180"
+        :disabled="!authStore.isEditing"
+        ghost-class="opacity-40"
+        drag-class="cursor-grabbing"
+        @end="emit('boothDragEnd')"
+      >
+        <template #item="{ element: booth }">
+          <div class="relative">
+            <button
+              v-if="authStore.isEditing"
+              type="button"
+              class="booth-drag-handle absolute top-1 right-1 z-10 p-1 rounded text-gray-500 hover:text-gray-200 hover:bg-gray-800/80 cursor-grab active:cursor-grabbing touch-none"
+              :title="t('common.drag')"
+              @click.stop
+            >
+              <UIcon name="i-heroicons-bars-3" class="w-3.5 h-3.5" />
+            </button>
+            <BoothCard :booth="booth" :event-type="eventType" />
+          </div>
+        </template>
+      </draggable>
     </div>
 
     <AddBoothModal v-model="showAddBooth" :location-id="location.id" :event-type="eventType" />

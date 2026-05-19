@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import draggable from 'vuedraggable'
 import { useEventsStore } from '~/stores/events'
 import { useAuthStore } from '~/stores/auth'
 import { usePersonsStore } from '~/stores/persons'
@@ -27,6 +28,32 @@ const showShareEvent = ref(false)
 const showDeleteLocationModal = ref(false)
 const showQrScanner = ref(false)
 const deleteLocationId = ref<string | null>(null)
+
+// vuedraggable mutates the bound array in-place via `list` binding, so
+// `event.value.locations` already reflects the post-drag order by the time
+// onLocationDragEnd fires — we just persist that order.
+async function onLocationDragEnd() {
+  if (!event.value?.locations) return
+  const ids = event.value.locations.map(l => l.id)
+  try {
+    await store.reorderLocations(event.value.id, ids)
+  } catch (e) {
+    console.error('Failed to save hall order', e)
+  }
+}
+
+async function onBoothDragEnd() {
+  if (!event.value?.locations) return
+  const groups = event.value.locations.map(l => ({
+    locationId: l.id,
+    boothIds: (l.booths ?? []).map(b => b.id),
+  }))
+  try {
+    await store.reorderBooths(event.value.id, groups)
+  } catch (e) {
+    console.error('Failed to save booth order', e)
+  }
+}
 
 const canShare = computed(() =>
   authStore.isAdmin || event.value?.ownerId === authStore.user?.id,
@@ -210,15 +237,29 @@ function locationIcon(type: Location['type']) {
       {{ event.type === 'convention' ? t('event.noHalls') : t('event.noLocations') }}
     </div>
 
-    <div class="space-y-4">
-      <LocationCard
-        v-for="loc in event.locations"
-        :key="loc.id"
-        :location="loc"
-        :event-type="event.type"
-        @delete="confirmDeleteLocation(loc.id)"
-      />
-    </div>
+    <draggable
+      v-if="event.locations?.length"
+      :list="event.locations"
+      item-key="id"
+      tag="div"
+      class="space-y-4"
+      handle=".location-drag-handle"
+      :animation="180"
+      :disabled="!authStore.isEditing"
+      ghost-class="opacity-40"
+      drag-class="cursor-grabbing"
+      @end="onLocationDragEnd"
+    >
+      <template #item="{ element: loc }">
+        <LocationCard
+          :location="loc"
+          :event-type="event.type"
+          :show-drag-handle="authStore.isEditing"
+          @delete="confirmDeleteLocation(loc.id)"
+          @booth-drag-end="onBoothDragEnd"
+        />
+      </template>
+    </draggable>
 
     <!-- Modals -->
     <AddLocationModal

@@ -420,6 +420,69 @@ export const useEventsStore = defineStore('events', () => {
     }
   }
 
+  // Persist a drag-reordered list of locations. The local store has already
+  // been mutated by the v-model on the draggable, so this is fire-and-forget:
+  // on failure we refetch the event to recover the canonical order.
+  async function reorderLocations(eventIdOrSlug: string, orderedIds: string[]) {
+    try {
+      await $fetch(`/api/events/${eventIdOrSlug}/reorder-locations`, {
+        method: 'POST',
+        body: { ids: orderedIds },
+      })
+    } catch (e) {
+      await fetchEvent(eventIdOrSlug)
+      throw e
+    }
+  }
+
+  // Same idea for booths. Caller assembles `groups` from the current event
+  // tree post-drag — supports both within-list reorder and cross-list move
+  // in one shot.
+  async function reorderBooths(
+    eventIdOrSlug: string,
+    groups: Array<{ locationId: string; boothIds: string[] }>,
+  ) {
+    try {
+      await $fetch(`/api/events/${eventIdOrSlug}/reorder-booths`, {
+        method: 'POST',
+        body: { groups },
+      })
+    } catch (e) {
+      await fetchEvent(eventIdOrSlug)
+      throw e
+    }
+  }
+
+  // Catalog-image reorder within a booth. Persists the order the user just
+  // dragged into; updates the local `sortOrder` field on each image so the
+  // `sortedImages` computed reflects it immediately. On failure we refetch
+  // the current event to restore the canonical order.
+  async function reorderImages(
+    boothId: string,
+    orderedIds: string[],
+    eventIdOrSlug?: string,
+  ) {
+    if (currentEvent.value?.locations) {
+      for (const loc of currentEvent.value.locations) {
+        const booth = loc.booths?.find(b => b.id === boothId)
+        if (!booth?.images) continue
+        const orderMap = new Map(orderedIds.map((id, i) => [id, i]))
+        for (const img of booth.images) {
+          if (orderMap.has(img.id)) img.sortOrder = orderMap.get(img.id)!
+        }
+      }
+    }
+    try {
+      await $fetch(`/api/booths/${boothId}/reorder-images`, {
+        method: 'POST',
+        body: { ids: orderedIds },
+      })
+    } catch (e) {
+      if (eventIdOrSlug) await fetchEvent(eventIdOrSlug)
+      throw e
+    }
+  }
+
   // Upload an icon image for a booth and stamp the returned URL on the local
   // booth row so the avatar reflects the change immediately. Callers may
   // also pass `iconPath` to `updateBooth` directly for external URLs.
@@ -1178,6 +1241,9 @@ export const useEventsStore = defineStore('events', () => {
     createImageFromUrl,
     replaceImage,
     moveImage,
+    reorderLocations,
+    reorderBooths,
+    reorderImages,
     getItemStats,
     getPlannedCostByCurrency,
     getPaidCostByCurrency,
