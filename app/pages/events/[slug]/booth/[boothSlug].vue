@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import draggable from 'vuedraggable'
+import { VueDraggable } from 'vue-draggable-plus'
 import { useEventsStore } from '~/stores/events'
 import { useAuthStore } from '~/stores/auth'
 import { usePersonsStore } from '~/stores/persons'
@@ -751,9 +751,8 @@ const personBreakdown = computed(() => {
         <span class="text-gray-600">({{ sortedImages.length - filteredImages.length }} {{ t('booth.hidden') }})</span>
       </div>
 
-      <draggable
-        :list="draggableImages"
-        item-key="id"
+      <VueDraggable
+        v-model="draggableImages"
         tag="div"
         class="space-y-8"
         handle=".image-drag-handle"
@@ -763,29 +762,27 @@ const personBreakdown = computed(() => {
         drag-class="cursor-grabbing"
         @end="onImagesDragEnd"
       >
-        <template #item="{ element: img }">
-          <div class="relative group/img">
-            <!-- Drag handle (replaces the old chevron-up/down arrows). Only
-                 rendered when the user can edit and there's more than one
-                 image to reorder. -->
-            <button
-              v-if="canEdit && sortedImages.length > 1"
-              type="button"
-              class="image-drag-handle absolute -left-8 top-2 w-6 h-6 flex items-center justify-center rounded bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 cursor-grab active:cursor-grabbing touch-none opacity-70 hover:opacity-100 transition-opacity z-10"
-              :title="t('common.drag')"
-            >
-              <UIcon name="i-heroicons-bars-3" class="w-3.5 h-3.5" />
-            </button>
-            <CatalogImageViewer
-              :image="img"
-              :products="groupedByImage[img.id] ?? []"
-              :presets="presets"
-              :booth-products="img.imageType === 'receipt' ? booth.products : undefined"
-              :sub-images="img.imageType === 'article' ? subImagesFor(img.id) : undefined"
-            />
-          </div>
-        </template>
-      </draggable>
+        <div v-for="img in draggableImages" :key="img.id" class="relative group/img">
+          <!-- Drag handle (replaces the old chevron-up/down arrows). Only
+               rendered when the user can edit and there's more than one
+               image to reorder. -->
+          <button
+            v-if="canEdit && sortedImages.length > 1"
+            type="button"
+            class="image-drag-handle absolute -left-8 top-2 w-6 h-6 flex items-center justify-center rounded bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 cursor-grab active:cursor-grabbing touch-none opacity-70 hover:opacity-100 transition-opacity z-10"
+            :title="t('common.drag')"
+          >
+            <UIcon name="i-heroicons-bars-3" class="w-3.5 h-3.5" />
+          </button>
+          <CatalogImageViewer
+            :image="img"
+            :products="groupedByImage[img.id] ?? []"
+            :presets="presets"
+            :booth-products="img.imageType === 'receipt' ? booth.products : undefined"
+            :sub-images="img.imageType === 'article' ? subImagesFor(img.id) : undefined"
+          />
+        </div>
+      </VueDraggable>
 
       <!-- Products not linked to any image -->
       <div v-if="(groupedByImage['none'] ?? []).length > 0 || booth.images?.length === 0">

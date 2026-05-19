@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import draggable from 'vuedraggable'
-import type { Location, Product, CatalogImage } from '~/stores/events'
+import { VueDraggable } from 'vue-draggable-plus'
+import type { Location, Product, CatalogImage, Booth } from '~/stores/events'
 import { useEventsStore } from '~/stores/events'
 import { useAuthStore } from '~/stores/auth'
 import { useLocale } from '~/composables/useLocale'
@@ -24,6 +24,15 @@ const authStore = useAuthStore()
 const { t } = useLocale()
 const showAddBooth = ref(false)
 const expanded = ref(true)
+
+// vue-draggable-plus mutates the array via splice and re-emits the whole list
+// on update:modelValue. Routing both through `location.booths` lets the parent
+// see cross-list moves naturally — and the setter handles the case where the
+// API returned the location without a `booths` field at all (empty location).
+const boothsList = computed({
+  get: () => props.location.booths ?? [],
+  set: (val: Booth[]) => { (props.location as Location & { booths?: Booth[] }).booths = val },
+})
 
 function boothItemStats(products: Product[], images: CatalogImage[]) {
   let total = 0, purchased = 0
@@ -180,9 +189,8 @@ function formatDateRange(from: string | null, to: string | null) {
 
       <!-- min-h ensures an empty hall still presents a drop zone wide enough
            to release onto on mobile, even before any booths exist. -->
-      <draggable
-        :list="location.booths ?? []"
-        item-key="id"
+      <VueDraggable
+        v-model="boothsList"
         tag="div"
         class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 min-h-[3rem]"
         :group="{ name: 'booths', pull: authStore.isEditing, put: authStore.isEditing }"
@@ -193,21 +201,19 @@ function formatDateRange(from: string | null, to: string | null) {
         drag-class="cursor-grabbing"
         @end="emit('boothDragEnd')"
       >
-        <template #item="{ element: booth }">
-          <div class="relative">
-            <button
-              v-if="authStore.isEditing"
-              type="button"
-              class="booth-drag-handle absolute top-1 right-1 z-10 p-1 rounded text-gray-500 hover:text-gray-200 hover:bg-gray-800/80 cursor-grab active:cursor-grabbing touch-none"
-              :title="t('common.drag')"
-              @click.stop
-            >
-              <UIcon name="i-heroicons-bars-3" class="w-3.5 h-3.5" />
-            </button>
-            <BoothCard :booth="booth" :event-type="eventType" />
-          </div>
-        </template>
-      </draggable>
+        <div v-for="booth in boothsList" :key="booth.id" class="relative">
+          <button
+            v-if="authStore.isEditing"
+            type="button"
+            class="booth-drag-handle absolute top-1 right-1 z-10 p-1 rounded text-gray-500 hover:text-gray-200 hover:bg-gray-800/80 cursor-grab active:cursor-grabbing touch-none"
+            :title="t('common.drag')"
+            @click.stop
+          >
+            <UIcon name="i-heroicons-bars-3" class="w-3.5 h-3.5" />
+          </button>
+          <BoothCard :booth="booth" :event-type="eventType" />
+        </div>
+      </VueDraggable>
     </div>
 
     <AddBoothModal v-model="showAddBooth" :location-id="location.id" :event-type="eventType" />

@@ -50,19 +50,4 @@ export default defineNuxtConfig({
   typescript: {
     strict: true,
   },
-
-  // vuedraggable ships a UMD bundle; nudging Vite to pre-bundle it lets the
-  // default import work cleanly under SSR + dev HMR.
-  vite: {
-    optimizeDeps: {
-      include: ['vuedraggable', 'sortablejs'],
-    },
-  },
-
-  // vuedraggable depends on `sortablejs` at runtime — Nuxt's auto-transpile
-  // covers it in production, but listing it explicitly avoids surprises if
-  // build modes change.
-  build: {
-    transpile: ['vuedraggable'],
-  },
 })

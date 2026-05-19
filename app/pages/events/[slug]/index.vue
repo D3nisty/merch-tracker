@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import draggable from 'vuedraggable'
+import { VueDraggable } from 'vue-draggable-plus'
 import { useEventsStore } from '~/stores/events'
 import { useAuthStore } from '~/stores/auth'
 import { usePersonsStore } from '~/stores/persons'
@@ -237,10 +237,9 @@ function locationIcon(type: Location['type']) {
       {{ event.type === 'convention' ? t('event.noHalls') : t('event.noLocations') }}
     </div>
 
-    <draggable
+    <VueDraggable
       v-if="event.locations?.length"
-      :list="event.locations"
-      item-key="id"
+      v-model="event.locations"
       tag="div"
       class="space-y-4"
       handle=".location-drag-handle"
@@ -250,16 +249,16 @@ function locationIcon(type: Location['type']) {
       drag-class="cursor-grabbing"
       @end="onLocationDragEnd"
     >
-      <template #item="{ element: loc }">
-        <LocationCard
-          :location="loc"
-          :event-type="event.type"
-          :show-drag-handle="authStore.isEditing"
-          @delete="confirmDeleteLocation(loc.id)"
-          @booth-drag-end="onBoothDragEnd"
-        />
-      </template>
-    </draggable>
+      <LocationCard
+        v-for="loc in event.locations"
+        :key="loc.id"
+        :location="loc"
+        :event-type="event.type"
+        :show-drag-handle="authStore.isEditing"
+        @delete="confirmDeleteLocation(loc.id)"
+        @booth-drag-end="onBoothDragEnd"
+      />
+    </VueDraggable>
 
     <!-- Modals -->
     <AddLocationModal
