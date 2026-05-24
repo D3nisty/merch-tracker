@@ -1,6 +1,6 @@
 import { useDb } from '../../db'
-import { events, locations, booths, products, catalogImages, productPersonMarks, boothDiscounts } from '../../db/schema'
-import { eq, or, asc } from 'drizzle-orm'
+import { events, locations, booths, products, catalogImages, productPersonMarks, boothDiscounts, locationReceipts } from '../../db/schema'
+import { eq, or, asc, inArray } from 'drizzle-orm'
 import { requireEventView, canEditEvent, userBoothEditIds } from '../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
@@ -56,6 +56,15 @@ export default defineEventHandler(async (event) => {
     ? db.select().from(boothDiscounts).all().filter(d => boothIds.includes(d.boothId))
     : []
 
+  // Location-wide receipts (travel-mode cities). One image per row; the viewer
+  // pulls products from every booth under the location.
+  const locationReceiptRows = locationIds.length
+    ? db.select().from(locationReceipts)
+        .where(inArray(locationReceipts.locationId, locationIds))
+        .orderBy(asc(locationReceipts.sortOrder), asc(locationReceipts.createdAt))
+        .all()
+    : []
+
   // Substitute the legacy aggregate isPlanned/isPurchased on each product with
   // the requesting user's OWN mark, so existing per-product checkboxes naturally
   // show "have I marked this?" without changing every UI call site. Other
@@ -106,6 +115,7 @@ export default defineEventHandler(async (event) => {
         discounts: discountRows.filter(d => d.boothId === booth.id),
         canEdit: editableBoothIds.has(booth.id),
       })),
+    receipts: locationReceiptRows.filter(r => r.locationId === loc.id),
   }))
 
   return {

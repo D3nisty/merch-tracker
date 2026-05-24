@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { VueDraggable } from 'vue-draggable-plus'
-import type { Location, Product, CatalogImage, Booth } from '~/stores/events'
+import type { Location, Product, CatalogImage, Booth, LocationReceipt } from '~/stores/events'
 import { useEventsStore } from '~/stores/events'
 import { useAuthStore } from '~/stores/auth'
 import { useLocale } from '~/composables/useLocale'
@@ -23,7 +23,18 @@ const store = useEventsStore()
 const authStore = useAuthStore()
 const { t } = useLocale()
 const showAddBooth = ref(false)
+const showAddReceipt = ref(false)
+const viewingReceipt = ref<LocationReceipt | null>(null)
 const expanded = ref(true)
+
+// City receipts are only meaningful for travel events with at least one shop.
+const canHaveReceipts = computed(() => props.eventType === 'travel')
+const hasShops = computed(() => (props.location.booths?.length ?? 0) > 0)
+const receipts = computed(() => props.location.receipts ?? [])
+
+function openReceipt(r: LocationReceipt) {
+  viewingReceipt.value = r
+}
 
 // vue-draggable-plus mutates the array via splice and re-emits the whole list
 // on update:modelValue. Routing both through `location.booths` lets the parent
@@ -164,6 +175,16 @@ function formatDateRange(from: string | null, to: string | null) {
           />
           <template v-if="authStore.isEditing">
             <UButton
+              v-if="canHaveReceipts"
+              icon="i-heroicons-receipt-percent"
+              variant="ghost"
+              color="green"
+              size="xs"
+              :disabled="!hasShops"
+              :title="hasShops ? t('upload.addLocationReceipt') : t('upload.noShopsYet')"
+              @click="hasShops && (showAddReceipt = true)"
+            />
+            <UButton
               icon="i-heroicons-plus"
               variant="ghost"
               color="gray"
@@ -183,6 +204,29 @@ function formatDateRange(from: string | null, to: string | null) {
     </template>
 
     <div v-show="expanded">
+      <!-- City receipts (travel mode only) -->
+      <div v-if="canHaveReceipts && receipts.length" class="mb-3">
+        <div class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+          <UIcon name="i-heroicons-receipt-percent" class="w-3.5 h-3.5 text-green-400" />
+          {{ t('upload.cityReceipts') }}
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="r in receipts"
+            :key="r.id"
+            type="button"
+            class="group relative w-24 h-24 rounded-lg overflow-hidden border border-gray-800 hover:border-green-500/60 transition-colors bg-black"
+            :title="r.customName || r.originalName"
+            @click="openReceipt(r)"
+          >
+            <img :src="r.path" :alt="r.customName || r.originalName" class="w-full h-full object-cover" />
+            <div class="absolute inset-x-0 bottom-0 px-1 py-0.5 bg-black/70 text-xs text-white truncate">
+              {{ r.customName || t('catalog.receipt') }}
+            </div>
+          </button>
+        </div>
+      </div>
+
       <p v-if="!location.booths?.length" class="text-center py-2 text-gray-500 text-sm">
         {{ eventType === 'convention' ? t('event.noBoothsYet') : t('event.noShopsYet') }}
       </p>
@@ -217,5 +261,19 @@ function formatDateRange(from: string | null, to: string | null) {
     </div>
 
     <AddBoothModal v-model="showAddBooth" :location-id="location.id" :event-type="eventType" />
+    <UploadLocationReceiptModal
+      v-if="canHaveReceipts"
+      v-model="showAddReceipt"
+      :location-id="location.id"
+      :location-name="location.name"
+    />
+    <LocationReceiptModal
+      v-if="viewingReceipt"
+      :model-value="!!viewingReceipt"
+      :receipt="viewingReceipt"
+      :location-id="location.id"
+      :can-edit="authStore.isEditing"
+      @update:model-value="(v: boolean) => { if (!v) viewingReceipt = null }"
+    />
   </UCard>
 </template>

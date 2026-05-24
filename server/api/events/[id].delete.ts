@@ -1,5 +1,5 @@
 import { useDb } from '../../db'
-import { events, locations, booths, catalogImages } from '../../db/schema'
+import { events, locations, booths, catalogImages, locationReceipts } from '../../db/schema'
 import { eq, or, inArray } from 'drizzle-orm'
 import { requireUser } from '../../utils/auth'
 import { deleteUploadedFiles } from '../../utils/uploads'
@@ -40,10 +40,17 @@ export default defineEventHandler(async (event) => {
         .where(inArray(catalogImages.boothId, boothIds))
         .all()
     : []
+  const receipts = locationIds.length
+    ? db.select({ path: locationReceipts.path })
+        .from(locationReceipts)
+        .where(inArray(locationReceipts.locationId, locationIds))
+        .all()
+    : []
   const filesToDelete: string[] = []
   for (const l of locs) if (l.floorPlanImage) filesToDelete.push(l.floorPlanImage)
   for (const b of boothRows) if (b.iconPath) filesToDelete.push(b.iconPath)
   for (const i of images) filesToDelete.push(i.path)
+  for (const r of receipts) filesToDelete.push(r.path)
 
   db.delete(events).where(eq(events.id, existing.id)).run()
 

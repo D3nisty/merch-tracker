@@ -153,6 +153,27 @@ export const catalogImages = sqliteTable('catalog_images', {
   createdAt: text('created_at').notNull(),
 })
 
+// Receipts that span multiple booths within a single location (typically a
+// travel city). The image is the same shape as a booth-level receipt
+// (catalog_images with imageType='receipt'), but instead of pointing at one
+// booth it points at a location — the viewer pulls products from every booth
+// under that location so the user can check off purchases that came from
+// multiple shops in one trip.
+export const locationReceipts = sqliteTable('location_receipts', {
+  id: text('id').primaryKey(),
+  locationId: text('location_id').notNull().references(() => locations.id, { onDelete: 'cascade' }),
+  filename: text('filename').notNull(),
+  originalName: text('original_name').notNull(),
+  path: text('path').notNull(),
+  displayMode: text('display_mode', { enum: ['full', 'split'] }).notNull().default('full'),
+  splitCount: integer('split_count').default(2),
+  sortOrder: integer('sort_order').notNull().default(0),
+  customName: text('custom_name'),
+  latitude: real('latitude'),
+  longitude: real('longitude'),
+  createdAt: text('created_at').notNull(),
+})
+
 // Individual products/items to buy
 export const products = sqliteTable('products', {
   id: text('id').primaryKey(),
@@ -206,6 +227,8 @@ export type Booth = typeof booths.$inferSelect
 export type NewBooth = typeof booths.$inferInsert
 export type CatalogImage = typeof catalogImages.$inferSelect
 export type NewCatalogImage = typeof catalogImages.$inferInsert
+export type LocationReceipt = typeof locationReceipts.$inferSelect
+export type NewLocationReceipt = typeof locationReceipts.$inferInsert
 export type Product = typeof products.$inferSelect
 export type NewProduct = typeof products.$inferInsert
 

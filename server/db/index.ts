@@ -144,6 +144,21 @@ export function useDb() {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS location_receipts (
+      id TEXT PRIMARY KEY,
+      location_id TEXT NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+      filename TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      path TEXT NOT NULL,
+      display_mode TEXT NOT NULL DEFAULT 'full' CHECK(display_mode IN ('full','split')),
+      split_count INTEGER DEFAULT 2,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      custom_name TEXT,
+      latitude REAL,
+      longitude REAL,
+      created_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS booth_price_presets (
       id TEXT PRIMARY KEY,
       booth_id TEXT NOT NULL REFERENCES booths(id) ON DELETE CASCADE,

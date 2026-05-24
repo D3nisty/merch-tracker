@@ -225,6 +225,25 @@ export interface Location {
   dateTo: string | null
   createdAt: string
   booths?: Booth[]
+  // Travel-mode receipts that span multiple shops within this location.
+  receipts?: LocationReceipt[]
+}
+
+// City-wide receipt: one image, products checked off come from any booth
+// under the same location. Per-person marks still live on `products.marks`.
+export interface LocationReceipt {
+  id: string
+  locationId: string
+  filename: string
+  originalName: string
+  path: string
+  displayMode: 'full' | 'split'
+  splitCount: number
+  sortOrder: number
+  customName: string | null
+  latitude: number | null
+  longitude: number | null
+  createdAt: string
 }
 
 export interface Booth {
@@ -798,6 +817,51 @@ export const useEventsStore = defineStore('events', () => {
     }
   }
 
+  // ── Location-wide receipts (travel cities) ────────────────────────────
+  async function uploadLocationReceipt(data: {
+    locationId: string
+    file: File
+    customName?: string
+    displayMode?: 'full' | 'split'
+    splitCount?: number
+    latitude?: number | null
+    longitude?: number | null
+  }): Promise<LocationReceipt> {
+    const fd = new FormData()
+    fd.append('locationId', data.locationId)
+    fd.append('image', data.file)
+    if (data.customName) fd.append('customName', data.customName)
+    if (data.displayMode) fd.append('displayMode', data.displayMode)
+    if (typeof data.splitCount === 'number') fd.append('splitCount', String(data.splitCount))
+    if (data.latitude != null) fd.append('latitude', String(data.latitude))
+    if (data.longitude != null) fd.append('longitude', String(data.longitude))
+    const created = await $fetch<LocationReceipt>('/api/upload/location-receipt', { method: 'POST', body: fd })
+    if (currentEvent.value?.locations) {
+      const loc = currentEvent.value.locations.find(l => l.id === data.locationId)
+      if (loc) loc.receipts = [...(loc.receipts ?? []), created]
+    }
+    return created
+  }
+
+  async function updateLocationReceipt(id: string, data: Partial<LocationReceipt>) {
+    const updated = await $fetch<LocationReceipt>(`/api/location-receipts/${id}`, { method: 'PUT', body: data })
+    if (currentEvent.value?.locations) {
+      for (const loc of currentEvent.value.locations) {
+        const idx = loc.receipts?.findIndex(r => r.id === id) ?? -1
+        if (idx !== -1 && loc.receipts) loc.receipts[idx] = { ...loc.receipts[idx], ...updated }
+      }
+    }
+    return updated
+  }
+
+  async function deleteLocationReceipt(id: string, locationId: string) {
+    await $fetch(`/api/location-receipts/${id}`, { method: 'DELETE' })
+    if (currentEvent.value?.locations) {
+      const loc = currentEvent.value.locations.find(l => l.id === locationId)
+      if (loc) loc.receipts = loc.receipts?.filter(r => r.id !== id)
+    }
+  }
+
   async function replaceImage(id: string, boothId: string, file: File) {
     const fd = new FormData()
     fd.append('image', file)
@@ -1243,6 +1307,9 @@ export const useEventsStore = defineStore('events', () => {
     createImageFromUrl,
     replaceImage,
     moveImage,
+    uploadLocationReceipt,
+    updateLocationReceipt,
+    deleteLocationReceipt,
     reorderLocations,
     reorderBooths,
     reorderImages,
