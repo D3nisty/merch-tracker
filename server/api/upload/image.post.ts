@@ -19,6 +19,8 @@ export default defineEventHandler(async (event) => {
   const imageTypeField = formData.find(f => f.name === 'imageType')
   const personIdField = formData.find(f => f.name === 'personId')
   const parentIdField = formData.find(f => f.name === 'parentId')
+  const latitudeField = formData.find(f => f.name === 'latitude')
+  const longitudeField = formData.find(f => f.name === 'longitude')
 
   if (!boothIdField || !imageFile) {
     throw createError({ statusCode: 400, message: 'boothId and image are required' })
@@ -42,6 +44,14 @@ export default defineEventHandler(async (event) => {
   const maxResult = db.select({ m: max(catalogImages.sortOrder) }).from(catalogImages).where(eq(catalogImages.boothId, boothId)).get()
   const nextOrder = sortOrderField ? parseInt(sortOrderField.data.toString()) : ((maxResult?.m ?? -10) + 10)
 
+  const parseCoord = (raw: string | undefined, min: number, max: number): number | null => {
+    if (!raw) return null
+    const n = parseFloat(raw)
+    return Number.isFinite(n) && n >= min && n <= max ? n : null
+  }
+  const latitude = parseCoord(latitudeField?.data.toString(), -90, 90)
+  const longitude = parseCoord(longitudeField?.data.toString(), -180, 180)
+
   const newImage = {
     id,
     boothId,
@@ -55,6 +65,8 @@ export default defineEventHandler(async (event) => {
     imageType: (imageTypeField?.data.toString() ?? 'catalog') as 'catalog' | 'article',
     personId: personIdField?.data.toString() || null,
     parentId: parentIdField?.data.toString() || null,
+    latitude,
+    longitude,
     createdAt: now(),
   }
 

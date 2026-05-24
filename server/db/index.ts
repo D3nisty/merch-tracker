@@ -139,6 +139,8 @@ export function useDb() {
       display_mode TEXT NOT NULL DEFAULT 'full' CHECK(display_mode IN ('full','split')),
       split_count INTEGER DEFAULT 2,
       sort_order INTEGER NOT NULL DEFAULT 0,
+      latitude REAL,
+      longitude REAL,
       created_at TEXT NOT NULL
     );
 
@@ -245,6 +247,8 @@ export function useDb() {
   try { sqlite.exec(`ALTER TABLE catalog_images ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE catalog_images ADD COLUMN person_id TEXT`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE catalog_images ADD COLUMN parent_id TEXT`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE catalog_images ADD COLUMN latitude REAL`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE catalog_images ADD COLUMN longitude REAL`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE products ADD COLUMN is_planned INTEGER NOT NULL DEFAULT 0`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE events ADD COLUMN slug TEXT`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE booths ADD COLUMN slug TEXT`) } catch { /* already exists */ }

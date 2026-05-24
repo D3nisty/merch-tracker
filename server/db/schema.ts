@@ -148,6 +148,8 @@ export const catalogImages = sqliteTable('catalog_images', {
   imageType: text('image_type', { enum: ['catalog', 'article', 'receipt'] }).notNull().default('catalog'),
   personId: text('person_id').references(() => persons.id, { onDelete: 'set null' }),
   parentId: text('parent_id'),
+  latitude: real('latitude'),
+  longitude: real('longitude'),
   createdAt: text('created_at').notNull(),
 })
 

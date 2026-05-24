@@ -14,12 +14,23 @@ const store = useEventsStore()
 const personsStore = usePersonsStore()
 const { t } = useLocale()
 const uploading = ref(false)
+const uploadProgress = ref({ current: 0, total: 0 })
 const dragOver = ref(false)
 const fileInput = ref<HTMLInputElement>()
+const uploadError = ref('')
 
 const source = ref<'file' | 'url'>('file')
 const urlInput = ref('')
 const urlError = ref('')
+
+type Geo = { latitude: number; longitude: number }
+
+const selectedFiles = ref<File[]>([])
+const previews = ref<string[]>([])
+// `undefined` = not yet processed, `null` = processed but no GPS found, Geo = success.
+const geotags = ref<(Geo | null | undefined)[]>([])
+const geotagLoading = ref<boolean[]>([])
+const useGeotag = ref(false)
 
 const form = reactive({
   customName: '',
@@ -42,11 +53,121 @@ watch(() => form.imageType, (type) => {
   }
 })
 
-async function handleFiles(files: FileList | null) {
-  if (!files?.length) return
-  uploading.value = true
+function revokePreviews() {
+  for (const url of previews.value) URL.revokeObjectURL(url)
+  previews.value = []
+}
+
+function resetState() {
+  revokePreviews()
+  selectedFiles.value = []
+  geotags.value = []
+  geotagLoading.value = []
+  uploadError.value = ''
+  uploadProgress.value = { current: 0, total: 0 }
+  form.customName = ''
+}
+
+const geotagSupported = computed(() => form.imageType === 'article' || form.imageType === 'receipt')
+
+// Lazy-loaded EXIF GPS reader. Imported on first use so the ~10KB exifr
+// bundle never runs at SSR and never hits the wire unless the user opts in.
+async function readGpsFromFile(file: File): Promise<Geo | null> {
   try {
+    const exifr = (await import('exifr')).default as { gps?: (input: File | Blob) => Promise<{ latitude?: number; longitude?: number } | null | undefined> }
+    if (!exifr?.gps) return null
+    const result = await exifr.gps(file)
+    if (!result || typeof result.latitude !== 'number' || typeof result.longitude !== 'number') return null
+    if (!Number.isFinite(result.latitude) || !Number.isFinite(result.longitude)) return null
+    return { latitude: result.latitude, longitude: result.longitude }
+  } catch {
+    return null
+  }
+}
+
+async function extractGeoForIndex(idx: number) {
+  const file = selectedFiles.value[idx]
+  if (!file) return
+  geotagLoading.value[idx] = true
+  try {
+    geotags.value[idx] = await readGpsFromFile(file)
+  } finally {
+    geotagLoading.value[idx] = false
+  }
+}
+
+async function extractAllMissingGeo() {
+  const tasks: Promise<void>[] = []
+  for (let i = 0; i < selectedFiles.value.length; i++) {
+    if (geotags.value[i] === undefined) {
+      tasks.push(extractGeoForIndex(i))
+    }
+  }
+  await Promise.all(tasks)
+}
+
+// When the user toggles the checkbox on with files already queued, fill in
+// any missing readings. We don't clear cached results when toggling off — the
+// upload step gates on `useGeotag` instead.
+watch(useGeotag, (on) => {
+  if (on && geotagSupported.value) void extractAllMissingGeo()
+})
+
+// Switching to catalog hides the checkbox; force it off so it doesn't silently
+// stay on if the user toggles imageType back later.
+watch(geotagSupported, (supported) => {
+  if (!supported) useGeotag.value = false
+})
+
+watch(() => props.modelValue, (open) => {
+  if (!open) resetState()
+})
+
+onBeforeUnmount(revokePreviews)
+
+function onFileSelect(files: FileList | null, inputEl?: HTMLInputElement) {
+  if (files?.length) {
+    const startIdx = selectedFiles.value.length
     for (const file of Array.from(files)) {
+      selectedFiles.value.push(file)
+      previews.value.push(URL.createObjectURL(file))
+      geotags.value.push(undefined)
+      geotagLoading.value.push(false)
+    }
+    uploadError.value = ''
+    if (useGeotag.value && geotagSupported.value) {
+      for (let i = startIdx; i < selectedFiles.value.length; i++) void extractGeoForIndex(i)
+    }
+  }
+  // Reset the input so picking the same file twice still fires `change`.
+  if (inputEl) inputEl.value = ''
+}
+
+function removeSelected(idx: number) {
+  const url = previews.value[idx]
+  if (url) URL.revokeObjectURL(url)
+  selectedFiles.value.splice(idx, 1)
+  previews.value.splice(idx, 1)
+  geotags.value.splice(idx, 1)
+  geotagLoading.value.splice(idx, 1)
+}
+
+function onDrop(e: DragEvent) {
+  dragOver.value = false
+  onFileSelect(e.dataTransfer?.files ?? null)
+}
+
+async function handleUpload() {
+  if (!selectedFiles.value.length) return
+  uploading.value = true
+  uploadError.value = ''
+  uploadProgress.value = { current: 0, total: selectedFiles.value.length }
+  try {
+    for (let i = 0; i < selectedFiles.value.length; i++) {
+      const file = selectedFiles.value[i]
+      if (!file) continue
+      uploadProgress.value.current = i + 1
+
       const fd = new FormData()
       fd.append('boothId', props.boothId)
       fd.append('image', file)
@@ -55,6 +176,13 @@ async function handleFiles(files: FileList | null) {
       fd.append('splitCount', String(form.splitCount))
       if (form.customName.trim()) fd.append('customName', form.customName.trim())
       if (form.imageType === 'article' && form.personId) fd.append('personId', form.personId)
+      if (useGeotag.value && geotagSupported.value) {
+        const geo = geotags.value[i]
+        if (geo) {
+          fd.append('latitude', String(geo.latitude))
+          fd.append('longitude', String(geo.longitude))
+        }
+      }
 
       const result = await $fetch<CatalogImage>('/api/upload/image', {
         method: 'POST',
@@ -69,9 +197,14 @@ async function handleFiles(files: FileList | null) {
       }
     }
     emit('update:modelValue', false)
-    form.customName = ''
+  } catch (e: unknown) {
+    const msg = (e as { data?: { message?: string }; message?: string })?.data?.message
+      ?? (e as { message?: string })?.message
+      ?? 'Unknown error'
+    uploadError.value = `${t('upload.uploadFailed')}: ${msg}`
   } finally {
     uploading.value = false
+    uploadProgress.value = { current: 0, total: 0 }
   }
 }
 
@@ -103,11 +236,6 @@ async function handleUrl() {
   }
 }
 
-function onDrop(e: DragEvent) {
-  dragOver.value = false
-  handleFiles(e.dataTransfer?.files ?? null)
-}
-
 const typeColor = computed(() => {
   if (form.imageType === 'article') return 'orange'
   if (form.imageType === 'receipt') return 'green'
@@ -130,6 +258,17 @@ const displayModeOptions = computed(() => [
   { value: 'full', label: t('upload.fullImage') },
   { value: 'split', label: t('upload.splitSections') },
 ])
+
+const uploadButtonLabel = computed(() => {
+  if (uploading.value && uploadProgress.value.total > 1) {
+    return t('upload.uploadingProgress', {
+      current: uploadProgress.value.current,
+      total: uploadProgress.value.total,
+    })
+  }
+  const n = selectedFiles.value.length
+  return n > 0 ? `${t('common.upload')} (${n})` : t('common.upload')
+})
 </script>
 
 <template>
@@ -138,6 +277,23 @@ const displayModeOptions = computed(() => [
       <template #header>
         <h3 class="font-semibold text-white">{{ t('booth.uploadImage') }}</h3>
       </template>
+
+      <!--
+        Hidden file input — kept OUTSIDE the v-if drop-zone so its ref is stable
+        across source-tab toggles. `sr-only` positions it offscreen rather than
+        display:none, which some mobile webviews handle unreliably when the
+        change event fires from a programmatic .click().
+      -->
+      <input
+        ref="fileInput"
+        type="file"
+        multiple
+        accept="image/*"
+        class="sr-only"
+        tabindex="-1"
+        aria-hidden="true"
+        @change="onFileSelect(($event.target as HTMLInputElement).files, $event.target as HTMLInputElement)"
+      />
 
       <div class="space-y-4">
         <!-- Image type selection -->
@@ -192,6 +348,21 @@ const displayModeOptions = computed(() => [
           <USelect v-model="form.personId" :options="personOptions" option-attribute="label" value-attribute="value" />
         </UFormGroup>
 
+        <!-- Geotag: only meaningful for article/receipt photos taken on a phone -->
+        <label
+          v-if="geotagSupported && source === 'file'"
+          class="flex items-start gap-2 p-3 rounded-lg border border-gray-800 bg-gray-900/50 cursor-pointer"
+        >
+          <UCheckbox v-model="useGeotag" class="mt-0.5 shrink-0" />
+          <div class="min-w-0 flex-1">
+            <div class="text-sm text-white flex items-center gap-1.5">
+              <UIcon name="i-heroicons-map-pin" class="w-4 h-4 text-purple-400 shrink-0" />
+              {{ t('upload.extractGeotag') }}
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">{{ t('upload.extractGeotagHint') }}</p>
+          </div>
+        </label>
+
         <!-- Source tabs: file vs URL -->
         <div class="flex gap-1 p-1 rounded-lg bg-gray-900 border border-gray-800">
           <button
@@ -227,18 +398,60 @@ const displayModeOptions = computed(() => [
           <UIcon name="i-heroicons-photo" class="w-10 h-10 mx-auto mb-3 text-gray-500" />
           <p class="text-white font-medium">{{ t('upload.dropImageHere') }}</p>
           <p class="text-sm text-gray-400 mt-1">{{ t('upload.imageFormats') }}</p>
-          <input
-            ref="fileInput"
-            type="file"
-            multiple
-            accept="image/*"
-            class="hidden"
-            @change="handleFiles(($event.target as HTMLInputElement).files)"
-          />
+        </div>
+
+        <!-- Selected file previews (file mode) -->
+        <div v-if="source === 'file' && selectedFiles.length" class="space-y-2">
+          <div class="text-xs font-medium text-gray-400 uppercase tracking-wider">
+            {{ t('upload.selectedFiles') }} ({{ selectedFiles.length }})
+          </div>
+          <ul class="space-y-2 max-h-64 overflow-y-auto pr-1">
+            <li
+              v-for="(file, idx) in selectedFiles"
+              :key="`${file.name}-${idx}`"
+              class="flex items-center gap-3 p-2 rounded-lg bg-gray-900 border border-gray-800"
+            >
+              <img
+                v-if="previews[idx]"
+                :src="previews[idx]"
+                class="w-12 h-12 object-cover rounded shrink-0 bg-black"
+                alt=""
+              />
+              <div class="flex-1 min-w-0">
+                <div class="text-sm text-white truncate">{{ file.name }}</div>
+                <div class="text-xs text-gray-500">{{ (file.size / 1024).toFixed(0) }} KB</div>
+                <div v-if="useGeotag && geotagSupported" class="text-xs mt-0.5 flex items-center gap-1">
+                  <template v-if="geotagLoading[idx]">
+                    <UIcon name="i-heroicons-arrow-path" class="w-3 h-3 animate-spin text-gray-500 shrink-0" />
+                    <span class="text-gray-500">{{ t('upload.geotagReading') }}</span>
+                  </template>
+                  <template v-else-if="geotags[idx]">
+                    <UIcon name="i-heroicons-map-pin" class="w-3 h-3 text-purple-400 shrink-0" />
+                    <span class="text-purple-300">{{ t('upload.geotagDetected') }}:</span>
+                    <span class="text-gray-400 truncate">{{ geotags[idx]!.latitude.toFixed(5) }}, {{ geotags[idx]!.longitude.toFixed(5) }}</span>
+                  </template>
+                  <template v-else-if="geotags[idx] === null">
+                    <UIcon name="i-heroicons-no-symbol" class="w-3 h-3 text-gray-600 shrink-0" />
+                    <span class="text-gray-500">{{ t('upload.geotagNone') }}</span>
+                  </template>
+                </div>
+              </div>
+              <UButton
+                variant="ghost"
+                color="gray"
+                size="xs"
+                icon="i-heroicons-x-mark"
+                :aria-label="t('upload.removeFile')"
+                :disabled="uploading"
+                @click="removeSelected(idx)"
+              />
+            </li>
+          </ul>
+          <p v-if="uploadError" class="text-red-400 text-xs">{{ uploadError }}</p>
         </div>
 
         <!-- URL input (url mode) -->
-        <div v-else class="space-y-3">
+        <div v-if="source === 'url'" class="space-y-3">
           <UFormGroup :label="t('upload.imageUrl')">
             <UInput
               v-model="urlInput"
@@ -270,15 +483,16 @@ const displayModeOptions = computed(() => [
       </div>
 
       <template #footer>
-        <div class="flex gap-2 justify-end">
+        <div class="flex gap-2 justify-end flex-wrap">
           <UButton variant="ghost" color="gray" @click="emit('update:modelValue', false)">{{ t('common.close') }}</UButton>
           <UButton
             v-if="source === 'file'"
             :color="typeColor"
             :loading="uploading"
+            :disabled="!selectedFiles.length || uploading"
             icon="i-heroicons-arrow-up-tray"
-            @click="fileInput?.click()"
-          >{{ t('common.upload') }}</UButton>
+            @click="handleUpload"
+          >{{ uploadButtonLabel }}</UButton>
           <UButton
             v-else
             :color="typeColor"

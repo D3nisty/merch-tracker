@@ -89,6 +89,11 @@ async function confirmMove() {
   }
 }
 
+function openInMaps(lat: number, lng: number) {
+  if (typeof window === 'undefined') return
+  window.open(`https://www.google.com/maps?q=${lat},${lng}`, '_blank', 'noopener,noreferrer')
+}
+
 // ── Article gallery: add / replace images ────────────────────────────
 const addingSubImage = ref(false)
 const subImageInput = ref<HTMLInputElement>()
@@ -919,6 +924,15 @@ function openAddSource() {
             @click="runOcr"
           />
         </template>
+        <UButton
+          v-if="galleryCurrent.latitude != null && galleryCurrent.longitude != null"
+          icon="i-heroicons-map-pin"
+          variant="ghost"
+          color="purple"
+          size="xs"
+          :title="t('upload.openInMaps')"
+          @click="openInMaps(galleryCurrent.latitude, galleryCurrent.longitude)"
+        />
         <UButton icon="i-heroicons-arrows-pointing-out" variant="ghost" color="gray" size="xs" @click="fullscreen = true" />
         <UButton v-if="authStore.isEditing" icon="i-heroicons-arrow-right-circle" variant="ghost" color="gray" size="xs" :title="t('catalog.moveTitle')" @click="showMoveModal = true" />
         <UButton v-if="authStore.isEditing" icon="i-heroicons-trash" variant="ghost" color="red" size="xs" @click="showDeleteConfirm = true" />
@@ -1636,6 +1650,17 @@ function openAddSource() {
           >{{ t('catalog.addRect') }}</UButton>
           <span v-if="annotateMode" class="text-xs text-purple-400 hidden sm:inline">{{ t('catalog.dragRectHint') }}</span>
         </template>
+        <UButton
+          v-if="galleryCurrent.latitude != null && galleryCurrent.longitude != null"
+          icon="i-heroicons-map-pin"
+          variant="ghost"
+          color="purple"
+          size="sm"
+          :title="t('upload.openInMaps')"
+          @click="openInMaps(galleryCurrent.latitude, galleryCurrent.longitude)"
+        >
+          <span class="hidden sm:inline">{{ t('upload.openInMaps') }}</span>
+        </UButton>
         <span class="ml-auto text-xs text-gray-500 shrink-0">
           {{ products.length }} {{ image.imageType === 'article' ? t('catalog.sources') : t('catalog.products') }}
         </span>

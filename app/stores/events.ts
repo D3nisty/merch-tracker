@@ -270,6 +270,8 @@ export interface CatalogImage {
   imageType: 'catalog' | 'article' | 'receipt'
   personId: string | null
   parentId: string | null
+  latitude: number | null
+  longitude: number | null
   createdAt: string
 }
 
