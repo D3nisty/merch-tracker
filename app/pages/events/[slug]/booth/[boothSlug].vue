@@ -390,13 +390,26 @@ const sortedImages = computed(() =>
     .sort((a, b) => a.sortOrder - b.sortOrder),
 )
 
-const filteredImages = computed(() => {
+// "What WOULD be visible if the person filter is on." Kept as its own
+// computed so we can still report the hidden-articles count even after the
+// user toggles `showAllArticles` to override the filter.
+const mineOnlyImages = computed(() => {
   const pid = personsStore.currentPersonId
   if (!pid) return sortedImages.value
   return sortedImages.value.filter(img =>
     img.imageType !== 'article' || !img.personId || img.personId === pid,
   )
 })
+
+// Per-session override: when true, the page shows every article regardless
+// of who it's assigned to. Off by default so the default landing experience
+// remains "my budget, my articles". State is intentionally NOT persisted —
+// each booth visit starts fresh.
+const showAllArticles = ref(false)
+const filteredImages = computed(() =>
+  showAllArticles.value ? sortedImages.value : mineOnlyImages.value,
+)
+const hiddenArticleCount = computed(() => sortedImages.value.length - mineOnlyImages.value.length)
 
 function subImagesFor(imageId: string) {
   return [...(booth.value?.images ?? [])]
@@ -757,16 +770,32 @@ const personBreakdown = computed(() => {
 
     <!-- Catalog images with products -->
     <div :class="['space-y-8', canEdit && sortedImages.length > 1 ? 'pl-8' : '']">
-      <!-- Person filter notice -->
-      <div
-        v-if="personsStore.currentPersonId && filteredImages.length < sortedImages.length"
-        class="flex items-center gap-2 text-xs text-gray-500 pb-2 border-b border-gray-800"
+      <!--
+        Person filter notice. Renders whenever there ARE hidden articles for
+        the current person (so the user can flip it back to "all" even when
+        none are currently hidden by chance). The whole notice is a toggle:
+        click anywhere on it to flip `showAllArticles`.
+      -->
+      <button
+        v-if="personsStore.currentPersonId && hiddenArticleCount > 0"
+        type="button"
+        class="w-full flex items-center gap-2 text-xs pb-2 border-b border-gray-800 hover:text-white transition-colors flex-wrap"
+        :class="showAllArticles ? 'text-purple-300' : 'text-gray-500'"
+        :title="showAllArticles ? t('booth.showOnlyMine') : t('booth.showAllArticles')"
+        @click="showAllArticles = !showAllArticles"
       >
-        <UIcon name="i-heroicons-funnel" class="w-3.5 h-3.5" />
-        {{ t('booth.showingArticlesFor') }}
-        <strong class="text-gray-300">{{ personsStore.persons.find(p => p.id === personsStore.currentPersonId)?.name }}</strong>
-        <span class="text-gray-600">({{ sortedImages.length - filteredImages.length }} {{ t('booth.hidden') }})</span>
-      </div>
+        <UIcon :name="showAllArticles ? 'i-heroicons-eye' : 'i-heroicons-funnel'" class="w-3.5 h-3.5 shrink-0" />
+        <template v-if="showAllArticles">
+          <span>{{ t('booth.showingAllArticles') }}</span>
+          <span class="text-purple-400 underline ml-auto">{{ t('booth.showOnlyMine') }}</span>
+        </template>
+        <template v-else>
+          <span>{{ t('booth.showingArticlesFor') }}</span>
+          <strong class="text-gray-300">{{ personsStore.persons.find(p => p.id === personsStore.currentPersonId)?.name }}</strong>
+          <span class="text-gray-600">({{ hiddenArticleCount }} {{ t('booth.hidden') }})</span>
+          <span class="text-purple-400 underline ml-auto">{{ t('booth.showAllArticles') }}</span>
+        </template>
+      </button>
 
       <VueDraggable
         v-model="draggableImages"
