@@ -3,6 +3,7 @@ import { VueDraggable } from 'vue-draggable-plus'
 import { useEventsStore } from '~/stores/events'
 import { useAuthStore } from '~/stores/auth'
 import { usePersonsStore } from '~/stores/persons'
+import { useCurrencyStore } from '~/stores/currency'
 import { useLocale } from '~/composables/useLocale'
 import type { Booth, Product, CatalogImage, BoothPreset, BoothDiscount } from '~/stores/events'
 
@@ -10,6 +11,7 @@ const route = useRoute()
 const store = useEventsStore()
 const authStore = useAuthStore()
 const personsStore = usePersonsStore()
+const currencyStore = useCurrencyStore()
 const { t } = useLocale()
 
 if (!store.currentEvent) {
@@ -366,6 +368,11 @@ const boothSavings = computed(() =>
 const buyEverythingByCurrency = computed(() =>
   booth.value ? store.getBoothBuyEverythingByCurrency(booth.value.id) : {})
 
+// Cross-currency rollup into the configured display currency. Null when
+// only one currency is in use or rates haven't loaded yet for one of them.
+const costConvertedTotal = computed(() => currencyStore.convertTotals(costByCurrency.value))
+const paidConvertedTotal = computed(() => currencyStore.convertTotals(purchasedByCurrency.value))
+
 async function handleToggle(product: Product) {
   await store.togglePurchased(product)
 }
@@ -574,11 +581,21 @@ const personBreakdown = computed(() => {
           <div v-if="formatCostMap(costByCurrency)" class="font-bold text-yellow-400 leading-tight">
             <div v-for="[cur, amt] in Object.entries(costByCurrency)" :key="cur" class="text-xl">
               {{ amt.toFixed(2) }} {{ cur }}
+              <PriceConverted :amount="amt" :currency="cur" variant="inline" />
+            </div>
+            <div v-if="costConvertedTotal && Object.keys(costByCurrency).length > 1" class="text-xs text-gray-500 mt-1 font-mono">
+              ≈ {{ costConvertedTotal.value.toFixed(2) }} {{ costConvertedTotal.target }}
             </div>
           </div>
           <div v-else class="text-xl font-bold text-yellow-400">—</div>
           <div class="text-sm text-gray-400 mt-0.5">
             {{ formatCostMap(purchasedByCurrency) ?? '0.00' }} {{ t('booth.spent') }}
+          </div>
+          <div
+            v-if="paidConvertedTotal && Object.keys(purchasedByCurrency).length > 1"
+            class="text-xs text-gray-500 font-mono"
+          >
+            ≈ {{ paidConvertedTotal.value.toFixed(2) }} {{ paidConvertedTotal.target }}
           </div>
           <!-- Hypothetical "buy everything once" total — independent of any
                viewer's marks. Cheapest source per article + each catalog

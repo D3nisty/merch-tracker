@@ -144,6 +144,12 @@ export function useDb() {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS location_receipts (
       id TEXT PRIMARY KEY,
       location_id TEXT NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
@@ -390,6 +396,19 @@ export function useDb() {
       i++
     }
     console.log(`Auto-created ${usersNoPerson.length} person row(s) for users that didn't have one yet.`)
+  }
+
+  // Seed defaults into app_settings on first boot. Idempotent: each row is
+  // INSERT-OR-IGNORE-d, so manually-changed values are preserved across
+  // restarts and we never reset the admin's choice.
+  const seedSettings: Array<[string, string]> = [
+    ['currency_provider', 'visa'],
+    ['display_currency', 'EUR'],
+  ]
+  const ts = now()
+  for (const [key, value] of seedSettings) {
+    sqlite.prepare(`INSERT OR IGNORE INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)`)
+      .run(key, value, ts)
   }
 
   // Backfill ownerId on legacy events: any event with NULL owner_id is reassigned

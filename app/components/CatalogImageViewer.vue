@@ -1434,11 +1434,12 @@ function openAddSource() {
                   <span class="text-sm font-medium text-white">{{ p.name }}</span>
                   <span v-if="personById(p.personId) && authStore.isEditing" class="text-xs text-gray-500">{{ personById(p.personId)!.name }}</span>
                 </div>
-                <div v-if="p.price" class="flex items-center gap-1.5 mt-0.5">
+                <div v-if="p.price" class="flex items-center gap-1.5 mt-0.5 flex-wrap">
                   <span class="text-sm font-semibold" :class="p.isPurchased && authStore.isEditing ? 'text-green-400' : 'text-yellow-400'">
                     {{ p.price.toFixed(2) }} {{ currencySymbol(p.currency) }}
                   </span>
                   <span class="text-xs text-gray-500">{{ p.currency }}</span>
+                  <PriceConverted :amount="p.price" :currency="p.currency" variant="inline" />
                 </div>
               </div>
               <UButton
@@ -2096,10 +2097,11 @@ function openAddSource() {
                       <span class="text-sm text-white">{{ p.name }}</span>
                       <span v-if="personById(p.personId) && authStore.isEditing" class="text-xs text-gray-500">{{ personById(p.personId)!.name }}</span>
                     </div>
-                    <div v-if="p.price" class="flex items-center gap-1.5 mt-0.5">
+                    <div v-if="p.price" class="flex items-center gap-1.5 mt-0.5 flex-wrap">
                       <span class="text-sm font-semibold" :class="p.isPurchased && authStore.isEditing ? 'text-green-400' : 'text-yellow-400'">
                         {{ p.price.toFixed(2) }} {{ currencySymbol(p.currency) }}
                       </span>
+                      <PriceConverted :amount="p.price" :currency="p.currency" variant="inline" />
                     </div>
                   </div>
                   <UButton

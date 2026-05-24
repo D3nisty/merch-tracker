@@ -3,6 +3,7 @@ import { VueDraggable } from 'vue-draggable-plus'
 import { useEventsStore } from '~/stores/events'
 import { useAuthStore } from '~/stores/auth'
 import { usePersonsStore } from '~/stores/persons'
+import { useCurrencyStore } from '~/stores/currency'
 import { useLocale } from '~/composables/useLocale'
 import type { Location } from '~/stores/events'
 import { formatEventDateRange } from '~/stores/events'
@@ -11,6 +12,7 @@ const route = useRoute()
 const store = useEventsStore()
 const authStore = useAuthStore()
 const personsStore = usePersonsStore()
+const currencyStore = useCurrencyStore()
 const { t } = useLocale()
 await store.fetchEvent(route.params.slug as string)
 
@@ -82,6 +84,12 @@ const paidEntries = computed(() => {
   return Object.entries(net).filter(([, v]) => Math.abs(v) > 0.005)
 })
 const savingsEntries = computed(() => Object.entries(store.getDiscountSavingsByCurrency(pid.value)).filter(([, v]) => Math.abs(v) > 0.005))
+
+// Sum the per-currency totals into the configured display currency. Null
+// when only one currency is in use (PriceConverted already covers that case
+// inline) or when no rates have loaded yet for the second-or-later currency.
+const plannedConvertedTotal = computed(() => currencyStore.convertTotals(Object.fromEntries(plannedEntries.value)))
+const paidConvertedTotal = computed(() => currencyStore.convertTotals(Object.fromEntries(paidEntries.value)))
 
 async function handleDeleteLocation() {
   if (!deleteLocationId.value) return
@@ -197,6 +205,14 @@ function locationIcon(type: Location['type']) {
         <div v-if="plannedEntries.length" class="font-bold text-yellow-400 leading-snug">
           <div v-for="[cur, amt] in plannedEntries" :key="cur" class="text-xl">
             {{ amt.toFixed(2) }} {{ cur }}
+            <PriceConverted :amount="amt" :currency="cur" variant="inline" />
+          </div>
+          <div
+            v-if="plannedConvertedTotal && plannedEntries.length > 1"
+            class="text-xs text-gray-500 mt-1 font-mono"
+            :title="plannedConvertedTotal.partial ? t('settings.convertedTotalPartial') : ''"
+          >
+            {{ t('settings.convertedTotal') }}: ≈ {{ plannedConvertedTotal.value.toFixed(2) }} {{ plannedConvertedTotal.target }}
           </div>
         </div>
         <div v-else class="text-xl font-bold text-yellow-400">—</div>
@@ -206,6 +222,14 @@ function locationIcon(type: Location['type']) {
         <div v-if="paidEntries.length" class="font-bold text-green-400 leading-snug">
           <div v-for="[cur, amt] in paidEntries" :key="cur" class="text-xl">
             {{ amt.toFixed(2) }} {{ cur }}
+            <PriceConverted :amount="amt" :currency="cur" variant="inline" />
+          </div>
+          <div
+            v-if="paidConvertedTotal && paidEntries.length > 1"
+            class="text-xs text-gray-500 mt-1 font-mono"
+            :title="paidConvertedTotal.partial ? t('settings.convertedTotalPartial') : ''"
+          >
+            {{ t('settings.convertedTotal') }}: ≈ {{ paidConvertedTotal.value.toFixed(2) }} {{ paidConvertedTotal.target }}
           </div>
         </div>
         <div v-else class="text-xl font-bold text-gray-600">—</div>

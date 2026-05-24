@@ -165,6 +165,12 @@ const canMark = computed(() => authStore.isLoggedIn && !!viewerPersonId.value)
         >
           {{ (product.price * ((product.isPurchased || product.isPlanned) ? myDisplayQty : product.quantity)).toFixed(2) }}{{ product.currency }}
         </span>
+        <PriceConverted
+          v-if="product.price"
+          :amount="product.price * ((product.isPurchased || product.isPlanned) ? myDisplayQty : product.quantity)"
+          :currency="product.currency"
+          variant="caption"
+        />
         <UButton
           v-else-if="authStore.isEditing"
           variant="ghost"

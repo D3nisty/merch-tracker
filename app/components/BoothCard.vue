@@ -147,6 +147,7 @@ const progress = computed(() => totalCount.value ? (purchasedCount.value / total
                 <div class="text-yellow-400 text-xs font-semibold">
                   <div v-for="[cur, amt] in Object.entries(plannedByCurrency)" :key="cur">
                     {{ amt.toFixed(2) }} {{ cur }}
+                    <PriceConverted :amount="amt" :currency="cur" variant="inline" />
                   </div>
                 </div>
               </div>
@@ -157,6 +158,7 @@ const progress = computed(() => totalCount.value ? (purchasedCount.value / total
                 <div class="text-green-400 text-xs font-semibold">
                   <div v-for="[cur, amt] in Object.entries(paidByCurrency)" :key="cur">
                     {{ amt.toFixed(2) }} {{ cur }}
+                    <PriceConverted :amount="amt" :currency="cur" variant="inline" />
                   </div>
                 </div>
               </div>

@@ -124,6 +124,9 @@ async function handleSubmit() {
             <UInput v-model.number="form.quantity" type="number" min="1" />
           </UFormGroup>
         </div>
+        <div v-if="parseFloat(String(form.price)) > 0" class="-mt-2 text-xs text-gray-500 text-right">
+          <PriceConverted :amount="parseFloat(String(form.price)) * (form.quantity || 1)" :currency="form.currency" variant="inline" />
+        </div>
 
         <div class="grid grid-cols-2 gap-3">
           <UFormGroup :label="t('booth.size')">

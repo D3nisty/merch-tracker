@@ -229,8 +229,21 @@ export type CatalogImage = typeof catalogImages.$inferSelect
 export type NewCatalogImage = typeof catalogImages.$inferInsert
 export type LocationReceipt = typeof locationReceipts.$inferSelect
 export type NewLocationReceipt = typeof locationReceipts.$inferInsert
+export type AppSetting = typeof appSettings.$inferSelect
+export type NewAppSetting = typeof appSettings.$inferInsert
 export type Product = typeof products.$inferSelect
 export type NewProduct = typeof products.$inferInsert
+
+// Global app-wide settings managed by admins. Currently used for currency
+// conversion (`currency_provider`, `display_currency`). Designed as a generic
+// string key/value store so new global settings can be added without schema
+// migrations. Reads go through `getAppSetting(key, default)`; writes are
+// guarded by `requireRole(['admin'])`.
+export const appSettings = sqliteTable('app_settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
 
 // Per-person mark on a product: each person independently tracks whether
 // they plan to buy it / have bought it. Multiple persons can mark the same
