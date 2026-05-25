@@ -5,12 +5,18 @@ import { usePersonsStore } from '~/stores/persons'
 import { useLocale } from '~/composables/useLocale'
 import type { CatalogImage, Product, BoothPreset } from '~/stores/events'
 
+// `defaultExpanded` is an optional parent-controlled hint for the
+// expanded/collapsed state. The component still owns its own `expanded`
+// ref — the prop only nudges it whenever it changes, so the parent can
+// run a "Collapse all" / "Expand all" sweep without taking away individual
+// chevron control afterwards.
 const props = defineProps<{
   image: CatalogImage
   products: Product[]
   presets?: BoothPreset[]
   boothProducts?: Product[]
   subImages?: CatalogImage[]
+  defaultExpanded?: boolean
 }>()
 
 const store = useEventsStore()
@@ -24,7 +30,10 @@ const { t } = useLocale()
 // earning edit rights (drawing/editing products still requires isEditing).
 const canMark = computed(() => authStore.isLoggedIn && !!store.currentEvent?.viewerPersonId)
 
-const expanded = ref(true)
+const expanded = ref(props.defaultExpanded ?? true)
+watch(() => props.defaultExpanded, (v) => {
+  if (typeof v === 'boolean') expanded.value = v
+})
 const fullscreen = ref(false)
 const showProductsPanel = ref(true)
 const showBoxLabels = ref(true)

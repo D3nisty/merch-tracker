@@ -406,6 +406,19 @@ const mineOnlyImages = computed(() => {
 // remains "my budget, my articles". State is intentionally NOT persisted —
 // each booth visit starts fresh.
 const showAllArticles = ref(false)
+// Parent-driven expand/collapse hint for every CatalogImageViewer. Flipping
+// this nudges every child's local `expanded` ref so the user can fold the
+// whole list to a compact stack before drag-reordering — much less scrolling
+// than trying to push a 1000px catalog past another. Local chevron taps
+// after the sweep still work normally; the next sweep just re-syncs.
+const allExpanded = ref(true)
+// Auto-collapse on drag, then restore to whatever the user had before the
+// drag started. If they were already collapsed, the restore is a no-op.
+const preDragExpanded = ref<boolean | null>(null)
+function onImagesDragStart() {
+  preDragExpanded.value = allExpanded.value
+  allExpanded.value = false
+}
 const filteredImages = computed(() =>
   showAllArticles.value ? sortedImages.value : mineOnlyImages.value,
 )
@@ -466,6 +479,14 @@ async function onImagesDragEnd() {
     await store.reorderImages(booth.value.id, newOrderedIds, route.params.slug as string)
   } catch (e) {
     console.error('Failed to save image order', e)
+  } finally {
+    // Restore the pre-drag expanded state. If the user was already in
+    // collapse-all mode, this is a no-op; if they had everything expanded,
+    // it re-expands now that they can see what landed where.
+    if (preDragExpanded.value !== null) {
+      allExpanded.value = preDragExpanded.value
+      preDragExpanded.value = null
+    }
   }
 }
 
@@ -770,6 +791,24 @@ const personBreakdown = computed(() => {
 
     <!-- Catalog images with products -->
     <div :class="['space-y-8', canEdit && sortedImages.length > 1 ? 'pl-8' : '']">
+      <!-- Collapse-all / Expand-all toggle: makes drag-reordering practical
+           when individual catalogs are 1000+ px tall. Shown when there are
+           2+ images so single-image booths don't get a useless button. -->
+      <div
+        v-if="filteredImages.length >= 2"
+        class="flex items-center justify-end pb-2"
+      >
+        <UButton
+          variant="ghost"
+          color="gray"
+          size="xs"
+          :icon="allExpanded ? 'i-heroicons-bars-arrow-down' : 'i-heroicons-bars-arrow-up'"
+          @click="allExpanded = !allExpanded"
+        >
+          {{ allExpanded ? t('booth.collapseAll') : t('booth.expandAll') }}
+        </UButton>
+      </div>
+
       <!--
         Person filter notice. Renders whenever there ARE hidden articles for
         the current person (so the user can flip it back to "all" even when
@@ -806,6 +845,7 @@ const personBreakdown = computed(() => {
         :disabled="!canEdit || filteredImages.length < 2"
         ghost-class="opacity-40"
         drag-class="cursor-grabbing"
+        @start="onImagesDragStart"
         @end="onImagesDragEnd"
       >
         <div v-for="img in draggableImages" :key="img.id" class="relative group/img">
@@ -826,6 +866,7 @@ const personBreakdown = computed(() => {
             :presets="presets"
             :booth-products="img.imageType === 'receipt' ? booth.products : undefined"
             :sub-images="img.imageType === 'article' ? subImagesFor(img.id) : undefined"
+            :default-expanded="allExpanded"
           />
         </div>
       </VueDraggable>
