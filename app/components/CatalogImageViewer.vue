@@ -41,6 +41,50 @@ const showOcr = ref(false)
 const mode = ref(props.image.displayMode)
 const splitCount = ref(props.image.splitCount ?? 2)
 
+// ── Hover-zoom magnifier ──────────────────────────────────────────────
+// Desktop-only "lens" that follows the cursor and shows a zoomed view of
+// the area underneath. Opt-in via the magnifier toggle in the image header
+// so it doesn't interfere with annotate-drawing or the article carousel
+// swipe. Disabled automatically while annotateMode is on (drawing wins).
+const MAGNIFIER_SIZE = 200  // diameter, px
+const MAGNIFIER_ZOOM = 2.5
+const magnifierEnabled = ref(false)
+const magnifierActive = ref(false)
+const magnifierX = ref(0)
+const magnifierY = ref(0)
+const magnifierImgW = ref(0)
+const magnifierImgH = ref(0)
+const galleryImgRef = ref<HTMLImageElement>()
+
+function updateMagnifier(e: MouseEvent, imgEl: HTMLImageElement | null) {
+  if (!magnifierEnabled.value || !imgEl) return
+  const rect = imgEl.getBoundingClientRect()
+  magnifierImgW.value = rect.width
+  magnifierImgH.value = rect.height
+  magnifierX.value = e.clientX - rect.left
+  magnifierY.value = e.clientY - rect.top
+  magnifierActive.value = (
+    magnifierX.value >= 0 && magnifierX.value <= rect.width &&
+    magnifierY.value >= 0 && magnifierY.value <= rect.height
+  )
+}
+
+function hideMagnifier() {
+  magnifierActive.value = false
+}
+
+const magnifierStyle = computed(() => {
+  const half = MAGNIFIER_SIZE / 2
+  return {
+    width: `${MAGNIFIER_SIZE}px`,
+    height: `${MAGNIFIER_SIZE}px`,
+    left: `${magnifierX.value - half}px`,
+    top: `${magnifierY.value - half}px`,
+    backgroundSize: `${magnifierImgW.value * MAGNIFIER_ZOOM}px ${magnifierImgH.value * MAGNIFIER_ZOOM}px`,
+    backgroundPosition: `${-(magnifierX.value * MAGNIFIER_ZOOM - half)}px ${-(magnifierY.value * MAGNIFIER_ZOOM - half)}px`,
+  }
+})
+
 // ── Person options ────────────────────────────────────────────────────
 const personOptions = computed(() => [
   { value: '', label: '— Unassigned —' },
@@ -942,6 +986,15 @@ function openAddSource() {
           :title="t('upload.openInMaps')"
           @click="openInMaps(galleryCurrent.latitude, galleryCurrent.longitude)"
         />
+        <UButton
+          icon="i-heroicons-magnifying-glass-plus"
+          variant="ghost"
+          :color="magnifierEnabled ? 'purple' : 'gray'"
+          size="xs"
+          class="hidden sm:flex"
+          :title="magnifierEnabled ? t('catalog.magnifierOff') : t('catalog.magnifierOn')"
+          @click="magnifierEnabled = !magnifierEnabled"
+        />
         <UButton icon="i-heroicons-arrows-pointing-out" variant="ghost" color="gray" size="xs" @click="fullscreen = true" />
         <UButton v-if="authStore.isEditing" icon="i-heroicons-arrow-right-circle" variant="ghost" color="gray" size="xs" :title="t('catalog.moveTitle')" @click="showMoveModal = true" />
         <UButton v-if="authStore.isEditing" icon="i-heroicons-trash" variant="ghost" color="red" size="xs" @click="showDeleteConfirm = true" />
@@ -966,16 +1019,30 @@ function openAddSource() {
         <div
           v-if="image.imageType !== 'article'"
           class="relative bg-black select-none self-start"
-          :class="annotateMode && image.imageType === 'catalog' && authStore.isEditing ? 'cursor-crosshair' : ''"
+          :class="[
+            annotateMode && image.imageType === 'catalog' && authStore.isEditing ? 'cursor-crosshair' : '',
+            magnifierEnabled && !annotateMode ? 'cursor-zoom-in' : '',
+          ]"
           @mousedown="onImgMouseDown"
-          @mousemove="onImgMouseMove"
+          @mousemove="(e: MouseEvent) => { onImgMouseMove(e); if (!annotateMode) updateMagnifier(e, imgRef ?? null) }"
+          @mouseenter="(e: MouseEvent) => { if (!annotateMode) updateMagnifier(e, imgRef ?? null) }"
           @mouseup="onImgMouseUp"
-          @mouseleave="drawStart = null; liveRect = null; rectDrag = null"
+          @mouseleave="drawStart = null; liveRect = null; rectDrag = null; hideMagnifier()"
           @touchstart="onImgTouchStart"
           @touchmove="onImgTouchMove"
           @touchend="onImgTouchEnd"
         >
           <img ref="imgRef" :src="image.path" class="w-full h-auto block" draggable="false" loading="lazy" decoding="async" />
+
+          <!-- Magnifier lens (catalog / receipt). Background-image is the same
+               file as the underlying <img>; offset and size are computed in
+               `magnifierStyle` from the cursor position so the pixel under
+               the cursor stays in the lens's center. -->
+          <div
+            v-if="magnifierEnabled && magnifierActive && !annotateMode"
+            class="absolute pointer-events-none rounded-full border-2 border-purple-400 shadow-xl bg-no-repeat bg-black"
+            :style="{ ...magnifierStyle, backgroundImage: `url(${image.path})` }"
+          />
 
           <template v-if="mode === 'split' && image.imageType === 'catalog'">
             <div v-for="(_, i) in splits" :key="i" :style="splitStyle(i)"
@@ -1051,10 +1118,21 @@ function openAddSource() {
         <div v-else class="bg-black self-start">
           <div
             class="relative group/gal"
+            :class="magnifierEnabled ? 'cursor-zoom-in' : ''"
             @touchstart.passive="onGalleryTouchStart"
             @touchend.passive="onGalleryTouchEnd"
+            @mousemove="(e: MouseEvent) => updateMagnifier(e, galleryImgRef ?? null)"
+            @mouseenter="(e: MouseEvent) => updateMagnifier(e, galleryImgRef ?? null)"
+            @mouseleave="hideMagnifier"
           >
-            <img :src="galleryCurrent.path" class="w-full h-auto block select-none" draggable="false" loading="lazy" decoding="async" />
+            <img ref="galleryImgRef" :src="galleryCurrent.path" class="w-full h-auto block select-none" draggable="false" loading="lazy" decoding="async" />
+
+            <!-- Magnifier lens (article carousel) -->
+            <div
+              v-if="magnifierEnabled && magnifierActive"
+              class="absolute pointer-events-none rounded-full border-2 border-purple-400 shadow-xl bg-no-repeat bg-black z-10"
+              :style="{ ...magnifierStyle, backgroundImage: `url(${galleryCurrent.path})` }"
+            />
 
             <!-- Prev / Next arrows (hidden when only 1 image) -->
             <template v-if="gallery.length > 1">
