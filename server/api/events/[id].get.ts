@@ -1,5 +1,5 @@
 import { useDb } from '../../db'
-import { events, locations, booths, products, catalogImages, productPersonMarks, boothDiscounts, locationReceipts } from '../../db/schema'
+import { events, locations, booths, products, catalogImages, productPersonMarks, boothDiscounts, locationReceipts, locationReceiptItems, locationReceiptItemMarks } from '../../db/schema'
 import { eq, or, asc, inArray } from 'drizzle-orm'
 import { requireEventView, canEditEvent, userBoothEditIds } from '../../utils/permissions'
 
@@ -65,6 +65,22 @@ export default defineEventHandler(async (event) => {
         .all()
     : []
 
+  // Ad-hoc items added directly to a receipt (not tied to any booth product).
+  // Plus the per-person claim rows that the settlement math reads.
+  const receiptIds = locationReceiptRows.map(r => r.id)
+  const receiptItemRows = receiptIds.length
+    ? db.select().from(locationReceiptItems)
+        .where(inArray(locationReceiptItems.receiptId, receiptIds))
+        .orderBy(asc(locationReceiptItems.sortOrder), asc(locationReceiptItems.createdAt))
+        .all()
+    : []
+  const receiptItemIds = receiptItemRows.map(i => i.id)
+  const receiptItemMarkRows = receiptItemIds.length
+    ? db.select().from(locationReceiptItemMarks)
+        .where(inArray(locationReceiptItemMarks.itemId, receiptItemIds))
+        .all()
+    : []
+
   // Substitute the legacy aggregate isPlanned/isPurchased on each product with
   // the requesting user's OWN mark, so existing per-product checkboxes naturally
   // show "have I marked this?" without changing every UI call site. Other
@@ -115,7 +131,16 @@ export default defineEventHandler(async (event) => {
         discounts: discountRows.filter(d => d.boothId === booth.id),
         canEdit: editableBoothIds.has(booth.id),
       })),
-    receipts: locationReceiptRows.filter(r => r.locationId === loc.id),
+    receipts: locationReceiptRows.filter(r => r.locationId === loc.id).map(r => ({
+      ...r,
+      items: receiptItemRows.filter(i => i.receiptId === r.id).map(item => ({
+        ...item,
+        marks: receiptItemMarkRows.filter(m => m.itemId === item.id).map(m => ({
+          personId: m.personId,
+          quantity: m.quantity,
+        })),
+      })),
+    })),
   }))
 
   return {

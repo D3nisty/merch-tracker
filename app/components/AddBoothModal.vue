@@ -18,7 +18,7 @@ const personsStore = usePersonsStore()
 const { t } = useLocale()
 const submitting = ref(false)
 
-const SHOP_CATEGORIES = ['Figure', 'Artbook', 'Manga', 'CD / Music', 'Camera', 'Electronics', 'Clothes', 'Accessories', 'Stationery', 'Food', 'Toy', 'Game']
+const SHOP_CATEGORIES = ['Figure', 'Artbook', 'Manga', 'CD / Music', 'Camera', 'Electronics', 'Clothes', 'Accessories', 'Stationery', 'Food', 'Restaurant', 'Toy', 'Game']
 
 const form = reactive({
   name: '',

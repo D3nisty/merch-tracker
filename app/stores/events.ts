@@ -243,7 +243,30 @@ export interface LocationReceipt {
   customName: string | null
   latitude: number | null
   longitude: number | null
+  // Person who paid the bill. Settlement math: everyone else with assigned
+  // items owes the payer for their share.
+  paidByPersonId: string | null
   createdAt: string
+  // Ad-hoc items added directly to the receipt (not tied to any booth product).
+  items?: LocationReceiptItem[]
+}
+
+// Receipt-only item (e.g. tip, cover charge, side purchase from a vendor not
+// in the trip plan). Per-person claims live in `marks`.
+export interface LocationReceiptItem {
+  id: string
+  receiptId: string
+  name: string
+  price: number | null
+  currency: string
+  sortOrder: number
+  createdAt: string
+  marks: ReceiptItemMark[]
+}
+
+export interface ReceiptItemMark {
+  personId: string
+  quantity: number
 }
 
 export interface Booth {
@@ -862,6 +885,185 @@ export const useEventsStore = defineStore('events', () => {
     }
   }
 
+  // ── Receipt-scoped items (ad-hoc additions like a tip / side purchase) ──
+  function findReceipt(receiptId: string): LocationReceipt | undefined {
+    if (!currentEvent.value?.locations) return undefined
+    for (const loc of currentEvent.value.locations) {
+      const r = loc.receipts?.find(x => x.id === receiptId)
+      if (r) return r
+    }
+    return undefined
+  }
+
+  async function addReceiptItem(receiptId: string, data: { name: string; price?: number | null; currency?: string }) {
+    const created = await $fetch<Omit<LocationReceiptItem, 'marks'>>(
+      `/api/location-receipts/${receiptId}/items`,
+      { method: 'POST', body: data },
+    )
+    const r = findReceipt(receiptId)
+    if (r) r.items = [...(r.items ?? []), { ...created, marks: [] }]
+    return created
+  }
+
+  async function updateReceiptItem(itemId: string, data: { name?: string; price?: number | null; currency?: string }) {
+    const updated = await $fetch<Omit<LocationReceiptItem, 'marks'>>(
+      `/api/location-receipt-items/${itemId}`,
+      { method: 'PUT', body: data },
+    )
+    if (currentEvent.value?.locations) {
+      for (const loc of currentEvent.value.locations) {
+        for (const r of loc.receipts ?? []) {
+          const idx = r.items?.findIndex(i => i.id === itemId) ?? -1
+          if (idx !== -1 && r.items) {
+            r.items[idx] = { ...r.items[idx], ...updated }
+            return
+          }
+        }
+      }
+    }
+    return updated
+  }
+
+  async function deleteReceiptItem(itemId: string) {
+    await $fetch(`/api/location-receipt-items/${itemId}`, { method: 'DELETE' })
+    if (currentEvent.value?.locations) {
+      for (const loc of currentEvent.value.locations) {
+        for (const r of loc.receipts ?? []) {
+          if (r.items?.some(i => i.id === itemId)) {
+            r.items = r.items.filter(i => i.id !== itemId)
+            return
+          }
+        }
+      }
+    }
+  }
+
+  // ── Settlement math ───────────────────────────────────────────────────
+  // A "settlement entry" is one debtor owing one creditor a per-currency map.
+  // Per-receipt computation: walk every booth product + every receipt-only
+  // item; for each non-payer person who marked it purchased (with quantity),
+  // add `price × qty` to that person's debt to the payer. Items in the
+  // payer's own column are skipped (the payer can't owe themselves).
+  //
+  // Returns ONE entry per debtor (the creditor is the receipt's payer).
+  // Receipts with no `paidByPersonId` are skipped entirely (we don't know
+  // who to credit). Item rows with no price contribute nothing.
+  function perReceiptDebts(
+    receipt: LocationReceipt,
+    location: Location,
+  ): Array<{ debtorPersonId: string; creditorPersonId: string; byCurrency: Record<string, number> }> {
+    const payer = receipt.paidByPersonId
+    if (!payer) return []
+
+    // Aggregate by debtor → currency → amount.
+    const byDebtor = new Map<string, Record<string, number>>()
+    const add = (debtor: string, currency: string, amount: number) => {
+      if (debtor === payer || amount <= 0) return
+      const row = byDebtor.get(debtor) ?? {}
+      row[currency] = (row[currency] ?? 0) + amount
+      byDebtor.set(debtor, row)
+    }
+
+    // Booth products under this location: count purchased marks.
+    for (const booth of location.booths ?? []) {
+      for (const p of booth.products ?? []) {
+        if (p.price == null || p.price <= 0) continue
+        for (const m of p.marks ?? []) {
+          if (!m.isPurchased) continue
+          add(m.personId, p.currency, p.price * (m.quantity ?? 1))
+        }
+      }
+    }
+
+    // Receipt-only items: every mark is a claim (no purchased flag).
+    for (const item of receipt.items ?? []) {
+      if (item.price == null || item.price <= 0) continue
+      for (const m of item.marks ?? []) {
+        add(m.personId, item.currency, item.price * (m.quantity ?? 1))
+      }
+    }
+
+    const out: Array<{ debtorPersonId: string; creditorPersonId: string; byCurrency: Record<string, number> }> = []
+    for (const [debtor, byCurrency] of byDebtor) {
+      // Drop empty maps that might appear if every row was zero/skipped.
+      if (Object.values(byCurrency).every(v => Math.abs(v) < 0.005)) continue
+      out.push({ debtorPersonId: debtor, creditorPersonId: payer, byCurrency })
+    }
+    return out
+  }
+
+  // Event-wide rollup: net every receipt's per-pair debt and reverse flows.
+  // If A owes B €30 across one receipt and B owes A €10 across another, the
+  // net is `A → B = €20`. Per-currency only — we don't cross-convert here
+  // because rates fluctuate; the consumer can run amounts through the
+  // currency store if it wants a single-currency display.
+  function eventSettlements(): Array<{ debtorPersonId: string; creditorPersonId: string; byCurrency: Record<string, number> }> {
+    if (!currentEvent.value?.locations) return []
+    // Key: `${A}->${B}` with A < B by personId. Value: A→B currency map (sign +)
+    // and we accumulate B→A as negatives in the SAME entry. At the end the
+    // sign tells us the actual direction; we split into one entry per pair.
+    type Pair = { byCurrency: Record<string, number> }
+    const pairs = new Map<string, Pair>()
+    const pairKey = (a: string, b: string) => a < b ? `${a}|${b}` : `${b}|${a}`
+    const pairLow = (a: string, b: string) => a < b ? a : b
+    const pairHigh = (a: string, b: string) => a < b ? b : a
+
+    for (const loc of currentEvent.value.locations) {
+      for (const r of loc.receipts ?? []) {
+        for (const entry of perReceiptDebts(r, loc)) {
+          const { debtorPersonId: d, creditorPersonId: c, byCurrency } = entry
+          const key = pairKey(d, c)
+          const pair = pairs.get(key) ?? { byCurrency: {} }
+          // Direction sign: if d == pairLow, then d→c is positive; else flip.
+          const dir = d === pairLow(d, c) ? 1 : -1
+          for (const [cur, amt] of Object.entries(byCurrency)) {
+            pair.byCurrency[cur] = (pair.byCurrency[cur] ?? 0) + dir * amt
+          }
+          pairs.set(key, pair)
+        }
+      }
+    }
+
+    const out: Array<{ debtorPersonId: string; creditorPersonId: string; byCurrency: Record<string, number> }> = []
+    for (const [key, pair] of pairs) {
+      const [low, high] = key.split('|') as [string, string]
+      // Split positive-direction currencies (low→high) from negative (high→low).
+      const lowToHigh: Record<string, number> = {}
+      const highToLow: Record<string, number> = {}
+      for (const [cur, amt] of Object.entries(pair.byCurrency)) {
+        if (Math.abs(amt) < 0.005) continue
+        if (amt > 0) lowToHigh[cur] = amt
+        else highToLow[cur] = -amt
+      }
+      if (Object.keys(lowToHigh).length) {
+        out.push({ debtorPersonId: low, creditorPersonId: high, byCurrency: lowToHigh })
+      }
+      if (Object.keys(highToLow).length) {
+        out.push({ debtorPersonId: high, creditorPersonId: low, byCurrency: highToLow })
+      }
+    }
+    return out
+  }
+
+  async function setReceiptItemMark(itemId: string, personId: string, quantity: number) {
+    const res = await $fetch<{ itemId: string; marks: ReceiptItemMark[] }>(
+      `/api/location-receipt-items/${itemId}/marks`,
+      { method: 'POST', body: { personId, quantity } },
+    )
+    if (currentEvent.value?.locations) {
+      for (const loc of currentEvent.value.locations) {
+        for (const r of loc.receipts ?? []) {
+          const item = r.items?.find(i => i.id === itemId)
+          if (item) {
+            item.marks = res.marks.map(m => ({ personId: m.personId, quantity: m.quantity }))
+            return
+          }
+        }
+      }
+    }
+    return res
+  }
+
   async function replaceImage(id: string, boothId: string, file: File) {
     const fd = new FormData()
     fd.append('image', file)
@@ -1310,6 +1512,12 @@ export const useEventsStore = defineStore('events', () => {
     uploadLocationReceipt,
     updateLocationReceipt,
     deleteLocationReceipt,
+    addReceiptItem,
+    updateReceiptItem,
+    deleteReceiptItem,
+    setReceiptItemMark,
+    perReceiptDebts,
+    eventSettlements,
     reorderLocations,
     reorderBooths,
     reorderImages,

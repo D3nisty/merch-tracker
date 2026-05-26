@@ -162,7 +162,27 @@ export function useDb() {
       custom_name TEXT,
       latitude REAL,
       longitude REAL,
+      paid_by_person_id TEXT REFERENCES persons(id) ON DELETE SET NULL,
       created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS location_receipt_items (
+      id TEXT PRIMARY KEY,
+      receipt_id TEXT NOT NULL REFERENCES location_receipts(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      price REAL,
+      currency TEXT NOT NULL DEFAULT 'EUR',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS location_receipt_item_marks (
+      id TEXT PRIMARY KEY,
+      item_id TEXT NOT NULL REFERENCES location_receipt_items(id) ON DELETE CASCADE,
+      person_id TEXT NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      UNIQUE(item_id, person_id)
     );
 
     CREATE TABLE IF NOT EXISTS booth_price_presets (
@@ -270,6 +290,7 @@ export function useDb() {
   try { sqlite.exec(`ALTER TABLE catalog_images ADD COLUMN parent_id TEXT`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE catalog_images ADD COLUMN latitude REAL`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE catalog_images ADD COLUMN longitude REAL`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE location_receipts ADD COLUMN paid_by_person_id TEXT REFERENCES persons(id) ON DELETE SET NULL`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE products ADD COLUMN is_planned INTEGER NOT NULL DEFAULT 0`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE events ADD COLUMN slug TEXT`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE booths ADD COLUMN slug TEXT`) } catch { /* already exists */ }

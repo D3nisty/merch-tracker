@@ -91,6 +91,32 @@ const savingsEntries = computed(() => Object.entries(store.getDiscountSavingsByC
 const plannedConvertedTotal = computed(() => currencyStore.convertTotals(Object.fromEntries(plannedEntries.value)))
 const paidConvertedTotal = computed(() => currencyStore.convertTotals(Object.fromEntries(paidEntries.value)))
 
+// Cross-receipt settlement rollup. Nets reverse flows (A→B vs B→A on the
+// same pair) and shows "X owes Y €Z" per net edge. Empty list = everyone's
+// square OR no receipts have a payer set yet.
+const settlements = computed(() => store.eventSettlements())
+
+const COLOR_BG_MAP: Record<string, string> = {
+  purple: 'bg-purple-500', blue: 'bg-blue-500', green: 'bg-green-500',
+  yellow: 'bg-yellow-500', red: 'bg-red-500', pink: 'bg-pink-500',
+  orange: 'bg-orange-500', teal: 'bg-teal-500',
+}
+function settlementPerson(id: string) {
+  return personsStore.persons.find(p => p.id === id)
+}
+function settlementInitial(name: string) {
+  return (name?.trim()?.[0] ?? '?').toUpperCase()
+}
+function settlementConverted(byCurrency: Record<string, number>) {
+  return currencyStore.convertTotals(byCurrency)
+}
+function formatSettlementCurrencies(map: Record<string, number>): string {
+  return Object.entries(map)
+    .filter(([, amt]) => Math.abs(amt) >= 0.005)
+    .map(([cur, amt]) => `${amt.toFixed(2)} ${cur}`)
+    .join(' · ')
+}
+
 async function handleDeleteLocation() {
   if (!deleteLocationId.value) return
   await store.deleteLocation(deleteLocationId.value)
@@ -246,6 +272,46 @@ function locationIcon(type: Location['type']) {
         </div>
       </UCard>
     </div>
+
+    <!-- Cross-receipt settlements. Lives between the totals row and the
+         location list so it's visible without scrolling on a typical trip
+         dashboard. Hidden when there's nothing to settle yet. -->
+    <UCard v-if="settlements.length" class="mb-6">
+      <template #header>
+        <div class="flex items-center gap-2 flex-wrap">
+          <UIcon name="i-heroicons-arrow-path-rounded-square" class="w-5 h-5 text-purple-400" />
+          <h2 class="font-semibold text-white">{{ t('upload.settlementForEvent') }}</h2>
+          <UBadge :label="`${settlements.length}`" variant="soft" color="purple" size="xs" />
+        </div>
+        <p class="text-xs text-gray-500 mt-1">{{ t('upload.settlementForEventHint') }}</p>
+      </template>
+      <ul class="space-y-2">
+        <li
+          v-for="s in settlements"
+          :key="`${s.debtorPersonId}-${s.creditorPersonId}`"
+          class="flex items-center gap-2 flex-wrap text-sm"
+        >
+          <span
+            v-if="settlementPerson(s.debtorPersonId)"
+            class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
+            :class="COLOR_BG_MAP[settlementPerson(s.debtorPersonId)!.color] ?? 'bg-purple-500'"
+          >{{ settlementInitial(settlementPerson(s.debtorPersonId)!.name) }}</span>
+          <strong class="text-white">{{ settlementPerson(s.debtorPersonId)?.name }}</strong>
+          <span class="text-gray-400">{{ t('upload.owes') }}</span>
+          <span
+            v-if="settlementPerson(s.creditorPersonId)"
+            class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
+            :class="COLOR_BG_MAP[settlementPerson(s.creditorPersonId)!.color] ?? 'bg-purple-500'"
+          >{{ settlementInitial(settlementPerson(s.creditorPersonId)!.name) }}</span>
+          <strong class="text-white">{{ settlementPerson(s.creditorPersonId)?.name }}</strong>
+          <span class="font-mono text-yellow-400">{{ formatSettlementCurrencies(s.byCurrency) }}</span>
+          <span
+            v-if="Object.keys(s.byCurrency).length > 1 && settlementConverted(s.byCurrency)"
+            class="text-gray-500 font-mono text-xs"
+          >≈ {{ settlementConverted(s.byCurrency)!.value.toFixed(2) }} {{ settlementConverted(s.byCurrency)!.target }}</span>
+        </li>
+      </ul>
+    </UCard>
 
     <!-- Locations/Halls -->
     <div class="flex items-center justify-between mb-4">

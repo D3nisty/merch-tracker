@@ -43,7 +43,7 @@ watch(() => props.booth, (b) => {
 // Pill-chip category picker — same UX as the catalog Quick Add form and the
 // discount-scope chooser. Default catalogue + values already on this booth
 // + any custom values typed via the inline `+` button (session-scoped).
-const DEFAULT_BOOTH_CATS = ['Print', 'Keychain', 'Sticker', 'Acrylic Figure', 'Figure', 'Mousepad', 'Shirt', 'Pin', 'Plush', 'Other']
+const DEFAULT_BOOTH_CATS = ['Print', 'Keychain', 'Sticker', 'Acrylic Figure', 'Figure', 'Mousepad', 'Shirt', 'Pin', 'Plush', 'Restaurant', 'Other']
 const customBoothCats = ref<string[]>([])
 
 function uniqueOrdered(...lists: string[][]): string[] {

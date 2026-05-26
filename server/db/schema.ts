@@ -1,4 +1,4 @@
-import { sqliteTable, text, real, integer } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, real, integer, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(),
@@ -171,8 +171,43 @@ export const locationReceipts = sqliteTable('location_receipts', {
   customName: text('custom_name'),
   latitude: real('latitude'),
   longitude: real('longitude'),
+  // Person who actually paid the bill. Drives the per-receipt and event-wide
+  // settlement math: everybody else with items assigned owes the payer.
+  // SET NULL on person delete so a removed traveller doesn't cascade-wipe
+  // the receipt itself.
+  paidByPersonId: text('paid_by_person_id').references(() => persons.id, { onDelete: 'set null' }),
   createdAt: text('created_at').notNull(),
 })
+
+// Ad-hoc items added directly to a city receipt (NOT tied to any booth/
+// product). Typical use: a side purchase, a tip, a restaurant cover charge
+// — anything the user paid for but doesn't want to model as a "product"
+// in any shop. Per-person assignment lives in `locationReceiptItemMarks`
+// so the settlement math can treat custom items uniformly with booth
+// products.
+export const locationReceiptItems = sqliteTable('location_receipt_items', {
+  id: text('id').primaryKey(),
+  receiptId: text('receipt_id').notNull().references(() => locationReceipts.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  price: real('price'),
+  currency: text('currency').notNull().default('EUR'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+})
+
+// Per-(receipt-item, person) claim. Existence of a row = "this person took
+// (quantity) of this item." Removing a row = un-claim. Mirrors the shape of
+// `product_person_marks` minus the planned/purchased flags (receipt items
+// are purchased by definition — they're on a receipt).
+export const locationReceiptItemMarks = sqliteTable('location_receipt_item_marks', {
+  id: text('id').primaryKey(),
+  itemId: text('item_id').notNull().references(() => locationReceiptItems.id, { onDelete: 'cascade' }),
+  personId: text('person_id').notNull().references(() => persons.id, { onDelete: 'cascade' }),
+  quantity: integer('quantity').notNull().default(1),
+  createdAt: text('created_at').notNull(),
+}, (t) => ({
+  uniq: uniqueIndex('lri_marks_uniq').on(t.itemId, t.personId),
+}))
 
 // Individual products/items to buy
 export const products = sqliteTable('products', {
@@ -229,6 +264,10 @@ export type CatalogImage = typeof catalogImages.$inferSelect
 export type NewCatalogImage = typeof catalogImages.$inferInsert
 export type LocationReceipt = typeof locationReceipts.$inferSelect
 export type NewLocationReceipt = typeof locationReceipts.$inferInsert
+export type LocationReceiptItem = typeof locationReceiptItems.$inferSelect
+export type NewLocationReceiptItem = typeof locationReceiptItems.$inferInsert
+export type LocationReceiptItemMark = typeof locationReceiptItemMarks.$inferSelect
+export type NewLocationReceiptItemMark = typeof locationReceiptItemMarks.$inferInsert
 export type AppSetting = typeof appSettings.$inferSelect
 export type NewAppSetting = typeof appSettings.$inferInsert
 export type Product = typeof products.$inferSelect

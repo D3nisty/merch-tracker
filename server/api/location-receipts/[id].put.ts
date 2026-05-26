@@ -25,6 +25,10 @@ export default defineEventHandler(async (event) => {
   if (typeof body.splitCount === 'number' && body.splitCount >= 2 && body.splitCount <= 10) {
     updates.splitCount = body.splitCount
   }
+  // `paidByPersonId` accepts string (set), null (unset), or undefined (skip).
+  if (typeof body.paidByPersonId === 'string' || body.paidByPersonId === null) {
+    updates.paidByPersonId = body.paidByPersonId || null
+  }
 
   if (Object.keys(updates).length) {
     db.update(locationReceipts).set(updates).where(eq(locationReceipts.id, id)).run()

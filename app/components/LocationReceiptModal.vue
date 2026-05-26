@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { useEventsStore, type LocationReceipt, type Product } from '~/stores/events'
+import { useEventsStore, type LocationReceipt, type Product, type LocationReceiptItem } from '~/stores/events'
 import { useAuthStore } from '~/stores/auth'
+import { usePersonsStore } from '~/stores/persons'
+import { useCurrencyStore } from '~/stores/currency'
 import { useLocale } from '~/composables/useLocale'
 
 const props = defineProps<{
@@ -8,9 +10,10 @@ const props = defineProps<{
   receipt: LocationReceipt
   locationId: string
   /**
-   * Whether the viewer can edit the parent event (drives the delete-receipt
-   * affordance). Marking products as purchased works for ANY logged-in viewer
-   * with a Person id — same rule as ProductItem.
+   * Whether the viewer can edit the parent event. Drives the delete-receipt /
+   * add-custom-item / edit-payer affordances. Marking items for YOUR OWN
+   * person works for any logged-in viewer with a Person id, mirroring how
+   * `ProductItem` gates checkboxes.
    */
   canEdit: boolean
 }>()
@@ -18,52 +21,204 @@ const emit = defineEmits<{ 'update:modelValue': [v: boolean] }>()
 
 const store = useEventsStore()
 const authStore = useAuthStore()
+const personsStore = usePersonsStore()
+const currencyStore = useCurrencyStore()
 const { t } = useLocale()
 
 const canMark = computed(() => authStore.isLoggedIn && !!store.currentEvent?.viewerPersonId)
+const viewerPersonId = computed(() => store.currentEvent?.viewerPersonId ?? null)
 const fullscreen = ref(false)
 const confirmingDelete = ref(false)
-
-// Flatten every product across every booth under this location. Each entry
-// carries its parent booth name so the checklist can label the source shop.
-type ReceiptRow = { product: Product; boothName: string; boothId: string }
-const rows = computed<ReceiptRow[]>(() => {
-  const loc = store.currentEvent?.locations?.find(l => l.id === props.locationId)
-  if (!loc) return []
-  const list: ReceiptRow[] = []
-  for (const booth of loc.booths ?? []) {
-    for (const product of booth.products ?? []) {
-      list.push({ product, boothName: booth.name, boothId: booth.id })
-    }
-  }
-  // Stable order: shop name → product name.
-  return list.sort((a, b) => {
-    const byShop = a.boothName.localeCompare(b.boothName)
-    return byShop !== 0 ? byShop : a.product.name.localeCompare(b.product.name)
-  })
-})
-
-const totalPurchased = computed(() => rows.value.filter(r => r.product.isPurchased).length)
+const deleting = ref(false)
+const deleteError = ref('')
 
 const displayName = computed(() => props.receipt.customName || props.receipt.originalName || t('catalog.receipt'))
 
-async function togglePurchased(product: Product) {
-  if (!canMark.value) return
-  await store.togglePurchased(product)
+// ── Person color palette ────────────────────────────────────────────────
+const COLOR_BG: Record<string, string> = {
+  purple: 'bg-purple-500', blue: 'bg-blue-500', green: 'bg-green-500',
+  yellow: 'bg-yellow-500', red: 'bg-red-500', pink: 'bg-pink-500',
+  orange: 'bg-orange-500', teal: 'bg-teal-500',
+}
+const COLOR_RING: Record<string, string> = {
+  purple: 'ring-purple-500', blue: 'ring-blue-500', green: 'ring-green-500',
+  yellow: 'ring-yellow-500', red: 'ring-red-500', pink: 'ring-pink-500',
+  orange: 'ring-orange-500', teal: 'ring-teal-500',
+}
+function personById(id: string | null | undefined) {
+  if (!id) return undefined
+  return personsStore.persons.find(p => p.id === id)
+}
+function personInitial(name: string) {
+  return (name?.trim()?.[0] ?? '?').toUpperCase()
 }
 
+// ── Payer picker ────────────────────────────────────────────────────────
+const payerOptions = computed(() => [
+  { value: '', label: '— ' + t('upload.payerUnset') + ' —' },
+  ...personsStore.persons.map(p => ({ value: p.id, label: p.name })),
+])
+const payerDraft = ref(props.receipt.paidByPersonId ?? '')
+watch(() => props.receipt.paidByPersonId, (v) => { payerDraft.value = v ?? '' })
+
+async function setPayer(personId: string) {
+  payerDraft.value = personId
+  await store.updateLocationReceipt(props.receipt.id, { paidByPersonId: personId || null })
+}
+
+// ── Unified entries (booth products + receipt-only items) ───────────────
+type EntryProduct = { kind: 'product'; id: string; name: string; price: number | null; currency: string; size: string | null; category: string | null; marks: Array<{ personId: string; quantity: number }>; boothName: string; product: Product }
+type EntryCustom = { kind: 'custom'; id: string; name: string; price: number | null; currency: string; size: null; category: null; marks: Array<{ personId: string; quantity: number }>; boothName: string; item: LocationReceiptItem }
+type Entry = EntryProduct | EntryCustom
+
+const entries = computed<Entry[]>(() => {
+  const loc = store.currentEvent?.locations?.find(l => l.id === props.locationId)
+  if (!loc) return []
+  const out: Entry[] = []
+  for (const booth of loc.booths ?? []) {
+    for (const product of booth.products ?? []) {
+      // Receipt assignments piggyback on the per-person purchased marks.
+      const marks = (product.marks ?? [])
+        .filter(m => m.isPurchased)
+        .map(m => ({ personId: m.personId, quantity: m.quantity ?? 1 }))
+      out.push({
+        kind: 'product',
+        id: product.id,
+        name: product.name,
+        price: product.price,
+        currency: product.currency,
+        size: product.size,
+        category: product.category,
+        marks,
+        boothName: booth.name,
+        product,
+      })
+    }
+  }
+  // Ad-hoc receipt-only items live under a synthetic "Custom" group at the
+  // bottom; sort key here just buckets them after every booth.
+  const customLabel = t('upload.customGroupLabel')
+  for (const item of props.receipt.items ?? []) {
+    out.push({
+      kind: 'custom',
+      id: item.id,
+      name: item.name,
+      price: item.price,
+      currency: item.currency,
+      size: null,
+      category: null,
+      marks: item.marks.map(m => ({ personId: m.personId, quantity: m.quantity })),
+      boothName: customLabel,
+      item,
+    })
+  }
+  return out.sort((a, b) => {
+    const customA = a.kind === 'custom' ? 1 : 0
+    const customB = b.kind === 'custom' ? 1 : 0
+    if (customA !== customB) return customA - customB
+    const byShop = a.boothName.localeCompare(b.boothName)
+    return byShop !== 0 ? byShop : a.name.localeCompare(b.name)
+  })
+})
+
+const totalClaimed = computed(() => entries.value.filter(e => e.marks.length).length)
+
+// ── Mark toggling ────────────────────────────────────────────────────────
+async function toggleClaim(entry: Entry, personId: string) {
+  if (!personId) return
+  // Permission gate: anyone-for-themselves; editors can mark anyone.
+  if (!canMark.value) return
+  const self = viewerPersonId.value
+  if (personId !== self && !props.canEdit) return
+
+  const hasClaim = entry.marks.some(m => m.personId === personId)
+  if (entry.kind === 'product') {
+    // Reuse the product-marks endpoint; flip THIS person's purchased flag.
+    await store.setMark(entry.product.id, { isPurchased: !hasClaim, personId })
+  } else {
+    await store.setReceiptItemMark(entry.item.id, personId, hasClaim ? 0 : 1)
+  }
+}
+
+function isClaimedBy(entry: Entry, personId: string): boolean {
+  return entry.marks.some(m => m.personId === personId)
+}
+
+// ── Settlement summary ──────────────────────────────────────────────────
+const debts = computed(() => {
+  const loc = store.currentEvent?.locations?.find(l => l.id === props.locationId)
+  if (!loc) return []
+  return store.perReceiptDebts(props.receipt, loc)
+})
+
+function formatCurrencyMap(map: Record<string, number>): string {
+  return Object.entries(map)
+    .filter(([, amt]) => Math.abs(amt) >= 0.005)
+    .map(([cur, amt]) => `${amt.toFixed(2)} ${cur}`)
+    .join(' · ')
+}
+
+function convertedDebtTotal(byCurrency: Record<string, number>) {
+  return currencyStore.convertTotals(byCurrency)
+}
+
+// ── Ad-hoc custom items ─────────────────────────────────────────────────
+const CURRENCIES = ['EUR', 'USD', 'GBP', 'JPY', 'CHF', 'AUD', 'CAD', 'CNY', 'KRW']
+const adding = ref(false)
+const newItem = reactive({ name: '', price: null as number | null, currency: 'EUR' })
+
+async function submitCustomItem() {
+  const name = newItem.name.trim()
+  if (!name) return
+  adding.value = true
+  try {
+    await store.addReceiptItem(props.receipt.id, {
+      name,
+      price: newItem.price,
+      currency: newItem.currency,
+    })
+    newItem.name = ''
+    newItem.price = null
+  } finally {
+    adding.value = false
+  }
+}
+
+async function removeCustomItem(itemId: string) {
+  await store.deleteReceiptItem(itemId)
+}
+
+// ── Existing pieces ─────────────────────────────────────────────────────
 async function handleDelete() {
+  if (deleting.value) return
   if (!confirmingDelete.value) {
     confirmingDelete.value = true
+    deleteError.value = ''
     return
   }
-  await store.deleteLocationReceipt(props.receipt.id, props.locationId)
-  emit('update:modelValue', false)
+  deleting.value = true
+  deleteError.value = ''
+  try {
+    await store.deleteLocationReceipt(props.receipt.id, props.locationId)
+    emit('update:modelValue', false)
+  } catch (e: unknown) {
+    // Surface the error so the user knows the click DID register but the
+    // server (or client mutation) failed. Previously this was silently
+    // swallowed by Vue's default error handler.
+    const msg = (e as { data?: { message?: string }; message?: string })?.data?.message
+      ?? (e as { message?: string })?.message
+      ?? 'Unknown error'
+    deleteError.value = msg
+    console.error('[LocationReceiptModal] delete failed', e)
+    confirmingDelete.value = false
+  } finally {
+    deleting.value = false
+  }
 }
 
-function formatPrice(p: Product): string {
-  if (p.price == null) return ''
-  return `${p.price.toFixed(2)} ${p.currency}`
+function formatPriceCell(price: number | null, currency: string): string {
+  if (price == null) return ''
+  return `${price.toFixed(2)} ${currency}`
 }
 
 function openInMaps() {
@@ -72,7 +227,6 @@ function openInMaps() {
   window.open(`https://www.google.com/maps?q=${props.receipt.latitude},${props.receipt.longitude}`, '_blank', 'noopener,noreferrer')
 }
 
-// Reset transient state when the modal closes.
 watch(() => props.modelValue, (open) => {
   if (!open) {
     confirmingDelete.value = false
@@ -85,14 +239,14 @@ watch(() => props.modelValue, (open) => {
   <UModal
     :model-value="modelValue"
     @update:model-value="emit('update:modelValue', $event)"
-    :ui="{ width: 'sm:max-w-5xl' }"
+    :ui="{ width: 'sm:max-w-6xl' }"
   >
     <UCard :ui="{ body: { padding: 'p-0' } }">
       <template #header>
         <div class="flex items-center gap-2 flex-wrap">
           <UIcon name="i-heroicons-receipt-percent" class="w-5 h-5 text-green-400 shrink-0" />
           <h3 class="font-semibold text-white truncate min-w-0 flex-1">{{ displayName }}</h3>
-          <UBadge :label="`${totalPurchased}/${rows.length}`" variant="soft" color="green" size="xs" class="shrink-0" />
+          <UBadge :label="`${totalClaimed}/${entries.length}`" variant="soft" color="green" size="xs" class="shrink-0" />
           <UButton
             v-if="receipt.latitude != null && receipt.longitude != null"
             icon="i-heroicons-map-pin"
@@ -105,11 +259,13 @@ watch(() => props.modelValue, (open) => {
             :icon="confirmingDelete ? 'i-heroicons-check' : 'i-heroicons-trash'"
             variant="ghost" :color="confirmingDelete ? 'red' : 'gray'"
             size="xs"
+            :loading="deleting"
             :title="confirmingDelete ? t('upload.deleteReceiptConfirm') : t('common.delete')"
             @click="handleDelete"
           />
         </div>
         <p class="text-xs text-gray-500 mt-1">{{ t('upload.receiptsCheckAcrossShops') }}</p>
+        <p v-if="deleteError" class="text-xs text-red-400 mt-1">{{ t('upload.uploadFailed') }}: {{ deleteError }}</p>
       </template>
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-0">
@@ -129,43 +285,166 @@ watch(() => props.modelValue, (open) => {
           />
         </div>
 
-        <!-- Checklist panel -->
-        <div class="p-4 bg-gray-950 max-h-[70vh] overflow-y-auto">
-          <div v-if="!rows.length" class="text-sm text-gray-500 text-center py-8">
-            {{ t('upload.noShopsYet') }}
+        <!-- Checklist + settlement panel -->
+        <div class="bg-gray-950 max-h-[70vh] overflow-y-auto">
+          <!-- Payer picker -->
+          <div class="p-4 border-b border-gray-800 flex items-center gap-2 flex-wrap">
+            <span class="text-xs uppercase tracking-wider text-gray-400 shrink-0">{{ t('upload.paidBy') }}</span>
+            <USelect
+              v-model="payerDraft"
+              :options="payerOptions"
+              option-attribute="label" value-attribute="value"
+              :disabled="!canEdit"
+              size="xs"
+              class="min-w-[160px]"
+              @change="setPayer(payerDraft)"
+            />
+            <div v-if="personById(receipt.paidByPersonId)" class="flex items-center gap-1.5 ml-1">
+              <span
+                class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+                :class="COLOR_BG[personById(receipt.paidByPersonId)!.color] ?? 'bg-purple-500'"
+              >{{ personInitial(personById(receipt.paidByPersonId)!.name) }}</span>
+              <span class="text-xs text-gray-300">{{ personById(receipt.paidByPersonId)!.name }}</span>
+            </div>
           </div>
-          <div v-else class="space-y-1">
-            <template v-for="(row, i) in rows" :key="row.product.id">
-              <div
-                v-if="i === 0 || rows[i - 1]!.boothName !== row.boothName"
-                class="text-xs font-medium text-purple-300 uppercase tracking-wider px-2 pt-3 first:pt-0 pb-1"
-              >
-                {{ row.boothName }}
-              </div>
-              <label
-                class="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-900 cursor-pointer transition-colors"
-                :class="{ 'opacity-60 cursor-not-allowed': !canMark }"
-              >
-                <UCheckbox
-                  :model-value="row.product.isPurchased"
-                  :disabled="!canMark"
-                  @change="togglePurchased(row.product)"
-                />
-                <div class="flex-1 min-w-0">
-                  <div :class="['text-sm', row.product.isPurchased ? 'line-through text-gray-500' : 'text-white']">
-                    {{ row.product.name }}
-                  </div>
-                  <div v-if="row.product.size || row.product.category" class="text-xs text-gray-500 mt-0.5">
-                    <span v-if="row.product.size">{{ row.product.size }}</span>
-                    <span v-if="row.product.size && row.product.category"> · </span>
-                    <span v-if="row.product.category">{{ row.product.category }}</span>
-                  </div>
+
+          <!-- Checklist -->
+          <div class="p-4">
+            <div v-if="!entries.length" class="text-sm text-gray-500 text-center py-8">
+              {{ t('upload.noShopsYet') }}
+            </div>
+            <div v-else class="space-y-1">
+              <template v-for="(entry, i) in entries" :key="entry.id">
+                <div
+                  v-if="i === 0 || entries[i - 1]!.boothName !== entry.boothName"
+                  class="text-xs font-medium uppercase tracking-wider px-2 pt-3 first:pt-0 pb-1"
+                  :class="entry.kind === 'custom' ? 'text-orange-300' : 'text-purple-300'"
+                >
+                  {{ entry.boothName }}
                 </div>
-                <span v-if="row.product.price != null" class="text-xs text-gray-400 shrink-0 font-mono">
-                  {{ formatPrice(row.product) }}
-                </span>
-              </label>
-            </template>
+                <div class="group/row flex items-start gap-3 p-2 rounded-lg hover:bg-gray-900 transition-colors">
+                  <div class="flex-1 min-w-0">
+                    <div :class="['text-sm', entry.marks.length ? 'line-through text-gray-500' : 'text-white']">
+                      {{ entry.name }}
+                    </div>
+                    <div v-if="entry.size || entry.category" class="text-xs text-gray-500 mt-0.5">
+                      <span v-if="entry.size">{{ entry.size }}</span>
+                      <span v-if="entry.size && entry.category"> · </span>
+                      <span v-if="entry.category">{{ entry.category }}</span>
+                    </div>
+                    <!-- Person chips: who claimed this item -->
+                    <div v-if="personsStore.persons.length" class="flex items-center gap-1 mt-1.5 flex-wrap">
+                      <button
+                        v-for="person in personsStore.persons"
+                        :key="person.id"
+                        type="button"
+                        :title="person.name"
+                        :disabled="!canMark || (person.id !== viewerPersonId && !canEdit)"
+                        class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-all"
+                        :class="[
+                          isClaimedBy(entry, person.id)
+                            ? `${COLOR_BG[person.color] ?? 'bg-purple-500'} text-white`
+                            : 'bg-gray-800 text-gray-500 border border-gray-700 hover:border-gray-500',
+                          person.id === viewerPersonId
+                            ? `ring-1 ring-offset-1 ring-offset-gray-950 ${COLOR_RING[person.color] ?? 'ring-purple-500'}`
+                            : '',
+                          (!canMark || (person.id !== viewerPersonId && !canEdit))
+                            ? 'opacity-50 cursor-not-allowed'
+                            : 'cursor-pointer',
+                        ]"
+                        @click="toggleClaim(entry, person.id)"
+                      >{{ personInitial(person.name) }}</button>
+                    </div>
+                  </div>
+                  <div class="text-right shrink-0">
+                    <div v-if="entry.price != null" class="text-xs text-gray-400 font-mono">
+                      {{ formatPriceCell(entry.price, entry.currency) }}
+                    </div>
+                    <PriceConverted
+                      v-if="entry.price != null"
+                      :amount="entry.price"
+                      :currency="entry.currency"
+                      variant="caption"
+                    />
+                  </div>
+                  <UButton
+                    v-if="entry.kind === 'custom' && canEdit"
+                    icon="i-heroicons-x-mark"
+                    variant="ghost" color="gray" size="xs"
+                    class="shrink-0 opacity-0 group-hover/row:opacity-100"
+                    :title="t('common.delete')"
+                    @click="removeCustomItem(entry.id)"
+                  />
+                </div>
+              </template>
+            </div>
+
+            <!-- Add custom item -->
+            <div v-if="canEdit" class="mt-4 pt-4 border-t border-gray-800 space-y-2">
+              <div class="text-xs uppercase tracking-wider text-gray-400">{{ t('upload.addCustomItem') }}</div>
+              <div class="grid grid-cols-[1fr_90px_80px_auto] gap-2 items-center">
+                <UInput
+                  v-model="newItem.name"
+                  :placeholder="t('upload.customItemPlaceholder')"
+                  size="xs"
+                  @keyup.enter="submitCustomItem"
+                />
+                <UInput
+                  v-model.number="newItem.price"
+                  type="number" step="0.01" min="0"
+                  placeholder="0.00"
+                  size="xs"
+                />
+                <USelect
+                  v-model="newItem.currency"
+                  :options="CURRENCIES.map(c => ({ value: c, label: c }))"
+                  option-attribute="label" value-attribute="value"
+                  size="xs"
+                />
+                <UButton
+                  icon="i-heroicons-plus"
+                  color="purple"
+                  size="xs"
+                  :loading="adding"
+                  :disabled="!newItem.name.trim()"
+                  @click="submitCustomItem"
+                />
+              </div>
+            </div>
+
+            <!-- Settlement summary -->
+            <div v-if="receipt.paidByPersonId" class="mt-4 pt-4 border-t border-gray-800">
+              <div class="text-xs uppercase tracking-wider text-gray-400 mb-2">{{ t('upload.settlementForReceipt') }}</div>
+              <div v-if="!debts.length" class="text-xs text-gray-500">
+                {{ t('upload.settlementNoDebts') }}
+              </div>
+              <ul v-else class="space-y-1.5">
+                <li
+                  v-for="debt in debts"
+                  :key="`${debt.debtorPersonId}-${debt.creditorPersonId}`"
+                  class="text-xs flex items-center gap-1.5 flex-wrap"
+                >
+                  <span
+                    v-if="personById(debt.debtorPersonId)"
+                    class="w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold text-white"
+                    :class="COLOR_BG[personById(debt.debtorPersonId)!.color] ?? 'bg-purple-500'"
+                  >{{ personInitial(personById(debt.debtorPersonId)!.name) }}</span>
+                  <strong class="text-gray-200">{{ personById(debt.debtorPersonId)?.name }}</strong>
+                  <span class="text-gray-500">{{ t('upload.owes') }}</span>
+                  <span
+                    v-if="personById(debt.creditorPersonId)"
+                    class="w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold text-white"
+                    :class="COLOR_BG[personById(debt.creditorPersonId)!.color] ?? 'bg-purple-500'"
+                  >{{ personInitial(personById(debt.creditorPersonId)!.name) }}</span>
+                  <strong class="text-gray-200">{{ personById(debt.creditorPersonId)?.name }}</strong>
+                  <span class="font-mono text-yellow-400">{{ formatCurrencyMap(debt.byCurrency) }}</span>
+                  <span
+                    v-if="Object.keys(debt.byCurrency).length > 1 && convertedDebtTotal(debt.byCurrency)"
+                    class="text-gray-500 font-mono"
+                  >≈ {{ convertedDebtTotal(debt.byCurrency)!.value.toFixed(2) }} {{ convertedDebtTotal(debt.byCurrency)!.target }}</span>
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
       </div>
