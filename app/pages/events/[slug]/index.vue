@@ -27,6 +27,7 @@ useHead({ title: () => event.value?.name ?? 'Event' })
 const showAddLocation = ref(false)
 const showEditEvent = ref(false)
 const showShareEvent = ref(false)
+const showParticipants = ref(false)
 const showDeleteLocationModal = ref(false)
 const showQrScanner = ref(false)
 const deleteLocationId = ref<string | null>(null)
@@ -174,6 +175,17 @@ function locationIcon(type: Location['type']) {
           />
           <UButton
             v-if="canShare"
+            icon="i-heroicons-user-group"
+            variant="outline"
+            color="purple"
+            size="sm"
+            @click="showParticipants = true"
+            :title="t('participants.title')"
+          >
+            <span class="hidden sm:inline">{{ t('participants.title') }}</span>
+          </UButton>
+          <UButton
+            v-if="canShare"
             icon="i-heroicons-share"
             variant="outline"
             color="purple"
@@ -304,11 +316,18 @@ function locationIcon(type: Location['type']) {
             :class="COLOR_BG_MAP[settlementPerson(s.creditorPersonId)!.color] ?? 'bg-purple-500'"
           >{{ settlementInitial(settlementPerson(s.creditorPersonId)!.name) }}</span>
           <strong class="text-white">{{ settlementPerson(s.creditorPersonId)?.name }}</strong>
-          <span class="font-mono text-yellow-400">{{ formatSettlementCurrencies(s.byCurrency) }}</span>
-          <span
-            v-if="Object.keys(s.byCurrency).length > 1 && settlementConverted(s.byCurrency)"
-            class="text-gray-500 font-mono text-xs"
-          >≈ {{ settlementConverted(s.byCurrency)!.value.toFixed(2) }} {{ settlementConverted(s.byCurrency)!.target }}</span>
+          <!-- Primary amount: NET in display currency, computed per-receipt
+               at each receipt's payment-date rate. Falls back to the raw
+               per-currency listing while rates are still loading. -->
+          <template v-if="s.converted != null">
+            <span class="font-mono text-yellow-400">{{ s.converted.toFixed(2) }} {{ s.target }}</span>
+            <span
+              v-if="Object.keys(s.byCurrency).filter(c => c !== s.target).length"
+              class="text-gray-500 font-mono text-xs"
+            >({{ formatSettlementCurrencies(s.byCurrency) }})</span>
+            <span v-if="s.partial" class="text-amber-400 text-xs">{{ t('settings.convertedTotalPartial') }}</span>
+          </template>
+          <span v-else class="font-mono text-yellow-400">{{ formatSettlementCurrencies(s.byCurrency) }}</span>
         </li>
       </ul>
     </UCard>
@@ -365,6 +384,11 @@ function locationIcon(type: Location['type']) {
     <ShareEventModal
       v-model="showShareEvent"
       :event="event"
+    />
+
+    <EventParticipantsModal
+      v-model="showParticipants"
+      :event-id="event.id"
     />
 
     <QrScannerModal

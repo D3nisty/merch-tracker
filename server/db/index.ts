@@ -150,6 +150,14 @@ export function useDb() {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS event_persons (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      person_id TEXT NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL,
+      UNIQUE(event_id, person_id)
+    );
+
     CREATE TABLE IF NOT EXISTS location_receipts (
       id TEXT PRIMARY KEY,
       location_id TEXT NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
@@ -173,6 +181,7 @@ export function useDb() {
       price REAL,
       currency TEXT NOT NULL DEFAULT 'EUR',
       sort_order INTEGER NOT NULL DEFAULT 0,
+      split_among_marked INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL
     );
 
@@ -216,6 +225,7 @@ export function useDb() {
       region_y REAL,
       region_w REAL,
       region_h REAL,
+      split_among_marked INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -291,6 +301,8 @@ export function useDb() {
   try { sqlite.exec(`ALTER TABLE catalog_images ADD COLUMN latitude REAL`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE catalog_images ADD COLUMN longitude REAL`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE location_receipts ADD COLUMN paid_by_person_id TEXT REFERENCES persons(id) ON DELETE SET NULL`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE products ADD COLUMN split_among_marked INTEGER NOT NULL DEFAULT 0`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE location_receipt_items ADD COLUMN split_among_marked INTEGER NOT NULL DEFAULT 0`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE products ADD COLUMN is_planned INTEGER NOT NULL DEFAULT 0`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE events ADD COLUMN slug TEXT`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE booths ADD COLUMN slug TEXT`) } catch { /* already exists */ }

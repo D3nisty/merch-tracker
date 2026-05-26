@@ -153,6 +153,20 @@ export const catalogImages = sqliteTable('catalog_images', {
   createdAt: text('created_at').notNull(),
 })
 
+// Explicit travel-companion list for an event. Decoupled from event_shares
+// (which controls VIEW/EDIT access) so a person can be a participant — and
+// thus settle debts on receipts — without having a user account. UI uses
+// this list to scope the receipt modal's person chips to "people on this
+// trip" instead of every Person row in the DB.
+export const eventPersons = sqliteTable('event_persons', {
+  id: text('id').primaryKey(),
+  eventId: text('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
+  personId: text('person_id').notNull().references(() => persons.id, { onDelete: 'cascade' }),
+  createdAt: text('created_at').notNull(),
+}, (t) => ({
+  uniq: uniqueIndex('event_persons_uniq').on(t.eventId, t.personId),
+}))
+
 // Receipts that span multiple booths within a single location (typically a
 // travel city). The image is the same shape as a booth-level receipt
 // (catalog_images with imageType='receipt'), but instead of pointing at one
@@ -192,6 +206,10 @@ export const locationReceiptItems = sqliteTable('location_receipt_items', {
   price: real('price'),
   currency: text('currency').notNull().default('EUR'),
   sortOrder: integer('sort_order').notNull().default(0),
+  // When true, the settlement math divides `price × sum(per-person quantities)`
+  // equally among the persons who claimed the item (rather than charging each
+  // marker the full price × their own qty). Use for items the group SHARES.
+  splitAmongMarked: integer('split_among_marked', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('created_at').notNull(),
 })
 
@@ -233,6 +251,12 @@ export const products = sqliteTable('products', {
   regionY: real('region_y'),
   regionW: real('region_w'),
   regionH: real('region_h'),
+  // When true, on receipts that include this product the settlement math
+  // splits `price × sum(per-person quantities)` equally among all persons
+  // who marked the product purchased, instead of charging each marker the
+  // full unit cost. Per-product so a shared souvenir and a personal item
+  // can coexist on the same booth/receipt.
+  splitAmongMarked: integer('split_among_marked', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 })
@@ -270,6 +294,8 @@ export type LocationReceiptItemMark = typeof locationReceiptItemMarks.$inferSele
 export type NewLocationReceiptItemMark = typeof locationReceiptItemMarks.$inferInsert
 export type AppSetting = typeof appSettings.$inferSelect
 export type NewAppSetting = typeof appSettings.$inferInsert
+export type EventPerson = typeof eventPersons.$inferSelect
+export type NewEventPerson = typeof eventPersons.$inferInsert
 export type Product = typeof products.$inferSelect
 export type NewProduct = typeof products.$inferInsert
 

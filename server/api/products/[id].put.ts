@@ -23,6 +23,7 @@ export default defineEventHandler(async (event) => {
     'name', 'description', 'price', 'currency', 'quantity',
     'size', 'category', 'isPurchased', 'isPlanned', 'priority', 'notes', 'website',
     'catalogImageId', 'personId', 'regionX', 'regionY', 'regionW', 'regionH',
+    'splitAmongMarked',
   ] as const
 
   for (const field of fields) {

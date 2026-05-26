@@ -5,7 +5,7 @@ import { requireEventEdit, eventIdForLocation } from '../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')!
-  const body = await readBody(event) as { name?: string; price?: number | null; currency?: string }
+  const body = await readBody(event) as { name?: string; price?: number | null; currency?: string; splitAmongMarked?: boolean }
 
   const db = useDb()
   const existing = db.select().from(locationReceiptItems).where(eq(locationReceiptItems.id, id)).get()
@@ -27,6 +27,9 @@ export default defineEventHandler(async (event) => {
   else if (typeof body.price === 'number' && Number.isFinite(body.price)) updates.price = body.price
   if (typeof body.currency === 'string' && /^[A-Z]{3}$/.test(body.currency.toUpperCase())) {
     updates.currency = body.currency.toUpperCase()
+  }
+  if (typeof body.splitAmongMarked === 'boolean') {
+    updates.splitAmongMarked = body.splitAmongMarked
   }
 
   if (Object.keys(updates).length) {

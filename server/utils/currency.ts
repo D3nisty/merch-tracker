@@ -6,17 +6,27 @@ import { now } from './id'
 /**
  * Currency conversion utility. Reads the admin-configured provider from
  * `app_settings`, fetches rates from either Visa's public widget endpoint or
- * Frankfurter (ECB), and caches the result in-process for 12 hours so we
- * don't hammer external APIs.
+ * Frankfurter (ECB), and caches the result in-process.
+ *
+ * Historical rates: pass an optional ISO date (`YYYY-MM-DD`) to `getRate` and
+ * the providers' historical endpoints are used instead of the latest rate.
+ * Settlement math uses this so debts converted across receipts reflect the
+ * exchange rate as of the day each receipt was paid, not the current rate
+ * (which would drift over time and mis-state historical purchases).
+ *
+ * Cache TTL is split: "latest" rates expire after 12 hours (rates move),
+ * historical-date rates are cached effectively forever — once published by
+ * the ECB / Visa for a past date they don't change.
  *
  * Visa's endpoint is undocumented and could change. When Visa is configured
- * but a call fails (network error or unparseable response), `getRate` falls
- * back to Frankfurter transparently so the app keeps working.
+ * but a call fails, `getRate` transparently falls back to Frankfurter so
+ * the app keeps rendering.
  */
 
 export type Provider = 'visa' | 'frankfurter'
 
-const RATE_TTL_MS = 12 * 60 * 60 * 1000 // 12h
+const LATEST_TTL_MS = 12 * 60 * 60 * 1000 // 12h for "today" rates
+const HISTORICAL_TTL_MS = 365 * 24 * 60 * 60 * 1000 // 1y, effectively forever for past dates
 
 interface CachedRate {
   rate: number
@@ -26,8 +36,23 @@ interface CachedRate {
 
 const rateCache = new Map<string, CachedRate>()
 
-function cacheKey(from: string, to: string, provider: Provider): string {
-  return `${provider}:${from.toUpperCase()}->${to.toUpperCase()}`
+/** Treat anything before today (UTC) as historical; today resolves to 'latest'. */
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+function normalizeDate(date: string | undefined): string {
+  if (!date) return 'latest'
+  // Accept YYYY-MM-DD or full ISO timestamps; strip to date.
+  const iso = date.slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return 'latest'
+  return iso >= todayISO() ? 'latest' : iso
+}
+
+function cacheKey(from: string, to: string, provider: Provider, date: string): string {
+  return `${provider}:${from.toUpperCase()}->${to.toUpperCase()}@${date}`
+}
+function ttlFor(date: string): number {
+  return date === 'latest' ? LATEST_TTL_MS : HISTORICAL_TTL_MS
 }
 
 export function clearRateCache(): void {
@@ -64,16 +89,16 @@ export function getConfiguredDisplayCurrency(): string {
 // ── Provider fetchers ────────────────────────────────────────────────────
 
 /**
- * Visa's public Foreign Exchange Calculator JSON endpoint, the same one
- * powering visa.com/en_US/run-your-business/small-business-tools/foreign-exchange.html.
- * Not a documented API — Visa can change it without notice — so callers
- * MUST handle failure and fall back to another provider.
+ * Visa's public Foreign Exchange Calculator JSON endpoint. Supports both
+ * latest and historical rates via the `exchangedate` MM/DD/YYYY parameter
+ * (the same field the public widget uses for its date picker).
  */
-async function fetchVisaRate(from: string, to: string): Promise<number> {
-  const date = new Date()
-  const mm = String(date.getMonth() + 1).padStart(2, '0')
-  const dd = String(date.getDate()).padStart(2, '0')
-  const yyyy = date.getFullYear()
+async function fetchVisaRate(from: string, to: string, date: string): Promise<number> {
+  // date is either 'latest' or 'YYYY-MM-DD'. Visa wants MM/DD/YYYY.
+  const d = date === 'latest' ? new Date() : new Date(`${date}T00:00:00Z`)
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  const yyyy = d.getUTCFullYear()
   const ds = `${mm}/${dd}/${yyyy}`
 
   const url = `https://www.visa.com/cmsapi/fx/rates?amount=1&fee=0&utcConvertedDate=${ds}&exchangedate=${ds}&fromCurr=${from}&toCurr=${to}`
@@ -90,9 +115,6 @@ async function fetchVisaRate(from: string, to: string): Promise<number> {
     originalValues?: { fromAmountWithVisaRate?: string | number }
     fxRateVisa?: string | number
   }
-  // Prefer the explicit rate; otherwise derive it from the converted amount
-  // (since we sent amount=1, convertedAmount IS the rate). Both fields have
-  // appeared across versions of the endpoint — try whichever is present.
   const direct = json.fxRateVisa
   const converted = json.convertedAmount
   const candidate = direct ?? converted
@@ -105,14 +127,14 @@ async function fetchVisaRate(from: string, to: string): Promise<number> {
 }
 
 /**
- * Frankfurter (https://www.frankfurter.app) — free, open-source proxy of the
- * European Central Bank's daily reference rates. No API key, generous limits.
+ * Frankfurter — https://www.frankfurter.app. Latest rates at `/latest`,
+ * historical at `/<YYYY-MM-DD>`. Both accept the same `from` / `to` / `amount`
+ * query string.
  */
-async function fetchFrankfurterRate(from: string, to: string): Promise<number> {
-  // ECB doesn't quote a currency against itself; short-circuit so we don't
-  // hit the endpoint and get an error back.
+async function fetchFrankfurterRate(from: string, to: string, date: string): Promise<number> {
   if (from.toUpperCase() === to.toUpperCase()) return 1
-  const url = `https://api.frankfurter.app/latest?from=${from}&to=${to}&amount=1`
+  const path = date === 'latest' ? 'latest' : date
+  const url = `https://api.frankfurter.app/${path}?from=${from}&to=${to}&amount=1`
   const res = await fetch(url, { headers: { Accept: 'application/json' } })
   if (!res.ok) throw new Error(`Frankfurter HTTP ${res.status}`)
   const json = await res.json() as { rates?: Record<string, number> }
@@ -128,6 +150,9 @@ async function fetchFrankfurterRate(from: string, to: string): Promise<number> {
 export interface RateResult {
   from: string
   to: string
+  /** Resolved date used for the lookup. `'latest'` if no date was requested or the
+   *  requested date was today. Otherwise `YYYY-MM-DD`. */
+  date: string
   rate: number
   fetchedAt: number
   provider: Provider
@@ -136,46 +161,49 @@ export interface RateResult {
 }
 
 /**
- * Get an FX rate from `from` to `to`. Respects the configured provider, with
- * automatic fallback to Frankfurter if the primary fails. Cached per-process
- * for 12 hours; identical currency pairs return the cached entry.
+ * Get an FX rate from `from` to `to`, optionally as of a historical `date`
+ * (ISO `YYYY-MM-DD` or any prefix of an ISO timestamp). Falls back to
+ * Frankfurter if the configured provider throws. Cached per (provider, pair,
+ * date) — historical dates are cached effectively forever since past rates
+ * don't change.
  */
-export async function getRate(from: string, to: string): Promise<RateResult> {
+export async function getRate(from: string, to: string, date?: string): Promise<RateResult> {
   const fromU = from.toUpperCase()
   const toU = to.toUpperCase()
+  const dateKey = normalizeDate(date)
 
   // Identity: skip the network entirely.
   if (fromU === toU) {
-    return { from: fromU, to: toU, rate: 1, fetchedAt: Date.now(), provider: 'frankfurter', fellBack: false }
+    return { from: fromU, to: toU, date: dateKey, rate: 1, fetchedAt: Date.now(), provider: 'frankfurter', fellBack: false }
   }
 
   const configured = getConfiguredProvider()
+  const ttl = ttlFor(dateKey)
 
-  // Cache lookup. We cache PER PROVIDER so a provider switch invalidates the
-  // old entries naturally without needing an explicit flush.
-  const key = cacheKey(fromU, toU, configured)
+  // Cache lookup. Per (provider, pair, date) — provider switch and date
+  // switch both naturally invalidate without an explicit flush.
+  const key = cacheKey(fromU, toU, configured, dateKey)
   const cached = rateCache.get(key)
-  if (cached && Date.now() - cached.fetchedAt < RATE_TTL_MS) {
-    return { from: fromU, to: toU, rate: cached.rate, fetchedAt: cached.fetchedAt, provider: cached.provider, fellBack: false }
+  if (cached && Date.now() - cached.fetchedAt < ttl) {
+    return { from: fromU, to: toU, date: dateKey, rate: cached.rate, fetchedAt: cached.fetchedAt, provider: cached.provider, fellBack: false }
   }
 
   // Primary attempt.
   try {
     const rate = configured === 'visa'
-      ? await fetchVisaRate(fromU, toU)
-      : await fetchFrankfurterRate(fromU, toU)
+      ? await fetchVisaRate(fromU, toU, dateKey)
+      : await fetchFrankfurterRate(fromU, toU, dateKey)
     const fetchedAt = Date.now()
     rateCache.set(key, { rate, fetchedAt, provider: configured })
-    return { from: fromU, to: toU, rate, fetchedAt, provider: configured, fellBack: false }
+    return { from: fromU, to: toU, date: dateKey, rate, fetchedAt, provider: configured, fellBack: false }
   } catch (primaryErr) {
-    // Fallback: try Frankfurter if the primary wasn't already Frankfurter.
     if (configured !== 'frankfurter') {
       try {
-        const rate = await fetchFrankfurterRate(fromU, toU)
+        const rate = await fetchFrankfurterRate(fromU, toU, dateKey)
         const fetchedAt = Date.now()
-        const fallbackKey = cacheKey(fromU, toU, 'frankfurter')
+        const fallbackKey = cacheKey(fromU, toU, 'frankfurter', dateKey)
         rateCache.set(fallbackKey, { rate, fetchedAt, provider: 'frankfurter' })
-        return { from: fromU, to: toU, rate, fetchedAt, provider: 'frankfurter', fellBack: true }
+        return { from: fromU, to: toU, date: dateKey, rate, fetchedAt, provider: 'frankfurter', fellBack: true }
       } catch (fallbackErr) {
         throw new Error(`Both ${configured} and frankfurter failed: ${(primaryErr as Error).message} / ${(fallbackErr as Error).message}`)
       }

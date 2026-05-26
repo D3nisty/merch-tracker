@@ -1,5 +1,5 @@
 import { useDb } from '../../db'
-import { events, locations, booths, products, catalogImages, productPersonMarks, boothDiscounts, locationReceipts, locationReceiptItems, locationReceiptItemMarks } from '../../db/schema'
+import { events, locations, booths, products, catalogImages, productPersonMarks, boothDiscounts, locationReceipts, locationReceiptItems, locationReceiptItemMarks, eventPersons, persons } from '../../db/schema'
 import { eq, or, asc, inArray } from 'drizzle-orm'
 import { requireEventView, canEditEvent, userBoothEditIds } from '../../utils/permissions'
 
@@ -81,6 +81,20 @@ export default defineEventHandler(async (event) => {
         .all()
     : []
 
+  // Explicit participants. When empty, the client should fall back to the
+  // global persons list (preserves existing behaviour on legacy events).
+  const participantRows = db.select({
+    id: persons.id,
+    name: persons.name,
+    color: persons.color,
+    createdAt: persons.createdAt,
+  })
+    .from(eventPersons)
+    .innerJoin(persons, eq(persons.id, eventPersons.personId))
+    .where(eq(eventPersons.eventId, eventRow.id))
+    .orderBy(asc(persons.name))
+    .all()
+
   // Substitute the legacy aggregate isPlanned/isPurchased on each product with
   // the requesting user's OWN mark, so existing per-product checkboxes naturally
   // show "have I marked this?" without changing every UI call site. Other
@@ -146,6 +160,7 @@ export default defineEventHandler(async (event) => {
   return {
     ...eventRow,
     locations: locationsWithBooths,
+    participants: participantRows,
     viewerPersonId,
     // Event-level edit flag — true for admins, the event owner, edit-share
     // users, and global 'editor' roles. Used by the dashboard to show

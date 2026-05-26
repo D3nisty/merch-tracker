@@ -1,4 +1,6 @@
 import { defineStore } from 'pinia'
+import { useCurrencyStore } from './currency'
+import type { Person } from './persons'
 
 // Format an event's date range for display. Returns:
 //   - ''                  if no start date
@@ -33,6 +35,10 @@ export interface Event {
   totalProducts?: number
   purchasedProducts?: number
   locations?: Location[]
+  // Explicit travel-companion list. When empty, the receipt modal falls back
+  // to the full persons store (legacy behaviour). When set, only these
+  // persons appear as chips on receipt items.
+  participants?: Person[]
   // The Person id linked to the requesting user (or null for guests). The
   // server stamps this so the client can route "mark for me" actions without
   // a separate /api/auth/me call.
@@ -260,6 +266,10 @@ export interface LocationReceiptItem {
   price: number | null
   currency: string
   sortOrder: number
+  // When true, settlement math splits `price × sum(per-person quantities)`
+  // equally among the persons who claimed the item (group-shared item).
+  // Default false: each marker owes the full price × their own quantity.
+  splitAmongMarked: boolean
   createdAt: string
   marks: ReceiptItemMark[]
 }
@@ -342,6 +352,10 @@ export interface Product {
   regionY: number | null
   regionW: number | null
   regionH: number | null
+  // When true, on receipts that include this product the settlement math
+  // splits `price × sum(per-person quantities)` equally among all persons
+  // who marked it purchased — for items the group is sharing.
+  splitAmongMarked: boolean
   createdAt: string
   updatedAt: string
   // All per-person marks on this product. Includes the requesting user's own
@@ -841,6 +855,22 @@ export const useEventsStore = defineStore('events', () => {
   }
 
   // ── Location-wide receipts (travel cities) ────────────────────────────
+  // ── Event participants ────────────────────────────────────────────────
+  async function addEventParticipant(eventId: string, personId: string) {
+    await $fetch(`/api/events/${eventId}/persons`, { method: 'POST', body: { personId } })
+    if (currentEvent.value && (currentEvent.value.id === eventId || currentEvent.value.slug === eventId)) {
+      // Re-fetch is simpler than reconciling the local participants array —
+      // managing participants is rare enough that one extra GET is fine.
+      await fetchEvent(currentEvent.value.slug ?? currentEvent.value.id)
+    }
+  }
+  async function removeEventParticipant(eventId: string, personId: string) {
+    await $fetch(`/api/events/${eventId}/persons/${personId}`, { method: 'DELETE' })
+    if (currentEvent.value && (currentEvent.value.id === eventId || currentEvent.value.slug === eventId)) {
+      currentEvent.value.participants = (currentEvent.value.participants ?? []).filter(p => p.id !== personId)
+    }
+  }
+
   async function uploadLocationReceipt(data: {
     locationId: string
     file: File
@@ -965,12 +995,23 @@ export const useEventsStore = defineStore('events', () => {
     }
 
     // Booth products under this location: count purchased marks.
+    // When `splitAmongMarked` is set, the LINE TOTAL (price × Σ marker
+    // quantities) is divided EQUALLY across markers regardless of each
+    // marker's individual qty. Default behaviour (split off) charges each
+    // marker `price × their own quantity` — same as before.
     for (const booth of location.booths ?? []) {
       for (const p of booth.products ?? []) {
         if (p.price == null || p.price <= 0) continue
-        for (const m of p.marks ?? []) {
-          if (!m.isPurchased) continue
-          add(m.personId, p.currency, p.price * (m.quantity ?? 1))
+        const purchasedMarks = (p.marks ?? []).filter(m => m.isPurchased)
+        if (!purchasedMarks.length) continue
+        if (p.splitAmongMarked && purchasedMarks.length > 1) {
+          const totalQty = purchasedMarks.reduce((s, m) => s + (m.quantity ?? 1), 0)
+          const perPerson = (p.price * Math.max(1, totalQty)) / purchasedMarks.length
+          for (const m of purchasedMarks) add(m.personId, p.currency, perPerson)
+        } else {
+          for (const m of purchasedMarks) {
+            add(m.personId, p.currency, p.price * (m.quantity ?? 1))
+          }
         }
       }
     }
@@ -978,8 +1019,16 @@ export const useEventsStore = defineStore('events', () => {
     // Receipt-only items: every mark is a claim (no purchased flag).
     for (const item of receipt.items ?? []) {
       if (item.price == null || item.price <= 0) continue
-      for (const m of item.marks ?? []) {
-        add(m.personId, item.currency, item.price * (m.quantity ?? 1))
+      const marks = item.marks ?? []
+      if (!marks.length) continue
+      if (item.splitAmongMarked && marks.length > 1) {
+        const totalQty = marks.reduce((s, m) => s + (m.quantity ?? 1), 0)
+        const perPerson = (item.price * Math.max(1, totalQty)) / marks.length
+        for (const m of marks) add(m.personId, item.currency, perPerson)
+      } else {
+        for (const m of marks) {
+          add(m.personId, item.currency, item.price * (m.quantity ?? 1))
+        }
       }
     }
 
@@ -992,55 +1041,100 @@ export const useEventsStore = defineStore('events', () => {
     return out
   }
 
-  // Event-wide rollup: net every receipt's per-pair debt and reverse flows.
-  // If A owes B €30 across one receipt and B owes A €10 across another, the
-  // net is `A → B = €20`. Per-currency only — we don't cross-convert here
-  // because rates fluctuate; the consumer can run amounts through the
-  // currency store if it wants a single-currency display.
-  function eventSettlements(): Array<{ debtorPersonId: string; creditorPersonId: string; byCurrency: Record<string, number> }> {
+  // Event-wide rollup. Each receipt's debts are FIRST converted to the
+  // configured display currency using the FX rate as of that receipt's
+  // payment date (`receipt.createdAt`), THEN netted across all receipts
+  // per (debtor, creditor) pair. Reverse flows (A→B vs B→A) cancel — see
+  // the direction sign below.
+  //
+  // Cross-currency netting (e.g. an A→B in EUR vs a B→A in JPY) now works
+  // because everything is reduced to a single display-currency total before
+  // accumulation. The trade-off: each per-receipt conversion is locked to
+  // its own historical date, so changing the display currency or refreshing
+  // rates won't retroactively change a past receipt's contribution.
+  //
+  // While rates are still loading the converted total is `null`; the byCurrency
+  // breakdown remains useful as a fallback display in that window. Once
+  // rates arrive, the reactive `rates` map populates and this computed re-runs.
+  function eventSettlements(): Array<{
+    debtorPersonId: string
+    creditorPersonId: string
+    converted: number | null
+    target: string
+    partial: boolean
+    byCurrency: Record<string, number>
+  }> {
+    const currencyStore = useCurrencyStore()
+    const target = currencyStore.displayCurrency.toUpperCase()
     if (!currentEvent.value?.locations) return []
-    // Key: `${A}->${B}` with A < B by personId. Value: A→B currency map (sign +)
-    // and we accumulate B→A as negatives in the SAME entry. At the end the
-    // sign tells us the actual direction; we split into one entry per pair.
-    type Pair = { byCurrency: Record<string, number> }
+
+    // Key: `${A}|${B}` with A < B by personId. We accumulate a signed
+    // converted total per pair (positive = low→high, negative = high→low),
+    // plus an UNSIGNED per-currency breakdown for transparency (these
+    // intentionally don't net across reverse flows — they're just "what
+    // currencies showed up on this pair, in both directions").
+    type Pair = { converted: number; partial: boolean; byCurrency: Record<string, number> }
     const pairs = new Map<string, Pair>()
     const pairKey = (a: string, b: string) => a < b ? `${a}|${b}` : `${b}|${a}`
     const pairLow = (a: string, b: string) => a < b ? a : b
-    const pairHigh = (a: string, b: string) => a < b ? b : a
 
     for (const loc of currentEvent.value.locations) {
       for (const r of loc.receipts ?? []) {
+        const receiptDate = r.createdAt
         for (const entry of perReceiptDebts(r, loc)) {
           const { debtorPersonId: d, creditorPersonId: c, byCurrency } = entry
           const key = pairKey(d, c)
-          const pair = pairs.get(key) ?? { byCurrency: {} }
-          // Direction sign: if d == pairLow, then d→c is positive; else flip.
+          const pair = pairs.get(key) ?? { converted: 0, partial: false, byCurrency: {} }
           const dir = d === pairLow(d, c) ? 1 : -1
+
+          // Convert this receipt's contribution to displayCurrency at its
+          // historical rate. Sum into the directed pair total.
+          let receiptConverted = 0
           for (const [cur, amt] of Object.entries(byCurrency)) {
-            pair.byCurrency[cur] = (pair.byCurrency[cur] ?? 0) + dir * amt
+            if (cur.toUpperCase() === target) {
+              receiptConverted += amt
+            } else {
+              const conv = currencyStore.convert(amt, cur, receiptDate)
+              if (conv) {
+                receiptConverted += conv.value
+              } else {
+                pair.partial = true
+              }
+            }
+            // For the transparency breakdown we add unsigned amounts —
+            // direction stays implicit in the per-receipt grouping rather
+            // than being baked into per-currency netting (which would lose
+            // detail if a pair had multi-currency reverse flows).
+            pair.byCurrency[cur] = (pair.byCurrency[cur] ?? 0) + amt
           }
+          pair.converted += dir * receiptConverted
           pairs.set(key, pair)
         }
       }
     }
 
-    const out: Array<{ debtorPersonId: string; creditorPersonId: string; byCurrency: Record<string, number> }> = []
+    const out: Array<{
+      debtorPersonId: string
+      creditorPersonId: string
+      converted: number | null
+      target: string
+      partial: boolean
+      byCurrency: Record<string, number>
+    }> = []
     for (const [key, pair] of pairs) {
+      // Anything below half a cent net = treat as settled.
+      if (Math.abs(pair.converted) < 0.005 && !pair.partial) continue
       const [low, high] = key.split('|') as [string, string]
-      // Split positive-direction currencies (low→high) from negative (high→low).
-      const lowToHigh: Record<string, number> = {}
-      const highToLow: Record<string, number> = {}
-      for (const [cur, amt] of Object.entries(pair.byCurrency)) {
-        if (Math.abs(amt) < 0.005) continue
-        if (amt > 0) lowToHigh[cur] = amt
-        else highToLow[cur] = -amt
-      }
-      if (Object.keys(lowToHigh).length) {
-        out.push({ debtorPersonId: low, creditorPersonId: high, byCurrency: lowToHigh })
-      }
-      if (Object.keys(highToLow).length) {
-        out.push({ debtorPersonId: high, creditorPersonId: low, byCurrency: highToLow })
-      }
+      const debtor = pair.converted >= 0 ? low : high
+      const creditor = pair.converted >= 0 ? high : low
+      out.push({
+        debtorPersonId: debtor,
+        creditorPersonId: creditor,
+        converted: pair.partial && Math.abs(pair.converted) < 0.005 ? null : Math.abs(pair.converted),
+        target,
+        partial: pair.partial,
+        byCurrency: pair.byCurrency,
+      })
     }
     return out
   }
@@ -1509,6 +1603,8 @@ export const useEventsStore = defineStore('events', () => {
     createImageFromUrl,
     replaceImage,
     moveImage,
+    addEventParticipant,
+    removeEventParticipant,
     uploadLocationReceipt,
     updateLocationReceipt,
     deleteLocationReceipt,

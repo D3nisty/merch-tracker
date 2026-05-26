@@ -10,7 +10,7 @@ import { requireEventEdit, eventIdForLocation } from '../../../utils/permissions
  */
 export default defineEventHandler(async (event) => {
   const receiptId = getRouterParam(event, 'id')!
-  const body = await readBody(event) as { name?: string; price?: number | null; currency?: string }
+  const body = await readBody(event) as { name?: string; price?: number | null; currency?: string; splitAmongMarked?: boolean }
 
   const receipt = useDb().select().from(locationReceipts).where(eq(locationReceipts.id, receiptId)).get()
   if (!receipt) throw createError({ statusCode: 404, message: 'Receipt not found' })
@@ -41,6 +41,7 @@ export default defineEventHandler(async (event) => {
     price,
     currency,
     sortOrder: nextOrder,
+    splitAmongMarked: body.splitAmongMarked === true,
     createdAt: now(),
   }
   db.insert(locationReceiptItems).values(newItem).run()

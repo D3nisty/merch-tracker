@@ -45,9 +45,21 @@ const COLOR_RING: Record<string, string> = {
   yellow: 'ring-yellow-500', red: 'ring-red-500', pink: 'ring-pink-500',
   orange: 'ring-orange-500', teal: 'ring-teal-500',
 }
+// Scope the visible persons to the event's explicit participant list when
+// set; otherwise fall back to every Person in the system (legacy events,
+// or trips where no participants were assigned upfront).
+const scopedPersons = computed(() => {
+  const participants = store.currentEvent?.participants ?? []
+  return participants.length ? participants : personsStore.persons
+})
+
 function personById(id: string | null | undefined) {
   if (!id) return undefined
-  return personsStore.persons.find(p => p.id === id)
+  // Look up across BOTH the scoped list AND the full persons store so the
+  // payer / debt summary still resolves names if someone was removed from
+  // the participants but had already claimed items.
+  return scopedPersons.value.find(p => p.id === id)
+    ?? personsStore.persons.find(p => p.id === id)
 }
 function personInitial(name: string) {
   return (name?.trim()?.[0] ?? '?').toUpperCase()
@@ -56,7 +68,7 @@ function personInitial(name: string) {
 // ── Payer picker ────────────────────────────────────────────────────────
 const payerOptions = computed(() => [
   { value: '', label: '— ' + t('upload.payerUnset') + ' —' },
-  ...personsStore.persons.map(p => ({ value: p.id, label: p.name })),
+  ...scopedPersons.value.map(p => ({ value: p.id, label: p.name })),
 ])
 const payerDraft = ref(props.receipt.paidByPersonId ?? '')
 watch(() => props.receipt.paidByPersonId, (v) => { payerDraft.value = v ?? '' })
@@ -67,8 +79,12 @@ async function setPayer(personId: string) {
 }
 
 // ── Unified entries (booth products + receipt-only items) ───────────────
-type EntryProduct = { kind: 'product'; id: string; name: string; price: number | null; currency: string; size: string | null; category: string | null; marks: Array<{ personId: string; quantity: number }>; boothName: string; product: Product }
-type EntryCustom = { kind: 'custom'; id: string; name: string; price: number | null; currency: string; size: null; category: null; marks: Array<{ personId: string; quantity: number }>; boothName: string; item: LocationReceiptItem }
+// `articleName` is set on price sources that live under an article-type
+// catalog image, so the receipt row can clarify which figure/item the source
+// belongs to — disambiguates "eEarphone · 4130 JPY" vs "eEarphone · 32800 JPY"
+// when both happen to be sources from the same shop for different articles.
+type EntryProduct = { kind: 'product'; id: string; name: string; price: number | null; currency: string; size: string | null; category: string | null; marks: Array<{ personId: string; quantity: number }>; boothName: string; articleName: string | null; splitAmongMarked: boolean; product: Product }
+type EntryCustom = { kind: 'custom'; id: string; name: string; price: number | null; currency: string; size: null; category: null; marks: Array<{ personId: string; quantity: number }>; boothName: string; articleName: null; splitAmongMarked: boolean; item: LocationReceiptItem }
 type Entry = EntryProduct | EntryCustom
 
 const entries = computed<Entry[]>(() => {
@@ -76,11 +92,23 @@ const entries = computed<Entry[]>(() => {
   if (!loc) return []
   const out: Entry[] = []
   for (const booth of loc.booths ?? []) {
+    // Lookup table: catalogImageId → article display name, populated only
+    // for article-type images. Catalog/receipt images are skipped because
+    // their "name" wouldn't disambiguate anything useful here.
+    const articleNameById = new Map<string, string>()
+    for (const img of booth.images ?? []) {
+      if (img.imageType !== 'article') continue
+      const label = img.customName?.trim() || img.originalName?.trim() || ''
+      if (label) articleNameById.set(img.id, label)
+    }
     for (const product of booth.products ?? []) {
       // Receipt assignments piggyback on the per-person purchased marks.
       const marks = (product.marks ?? [])
         .filter(m => m.isPurchased)
         .map(m => ({ personId: m.personId, quantity: m.quantity ?? 1 }))
+      const articleName = product.catalogImageId
+        ? articleNameById.get(product.catalogImageId) ?? null
+        : null
       out.push({
         kind: 'product',
         id: product.id,
@@ -91,6 +119,8 @@ const entries = computed<Entry[]>(() => {
         category: product.category,
         marks,
         boothName: booth.name,
+        articleName,
+        splitAmongMarked: product.splitAmongMarked === true,
         product,
       })
     }
@@ -109,6 +139,8 @@ const entries = computed<Entry[]>(() => {
       category: null,
       marks: item.marks.map(m => ({ personId: m.personId, quantity: m.quantity })),
       boothName: customLabel,
+      articleName: null,
+      splitAmongMarked: item.splitAmongMarked === true,
       item,
     })
   }
@@ -117,7 +149,14 @@ const entries = computed<Entry[]>(() => {
     const customB = b.kind === 'custom' ? 1 : 0
     if (customA !== customB) return customA - customB
     const byShop = a.boothName.localeCompare(b.boothName)
-    return byShop !== 0 ? byShop : a.name.localeCompare(b.name)
+    if (byShop !== 0) return byShop
+    // Group sources for the same article together so the user sees all
+    // "Final Audio E3000" sources, then all "Final Audio A5000" sources.
+    const articleA = a.articleName ?? '￿'
+    const articleB = b.articleName ?? '￿'
+    const byArticle = articleA.localeCompare(articleB)
+    if (byArticle !== 0) return byArticle
+    return a.name.localeCompare(b.name)
   })
 })
 
@@ -144,6 +183,19 @@ function isClaimedBy(entry: Entry, personId: string): boolean {
   return entry.marks.some(m => m.personId === personId)
 }
 
+// Flip the per-item "split among markers" flag. Booth products go through
+// updateProduct (so the change is reflected app-wide, not just on this
+// receipt); receipt-only items go through updateReceiptItem.
+async function toggleSplit(entry: Entry) {
+  if (!props.canEdit) return
+  const next = !entry.splitAmongMarked
+  if (entry.kind === 'product') {
+    await store.updateProduct(entry.product.id, { splitAmongMarked: next })
+  } else {
+    await store.updateReceiptItem(entry.item.id, { splitAmongMarked: next })
+  }
+}
+
 // ── Settlement summary ──────────────────────────────────────────────────
 const debts = computed(() => {
   const loc = store.currentEvent?.locations?.find(l => l.id === props.locationId)
@@ -158,8 +210,12 @@ function formatCurrencyMap(map: Record<string, number>): string {
     .join(' · ')
 }
 
+// Convert this receipt's per-currency debt totals to the configured display
+// currency USING THE RATE AS OF THE RECEIPT'S PAYMENT DATE. That way the
+// per-receipt summary stays stable even if FX rates drift after the trip —
+// the converted amount reflects what was actually paid at the time.
 function convertedDebtTotal(byCurrency: Record<string, number>) {
-  return currencyStore.convertTotals(byCurrency)
+  return currencyStore.convertTotals(byCurrency, props.receipt.createdAt)
 }
 
 // ── Ad-hoc custom items ─────────────────────────────────────────────────
@@ -327,15 +383,21 @@ watch(() => props.modelValue, (open) => {
                     <div :class="['text-sm', entry.marks.length ? 'line-through text-gray-500' : 'text-white']">
                       {{ entry.name }}
                     </div>
+                    <!-- Article name: disambiguates two sources from the same
+                         shop that price different figures/items. Smaller and
+                         grayer than the source name so it reads as a subtitle. -->
+                    <div v-if="entry.articleName" class="text-xs text-gray-500 mt-0.5 truncate">
+                      <UIcon name="i-heroicons-cube" class="w-3 h-3 inline-block -mt-0.5 mr-0.5 text-orange-400/70" />{{ entry.articleName }}
+                    </div>
                     <div v-if="entry.size || entry.category" class="text-xs text-gray-500 mt-0.5">
                       <span v-if="entry.size">{{ entry.size }}</span>
                       <span v-if="entry.size && entry.category"> · </span>
                       <span v-if="entry.category">{{ entry.category }}</span>
                     </div>
                     <!-- Person chips: who claimed this item -->
-                    <div v-if="personsStore.persons.length" class="flex items-center gap-1 mt-1.5 flex-wrap">
+                    <div v-if="scopedPersons.length" class="flex items-center gap-1 mt-1.5 flex-wrap">
                       <button
-                        v-for="person in personsStore.persons"
+                        v-for="person in scopedPersons"
                         :key="person.id"
                         type="button"
                         :title="person.name"
@@ -367,6 +429,21 @@ watch(() => props.modelValue, (open) => {
                       variant="caption"
                     />
                   </div>
+                  <!-- Split toggle: divides this line evenly across markers
+                       in settlement math (vs. charging each marker the full
+                       price). Highlighted teal when active. Editor-only since
+                       it affects everyone's debts. -->
+                  <UButton
+                    v-if="canEdit"
+                    icon="i-heroicons-arrows-right-left"
+                    variant="ghost"
+                    :color="entry.splitAmongMarked ? 'teal' : 'gray'"
+                    size="xs"
+                    class="shrink-0"
+                    :class="entry.splitAmongMarked ? 'opacity-100' : 'opacity-50 hover:opacity-100'"
+                    :title="entry.splitAmongMarked ? t('upload.splitOff') : t('upload.splitOn')"
+                    @click="toggleSplit(entry)"
+                  />
                   <UButton
                     v-if="entry.kind === 'custom' && canEdit"
                     icon="i-heroicons-x-mark"
@@ -437,11 +514,19 @@ watch(() => props.modelValue, (open) => {
                     :class="COLOR_BG[personById(debt.creditorPersonId)!.color] ?? 'bg-purple-500'"
                   >{{ personInitial(personById(debt.creditorPersonId)!.name) }}</span>
                   <strong class="text-gray-200">{{ personById(debt.creditorPersonId)?.name }}</strong>
-                  <span class="font-mono text-yellow-400">{{ formatCurrencyMap(debt.byCurrency) }}</span>
-                  <span
-                    v-if="Object.keys(debt.byCurrency).length > 1 && convertedDebtTotal(debt.byCurrency)"
-                    class="text-gray-500 font-mono"
-                  >≈ {{ convertedDebtTotal(debt.byCurrency)!.value.toFixed(2) }} {{ convertedDebtTotal(debt.byCurrency)!.target }}</span>
+                  <!-- Primary amount: displayCurrency-converted at receipt
+                       date. Falls back to the raw per-currency breakdown
+                       while rates are still loading. -->
+                  <template v-if="convertedDebtTotal(debt.byCurrency) && !convertedDebtTotal(debt.byCurrency)!.partial">
+                    <span class="font-mono text-yellow-400">
+                      {{ convertedDebtTotal(debt.byCurrency)!.value.toFixed(2) }} {{ convertedDebtTotal(debt.byCurrency)!.target }}
+                    </span>
+                    <span
+                      v-if="Object.keys(debt.byCurrency).filter(c => c !== convertedDebtTotal(debt.byCurrency)!.target).length"
+                      class="text-gray-500 font-mono"
+                    >({{ formatCurrencyMap(debt.byCurrency) }})</span>
+                  </template>
+                  <span v-else class="font-mono text-yellow-400">{{ formatCurrencyMap(debt.byCurrency) }}</span>
                 </li>
               </ul>
             </div>
