@@ -995,18 +995,22 @@ export const useEventsStore = defineStore('events', () => {
     }
 
     // Booth products under this location: count purchased marks.
-    // When `splitAmongMarked` is set, the LINE TOTAL (price × Σ marker
-    // quantities) is divided EQUALLY across markers regardless of each
-    // marker's individual qty. Default behaviour (split off) charges each
-    // marker `price × their own quantity` — same as before.
+    // When `splitAmongMarked` is set, the price is divided EQUALLY across
+    // every marker — `price / N`. Per-person quantity is intentionally
+    // ignored in split mode (a "group pizza" splits by headcount, not by
+    // how hungry each person is). Default behaviour (split off) charges
+    // each marker `price × their own quantity` — same as before.
+    //
+    // To split a multi-unit line (e.g. 2 tickets at €50 split among 3
+    // people), enter the line at its TOTAL price (€100) and split — don't
+    // try to encode it via per-person quantities.
     for (const booth of location.booths ?? []) {
       for (const p of booth.products ?? []) {
         if (p.price == null || p.price <= 0) continue
         const purchasedMarks = (p.marks ?? []).filter(m => m.isPurchased)
         if (!purchasedMarks.length) continue
         if (p.splitAmongMarked && purchasedMarks.length > 1) {
-          const totalQty = purchasedMarks.reduce((s, m) => s + (m.quantity ?? 1), 0)
-          const perPerson = (p.price * Math.max(1, totalQty)) / purchasedMarks.length
+          const perPerson = p.price / purchasedMarks.length
           for (const m of purchasedMarks) add(m.personId, p.currency, perPerson)
         } else {
           for (const m of purchasedMarks) {
@@ -1022,8 +1026,7 @@ export const useEventsStore = defineStore('events', () => {
       const marks = item.marks ?? []
       if (!marks.length) continue
       if (item.splitAmongMarked && marks.length > 1) {
-        const totalQty = marks.reduce((s, m) => s + (m.quantity ?? 1), 0)
-        const perPerson = (item.price * Math.max(1, totalQty)) / marks.length
+        const perPerson = item.price / marks.length
         for (const m of marks) add(m.personId, item.currency, perPerson)
       } else {
         for (const m of marks) {
