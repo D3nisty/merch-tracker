@@ -122,8 +122,8 @@ async function confirmDelete() {
 }
 
 function roleColor(role: string) {
-  if (role === 'admin') return 'red'
-  if (role === 'editor') return 'purple'
+  if (role === 'admin') return 'green'
+  if (role === 'editor') return 'primary'
   return 'gray'
 }
 </script>
@@ -137,7 +137,7 @@ function roleColor(role: string) {
         </NuxtLink>
         <h1 class="text-2xl font-bold text-white">{{ t('nav.adminUsers') }}</h1>
       </div>
-      <UButton color="purple" icon="i-heroicons-plus" @click="showCreate = true">{{ t('sharing.newUser') }}</UButton>
+      <UButton color="primary" icon="i-heroicons-plus" @click="showCreate = true">{{ t('sharing.newUser') }}</UButton>
     </div>
 
     <p v-if="error" class="text-red-400 text-sm mb-3">{{ error }}</p>
@@ -183,7 +183,7 @@ function roleColor(role: string) {
             </UFormGroup>
             <div class="flex gap-2 justify-end">
               <UButton size="xs" variant="ghost" color="gray" @click="editingId = null">{{ t('common.cancel') }}</UButton>
-              <UButton size="xs" color="purple" @click="saveEdit(u.id)">{{ t('common.save') }}</UButton>
+              <UButton size="xs" color="primary" @click="saveEdit(u.id)">{{ t('common.save') }}</UButton>
             </div>
           </div>
           <div v-else class="flex items-center gap-3">
@@ -225,7 +225,7 @@ function roleColor(role: string) {
         <template #footer>
           <div class="flex gap-2 justify-end">
             <UButton variant="ghost" color="gray" @click="showCreate = false">{{ t('common.cancel') }}</UButton>
-            <UButton color="purple" :loading="creating" :disabled="!newUser.username.trim() || newUser.password.length < 6" @click="create">{{ t('common.add') }}</UButton>
+            <UButton color="primary" :loading="creating" :disabled="!newUser.username.trim() || newUser.password.length < 6" @click="create">{{ t('common.add') }}</UButton>
           </div>
         </template>
       </UCard>

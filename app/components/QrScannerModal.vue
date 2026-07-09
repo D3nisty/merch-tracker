@@ -185,7 +185,7 @@ onBeforeUnmount(stopScanner)
 
         <div v-if="state === 'error'" class="flex gap-2 justify-end">
           <UButton size="sm" variant="ghost" color="gray" @click="close">{{ t('common.cancel') }}</UButton>
-          <UButton size="sm" color="purple" @click="startScanner">{{ t('qrscan.retry') }}</UButton>
+          <UButton size="sm" color="primary" @click="startScanner">{{ t('qrscan.retry') }}</UButton>
         </div>
       </div>
     </UCard>

@@ -151,7 +151,7 @@ async function refreshRates() {
             <UButton color="gray" variant="ghost" :loading="refreshing" icon="i-heroicons-arrow-path" @click="refreshRates">
               {{ t('settings.refreshRates') }}
             </UButton>
-            <UButton color="purple" :loading="saving" icon="i-heroicons-check" @click="save">
+            <UButton color="primary" :loading="saving" icon="i-heroicons-check" @click="save">
               {{ t('common.save') }}
             </UButton>
           </div>

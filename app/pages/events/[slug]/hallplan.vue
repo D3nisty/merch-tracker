@@ -193,7 +193,7 @@ const locationStats = computed(() => {
         </UButton>
         <UButton
           icon="i-heroicons-plus"
-          color="purple"
+          color="primary"
           size="sm"
           @click="showAddBooth = true"
         >
@@ -285,7 +285,7 @@ const locationStats = computed(() => {
                 <UInput v-model="editForm.website" :placeholder="t('common.website')" size="sm" />
                 <UInput v-model="editForm.notes" :placeholder="t('common.notes')" size="sm" />
                 <div class="flex gap-2 pt-1">
-                  <UButton size="sm" color="purple" block @click="saveEditBooth">{{ t('common.save') }}</UButton>
+                  <UButton size="sm" color="primary" block @click="saveEditBooth">{{ t('common.save') }}</UButton>
                   <UButton size="sm" color="gray" variant="outline" @click="editingBooth = false">{{ t('common.cancel') }}</UButton>
                 </div>
               </div>
@@ -353,7 +353,7 @@ const locationStats = computed(() => {
                 </div>
                 <UButton
                   :to="`/events/${route.params.slug}/booth/${selectedBooth.slug ?? selectedBooth.id}`"
-                  color="purple"
+                  color="primary"
                   size="sm"
                   block
                   icon="i-heroicons-arrow-right"

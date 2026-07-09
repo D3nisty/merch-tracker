@@ -154,7 +154,7 @@ async function handleUrl() {
           <UButton variant="ghost" color="gray" @click="emit('update:modelValue', false)">{{ t('common.cancel') }}</UButton>
           <UButton
             v-if="source === 'file'"
-            color="purple"
+            color="primary"
             :loading="uploading"
             :disabled="!selectedFile"
             icon="i-heroicons-arrow-up-tray"
@@ -164,7 +164,7 @@ async function handleUrl() {
           </UButton>
           <UButton
             v-else
-            color="purple"
+            color="primary"
             :loading="uploading"
             :disabled="!isValidUrl"
             icon="i-heroicons-link"

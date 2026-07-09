@@ -77,7 +77,7 @@ async function acceptAsNewUser() {
   }
 }
 
-const levelColor = computed(() => intro.value?.level === 'edit' ? 'purple' : 'gray')
+const levelColor = computed(() => intro.value?.level === 'edit' ? 'primary' : 'gray')
 </script>
 
 <template>
@@ -102,7 +102,7 @@ const levelColor = computed(() => intro.value?.level === 'edit' ? 'purple' : 'gr
       <div class="rounded-lg border border-gray-800 bg-gray-900 p-3 mb-4">
         <div class="flex items-center gap-2 mb-1">
           <UBadge :label="intro.event.type === 'convention' ? t('events.convention') : t('events.travelType')"
-            :color="intro.event.type === 'convention' ? 'purple' : 'blue'" variant="soft" size="xs" />
+            :color="intro.event.type === 'convention' ? 'indigo' : 'primary'" variant="soft" size="xs" />
           <UBadge :label="intro.level === 'edit' ? t('sharing.levelEdit') : t('sharing.levelView')"
             :color="levelColor" variant="soft" size="xs" />
         </div>
@@ -113,7 +113,7 @@ const levelColor = computed(() => intro.value?.level === 'edit' ? 'purple' : 'gr
       <!-- Logged-in path -->
       <div v-if="authStore.isLoggedIn" class="space-y-2">
         <p class="text-sm text-gray-400">{{ t('sharing.inviteAcceptAs') }} <span class="text-white font-medium">{{ authStore.user?.username }}</span></p>
-        <UButton color="purple" block icon="i-heroicons-arrow-right" :loading="submitting" @click="acceptWithCurrentUser">
+        <UButton color="primary" block icon="i-heroicons-arrow-right" :loading="submitting" @click="acceptWithCurrentUser">
           {{ t('sharing.inviteJoin') }}
         </UButton>
       </div>
@@ -128,7 +128,7 @@ const levelColor = computed(() => intro.value?.level === 'edit' ? 'purple' : 'gr
           <UInput v-model="newPassword" type="password" autocomplete="new-password" />
         </UFormGroup>
         <UButton
-          color="purple" block icon="i-heroicons-arrow-right"
+          color="primary" block icon="i-heroicons-arrow-right"
           :loading="submitting"
           :disabled="!newUsername.trim() || newPassword.length < 6"
           @click="acceptAsNewUser"

@@ -112,7 +112,7 @@ async function remove(personId: string) {
               <span class="text-sm text-gray-200 flex-1 truncate">{{ p.name }}</span>
               <UButton
                 icon="i-heroicons-plus"
-                color="purple" size="xs"
+                color="primary" size="xs"
                 :loading="saving === p.id"
                 @click="add(p.id)"
               >{{ t('common.add') }}</UButton>

@@ -18,9 +18,13 @@ export default defineNuxtConfig({
   },
 
   css: [
-    // Light-mode color overrides. The app's custom components are styled with
-    // hardcoded dark-mode utility classes; this stylesheet remaps them to
-    // light equivalents when the `dark` class is absent from <html>.
+    // Nomad design system: token CSS variables (dark + light), base
+    // typography (Sora / Public Sans / IBM Plex Mono) and gradient helpers.
+    // Loaded first so its base rules are the foundation everything sits on.
+    '~/assets/css/nomad.css',
+    // Legacy light-mode color overrides for any components still using the
+    // old hardcoded `bg-gray-*` utilities. Nomad tokens theme themselves via
+    // CSS vars; this stays as a safety net during/after the migration.
     '~/assets/css/light-mode.css',
     // Scales the root font-size up on wide screens so rem-based Tailwind
     // utilities (text, spacing, sizing) all grow together — equivalent to a
@@ -39,6 +43,13 @@ export default defineNuxtConfig({
       titleTemplate: (chunk?: string) => chunk && chunk !== 'MerchTracker' ? `${chunk} — MerchTracker` : 'MerchTracker',
       link: [
         { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+        // Nomad type system — Sora (display), Public Sans (body), IBM Plex Mono (money)
+        { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
+        { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
+        {
+          rel: 'stylesheet',
+          href: 'https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap',
+        },
       ],
       meta: [
         { name: 'theme-color', content: '#a855f7' },

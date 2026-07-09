@@ -155,13 +155,21 @@ async function copyInvite(token: string) {
   <UModal :model-value="modelValue" @update:model-value="emit('update:modelValue', $event)" :ui="{ width: 'sm:max-w-lg' }">
     <UCard>
       <template #header>
-        <h3 class="font-bold text-white text-lg">{{ t('sharing.shareEvent') }} — {{ event.name }}</h3>
+        <div class="flex items-center justify-between gap-3">
+          <h3 class="font-bold text-ink-strong text-base flex items-center gap-2">
+            <UIcon name="i-heroicons-share" class="w-4 h-4 text-sky" />
+            {{ t('sharing.shareEvent') }} — {{ event.name }}
+          </h3>
+          <button type="button" class="text-faint hover:text-ink" @click="emit('update:modelValue', false)">
+            <UIcon name="i-heroicons-x-mark" class="w-4.5 h-4.5" />
+          </button>
+        </div>
       </template>
 
       <div class="space-y-4">
         <!-- Public state -->
-        <div class="flex items-center gap-2 text-sm px-3 py-2 rounded-lg"
-          :class="event.isPublic ? 'bg-green-500/10 text-green-300' : 'bg-gray-800 text-gray-400'">
+        <div class="flex items-center gap-2.5 text-sm px-3.5 py-3 rounded-card border"
+          :class="event.isPublic ? 'bg-chip-bought border-bought/30 text-bought' : 'bg-surface-2 border-line text-muted'">
           <UIcon :name="event.isPublic ? 'i-heroicons-globe-alt' : 'i-heroicons-lock-closed'" class="w-4 h-4" />
           {{ event.isPublic ? t('sharing.publicEvent') : t('sharing.private') }}
         </div>
@@ -210,7 +218,7 @@ async function copyInvite(token: string) {
               size="sm"
             />
             <UButton
-              color="purple"
+              color="primary"
               size="sm"
               icon="i-heroicons-plus"
               :disabled="!targetId"
@@ -238,7 +246,7 @@ async function copyInvite(token: string) {
               </div>
               <UBadge
                 :label="s.level === 'edit' ? t('sharing.levelEdit') : t('sharing.levelView')"
-                :color="s.level === 'edit' ? 'purple' : 'gray'"
+                :color="s.level === 'edit' ? 'primary' : 'gray'"
                 variant="soft" size="xs"
               />
               <UButton
@@ -255,7 +263,7 @@ async function copyInvite(token: string) {
               <span class="text-sm text-white flex-1 truncate">{{ s.groupName }}</span>
               <UBadge
                 :label="s.level === 'edit' ? t('sharing.levelEdit') : t('sharing.levelView')"
-                :color="s.level === 'edit' ? 'purple' : 'gray'"
+                :color="s.level === 'edit' ? 'primary' : 'gray'"
                 variant="soft" size="xs"
               />
               <UButton
@@ -295,7 +303,7 @@ async function copyInvite(token: string) {
               />
             </UFormGroup>
             <UButton
-              color="purple"
+              color="primary"
               size="sm"
               icon="i-heroicons-link"
               :loading="inviteSubmitting"
@@ -319,7 +327,7 @@ async function copyInvite(token: string) {
               </div>
               <UBadge
                 :label="inv.level === 'edit' ? t('sharing.levelEdit') : t('sharing.levelView')"
-                :color="inv.level === 'edit' ? 'purple' : 'gray'"
+                :color="inv.level === 'edit' ? 'primary' : 'gray'"
                 variant="soft" size="xs"
               />
               <UButton

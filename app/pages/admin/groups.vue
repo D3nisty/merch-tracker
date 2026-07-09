@@ -137,7 +137,7 @@ function canManageGroup(g: Group) {
         </NuxtLink>
         <h1 class="text-2xl font-bold text-white">{{ t('nav.adminGroups') }}</h1>
       </div>
-      <UButton color="purple" icon="i-heroicons-plus" @click="showCreate = true">{{ t('sharing.newGroup') }}</UButton>
+      <UButton color="primary" icon="i-heroicons-plus" @click="showCreate = true">{{ t('sharing.newGroup') }}</UButton>
     </div>
 
     <p v-if="error" class="text-red-400 text-sm mb-3">{{ error }}</p>
@@ -190,12 +190,12 @@ function canManageGroup(g: Group) {
               size="sm"
               class="flex-1"
             />
-            <UButton color="purple" size="sm" icon="i-heroicons-plus" :disabled="!memberSelectId" @click="addMember(g.id)">{{ t('common.add') }}</UButton>
+            <UButton color="primary" size="sm" icon="i-heroicons-plus" :disabled="!memberSelectId" @click="addMember(g.id)">{{ t('common.add') }}</UButton>
             <UButton size="sm" variant="ghost" color="gray" @click="addingMember = null; memberSelectId = ''">{{ t('common.cancel') }}</UButton>
           </div>
           <UButton
             v-else-if="canManageGroup(g)"
-            size="xs" variant="soft" color="purple"
+            size="xs" variant="soft" color="primary"
             icon="i-heroicons-plus"
             @click="addingMember = g.id; memberSelectId = ''"
           >{{ t('sharing.addMember') }}</UButton>
@@ -213,7 +213,7 @@ function canManageGroup(g: Group) {
         <template #footer>
           <div class="flex gap-2 justify-end">
             <UButton variant="ghost" color="gray" @click="showCreate = false">{{ t('common.cancel') }}</UButton>
-            <UButton color="purple" :loading="creating" :disabled="!newGroupName.trim()" @click="create">{{ t('common.add') }}</UButton>
+            <UButton color="primary" :loading="creating" :disabled="!newGroupName.trim()" @click="create">{{ t('common.add') }}</UButton>
           </div>
         </template>
       </UCard>

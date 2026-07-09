@@ -9,3 +9,4 @@ public/uploads/
 *.db-wal
 .env
 .env.local
+.claude/design_handoff_merchtracker_nomad

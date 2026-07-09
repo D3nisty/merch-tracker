@@ -306,7 +306,7 @@ watch(() => props.modelValue, (open) => {
           <UButton
             v-if="receipt.latitude != null && receipt.longitude != null"
             icon="i-heroicons-map-pin"
-            variant="ghost" color="purple" size="xs"
+            variant="ghost" color="primary" size="xs"
             :title="t('upload.openInMaps')"
             @click="openInMaps"
           />
@@ -480,7 +480,7 @@ watch(() => props.modelValue, (open) => {
                 />
                 <UButton
                   icon="i-heroicons-plus"
-                  color="purple"
+                  color="primary"
                   size="xs"
                   :loading="adding"
                   :disabled="!newItem.name.trim()"

@@ -254,7 +254,7 @@ function selectAll(set: Ref<Set<string>>, ids: string[]) { set.value = new Set(i
               <span v-if="ueResult.failed" class="text-red-400 ml-2">{{ t('permissions.failedN', { n: ueResult.failed }) }}</span>
             </span>
             <UButton
-              color="purple"
+              color="primary"
               icon="i-heroicons-bolt"
               :disabled="!ueUserIds.size || !ueEventIds.size"
               :loading="ueSubmitting"
@@ -327,7 +327,7 @@ function selectAll(set: Ref<Set<string>>, ids: string[]) { set.value = new Set(i
               <span v-if="geResult.failed" class="text-red-400 ml-2">{{ t('permissions.failedN', { n: geResult.failed }) }}</span>
             </span>
             <UButton
-              color="purple"
+              color="primary"
               icon="i-heroicons-bolt"
               :disabled="!geGroupIds.size || !geEventIds.size"
               :loading="geSubmitting"
@@ -406,7 +406,7 @@ function selectAll(set: Ref<Set<string>>, ids: string[]) { set.value = new Set(i
               <span v-if="ubResult.failed" class="text-red-400 ml-2">{{ t('permissions.failedN', { n: ubResult.failed }) }}</span>
             </span>
             <UButton
-              color="purple"
+              color="primary"
               icon="i-heroicons-bolt"
               :disabled="!ubUserIds.size || !ubBoothIds.size"
               :loading="ubSubmitting"
@@ -486,7 +486,7 @@ function selectAll(set: Ref<Set<string>>, ids: string[]) { set.value = new Set(i
               <span v-if="gbResult.failed" class="text-red-400 ml-2">{{ t('permissions.failedN', { n: gbResult.failed }) }}</span>
             </span>
             <UButton
-              color="purple"
+              color="primary"
               icon="i-heroicons-bolt"
               :disabled="!gbGroupIds.size || !gbBoothIds.size"
               :loading="gbSubmitting"

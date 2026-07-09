@@ -76,11 +76,11 @@ const typeOptions = computed(() => [
               :class="[
                 'p-4 rounded-lg border-2 text-left transition-all',
                 form.type === opt.value
-                  ? 'border-purple-500 bg-purple-500/10'
+                  ? 'border-sky bg-chip-sky'
                   : 'border-gray-700 hover:border-gray-600',
               ]"
             >
-              <UIcon :name="opt.icon" class="w-5 h-5 mb-2" :class="form.type === opt.value ? 'text-purple-400' : 'text-gray-400'" />
+              <UIcon :name="opt.icon" class="w-5 h-5 mb-2" :class="form.type === opt.value ? 'text-sky' : 'text-gray-400'" />
               <div class="font-medium text-white text-sm">{{ opt.label }}</div>
               <div class="text-xs text-gray-400 mt-1">{{ opt.description }}</div>
             </button>
@@ -112,7 +112,7 @@ const typeOptions = computed(() => [
 
         <div class="flex gap-3 justify-end">
           <UButton variant="ghost" color="gray" to="/">{{ t('common.cancel') }}</UButton>
-          <UButton type="submit" color="purple" :loading="submitting">{{ t('createEvent.title') }}</UButton>
+          <UButton type="submit" color="primary" :loading="submitting">{{ t('createEvent.title') }}</UButton>
         </div>
       </form>
     </UCard>

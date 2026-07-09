@@ -1,0 +1,167 @@
+/*
+ * Nomad design system — runtime tokens + base styling.
+ *
+ * The neutral surface / text / border tokens live here as CSS variables so
+ * light and dark themes flip from ONE place (Tailwind utilities like
+ * `bg-surface`, `text-muted`, `border-line` all resolve to these vars — see
+ * tailwind.config.ts). Accent colours (sky / indigo / planned / bought / must)
+ * are constant across themes and defined directly in the Tailwind config.
+ *
+ * Dark is the default & primary theme. Nuxt color-mode stamps `.dark` on
+ * <html> (preference is 'dark' in nuxt.config), so `:root:not(.dark)` is the
+ * light override — same convention the legacy light-mode.css uses.
+ */
+
+/* ── Dark (default / primary) ─────────────────────────────────────────── */
+:root {
+  --c-app: #0a0e14;
+  --c-sidebar: #0c121b;
+  --c-surface: #111722;
+  --c-surface-2: #0f1620;
+  --c-border: #1f2b3a;
+  --c-border-soft: #16202e;
+  --c-border-hair: #121a26;
+  --c-border-focus: #2f4d63;
+  --c-text: #eef4fb;
+  --c-text-strong: #ffffff;
+  --c-muted: #94a7bd;
+  --c-faint: #5f7186;
+  --c-faint-2: #33455c;
+}
+
+/* ── Light override ───────────────────────────────────────────────────── */
+:root:not(.dark) {
+  --c-app: #eef2f7;
+  --c-sidebar: #ffffff;
+  --c-surface: #ffffff;
+  --c-surface-2: #f2f5f9;
+  --c-border: #d4dce7;
+  --c-border-soft: #e4e9f0;
+  --c-border-hair: #eef2f7;
+  --c-border-focus: #7da8cf;
+  --c-text: #16202e;
+  --c-text-strong: #0a0e14;
+  --c-muted: #526277;
+  --c-faint: #7c8ba0;
+  --c-faint-2: #aab6c6;
+}
+
+/* ── Base ─────────────────────────────────────────────────────────────── */
+html,
+body {
+  background: var(--c-app);
+  color: var(--c-text);
+}
+body {
+  font-family: 'Public Sans', ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, h4 {
+  font-family: 'Sora', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Numeric / money — used anywhere a mono class is applied directly. */
+.mono,
+.font-mono {
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Primary gradients (buttons, FABs, logo mark) ─────────────────────── */
+.grad-primary {
+  background-image: linear-gradient(140deg, #38bdf8, #6366f1);
+  color: #04121c;
+}
+.grad-conv {
+  background-image: linear-gradient(140deg, #818cf8, #6366f1);
+  color: #04121c;
+}
+/* Progress-bar fills */
+.grad-progress {
+  background-image: linear-gradient(90deg, #38bdf8, #2dd4a7);
+}
+.grad-progress-conv {
+  background-image: linear-gradient(90deg, #818cf8, #2dd4a7);
+}
+/* Cover-band tints for trip cards */
+.cover-travel {
+  background-image: linear-gradient(120deg, #12384f, #101a2a);
+}
+.cover-conv {
+  background-image: linear-gradient(120deg, #2a2358, #161232);
+}
+
+/* Scrollbar — subtle on the slate surfaces */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--c-border); border-radius: 8px; }
+
+/* ── Legacy gray → Nomad token bridge (dark theme) ────────────────────────
+ * Components not yet hand-restyled still use hardcoded `bg-gray-*` /
+ * `text-gray-*` / `border-gray-*` utilities. In DARK mode we remap them to
+ * the Nomad token variables so they read as slate. Scoped to `:root.dark`
+ * (specificity 0,3,0) so it beats Tailwind's own utilities regardless of
+ * stylesheet order — the same trick light-mode.css uses for the light theme
+ * (which keeps owning `:root:not(.dark)`). Token-based components use
+ * `bg-surface` etc. and are untouched; accent purple was already routed to
+ * sky via the Nuxt UI `primary` alias, so only neutrals need bridging. */
+:root.dark .bg-gray-950 { background-color: var(--c-app); }
+:root.dark .bg-gray-900 { background-color: var(--c-surface); }
+:root.dark .bg-gray-800 { background-color: var(--c-surface-2); }
+:root.dark .bg-gray-900\/80 { background-color: color-mix(in srgb, var(--c-surface) 85%, transparent); }
+:root.dark .bg-gray-900\/50 { background-color: color-mix(in srgb, var(--c-surface) 55%, transparent); }
+:root.dark .bg-gray-800\/60 { background-color: color-mix(in srgb, var(--c-surface-2) 60%, transparent); }
+:root.dark .bg-gray-800\/80 { background-color: color-mix(in srgb, var(--c-surface-2) 80%, transparent); }
+
+:root.dark .text-gray-300 { color: var(--c-text); }
+:root.dark .text-gray-400 { color: var(--c-muted); }
+:root.dark .text-gray-500 { color: var(--c-faint); }
+:root.dark .text-gray-600 { color: var(--c-faint-2); }
+
+:root.dark .border-gray-700 { border-color: var(--c-border); }
+:root.dark .border-gray-800 { border-color: var(--c-border-soft); }
+:root.dark .hover\:border-gray-500:hover { border-color: var(--c-border-focus); }
+:root.dark .hover\:border-gray-600:hover { border-color: var(--c-border-focus); }
+:root.dark .hover\:bg-gray-800:hover { background-color: var(--c-surface-2); }
+:root.dark .divide-gray-800 > :not([hidden]) ~ :not([hidden]) { border-color: var(--c-border-soft); }
+
+/* ── Legacy purple accent → sky bridge ────────────────────────────────────
+ * The old brand accent was purple. Nuxt UI buttons/badges were already
+ * re-routed via the `primary: sky` alias; this handles the raw purple
+ * utility classes still sprinkled through un-restyled components (catalog
+ * viewer, hall plan, invites, modals). `:root` prefix (0,2,0) beats
+ * Tailwind's utility. IMPORTANT: `bg-purple-500` is intentionally NOT
+ * remapped — it's the 'purple' person-colour dot and must stay purple. */
+:root .text-purple-400 { color: #38bdf8; }
+:root .text-purple-300 { color: #7dd3fc; }
+:root .hover\:text-purple-300:hover { color: #7dd3fc; }
+:root .hover\:text-purple-400:hover { color: #38bdf8; }
+:root .border-purple-500 { border-color: #38bdf8; }
+:root .border-purple-400 { border-color: #38bdf8; }
+:root .hover\:border-purple-500:hover { border-color: #38bdf8; }
+:root .bg-purple-600 { background-color: #38bdf8; }
+:root .hover\:bg-purple-500:hover { background-color: #38bdf8; }
+:root .hover\:bg-purple-600:hover { background-color: #0ea5e9; }
+:root .bg-purple-600\/20 { background-color: rgba(56, 189, 248, 0.16); }
+:root .bg-purple-500\/10 { background-color: rgba(56, 189, 248, 0.10); }
+:root .bg-purple-500\/20 { background-color: rgba(56, 189, 248, 0.18); }
+:root .ring-purple-500 { --tw-ring-color: #38bdf8; }
+:root .from-purple-500 { --tw-gradient-from: #38bdf8 var(--tw-gradient-from-position); --tw-gradient-to: rgba(56,189,248,0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+
+/* ── Nuxt UI primary CTA → Nomad gradient ─────────────────────────────────
+ * Give solid `color="primary"` UButtons the signature sky→indigo gradient +
+ * near-black text (the mock's CTA). Scoped to <button>/<a> so solid-primary
+ * UBadges / UCheckbox ticks stay flat sky. Covers dark (dark:bg-primary-400)
+ * and light (bg-primary-500) solid variants. */
+:root.dark button.dark\:bg-primary-400,
+:root.dark a.dark\:bg-primary-400,
+:root:not(.dark) button.bg-primary-500,
+:root:not(.dark) a.bg-primary-500 {
+  background-image: linear-gradient(140deg, #38bdf8, #6366f1);
+  color: #04121c;
+}
+:root.dark button.dark\:hover\:bg-primary-500:hover,
+:root.dark a.dark\:hover\:bg-primary-500:hover,
+:root:not(.dark) button.hover\:bg-primary-600:hover,
+:root:not(.dark) a.hover\:bg-primary-600:hover {
+  background-image: linear-gradient(140deg, #22aef2, #5457e8);
+}

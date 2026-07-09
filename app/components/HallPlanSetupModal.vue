@@ -350,7 +350,7 @@ const anyProcessing = computed(() => images.value.some(i => i.status === 'upload
           <div class="flex gap-2">
             <UButton
               v-if="anyPending"
-              color="purple"
+              color="primary"
               icon="i-heroicons-cpu-chip"
               :loading="anyProcessing || saving"
               :disabled="anyProcessing"

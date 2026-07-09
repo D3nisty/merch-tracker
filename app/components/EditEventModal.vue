@@ -99,7 +99,7 @@ async function handleSubmit() {
       <template #footer>
         <div class="flex gap-2 justify-end">
           <UButton variant="ghost" color="gray" @click="emit('update:modelValue', false)">{{ t('common.cancel') }}</UButton>
-          <UButton color="purple" :loading="submitting" @click="handleSubmit">{{ t('common.save') }}</UButton>
+          <UButton color="primary" :loading="submitting" @click="handleSubmit">{{ t('common.save') }}</UButton>
         </div>
       </template>
     </UCard>

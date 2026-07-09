@@ -24,6 +24,8 @@ if (!event.value) {
 
 useHead({ title: () => event.value?.name ?? 'Event' })
 
+const isConv = computed(() => event.value?.type === 'convention')
+
 const showAddLocation = ref(false)
 const showEditEvent = ref(false)
 const showShareEvent = ref(false)
@@ -32,9 +34,6 @@ const showDeleteLocationModal = ref(false)
 const showQrScanner = ref(false)
 const deleteLocationId = ref<string | null>(null)
 
-// vuedraggable mutates the bound array in-place via `list` binding, so
-// `event.value.locations` already reflects the post-drag order by the time
-// onLocationDragEnd fires — we just persist that order.
 async function onLocationDragEnd() {
   if (!event.value?.locations) return
   const ids = event.value.locations.map(l => l.id)
@@ -62,11 +61,6 @@ const canShare = computed(() =>
   authStore.isAdmin || event.value?.ownerId === authStore.user?.id,
 )
 
-// Totals — filtered by the currently active "view as" person; falls back to
-// the viewer's own person so the default landing experience is "my budget,
-// my marks" (not the cross-account union). Planned/paid amounts already have
-// discount savings subtracted; `savingsEntries` exposes the dollar-value
-// saved for the green "− X saved" caption.
 const pid = computed(() =>
   personsStore.currentPersonId
   ?? store.currentEvent?.viewerPersonId
@@ -75,8 +69,6 @@ const pid = computed(() =>
 )
 const itemStats = computed(() => store.getItemStats(pid.value))
 const plannedEntries = computed(() => Object.entries(store.getPlannedCostByCurrency(pid.value)).filter(([, v]) => Math.abs(v) > 0.005))
-// Net paid = gross paid − realised savings. Subtraction is done here (not in
-// the store helper) so the math is colocated with the display.
 const paidEntries = computed(() => {
   const gross = store.getPaidCostByCurrency(pid.value)
   const savings = store.getDiscountSavingsByCurrency(pid.value)
@@ -86,15 +78,9 @@ const paidEntries = computed(() => {
 })
 const savingsEntries = computed(() => Object.entries(store.getDiscountSavingsByCurrency(pid.value)).filter(([, v]) => Math.abs(v) > 0.005))
 
-// Sum the per-currency totals into the configured display currency. Null
-// when only one currency is in use (PriceConverted already covers that case
-// inline) or when no rates have loaded yet for the second-or-later currency.
 const plannedConvertedTotal = computed(() => currencyStore.convertTotals(Object.fromEntries(plannedEntries.value)))
 const paidConvertedTotal = computed(() => currencyStore.convertTotals(Object.fromEntries(paidEntries.value)))
 
-// Cross-receipt settlement rollup. Nets reverse flows (A→B vs B→A on the
-// same pair) and shows "X owes Y €Z" per net edge. Empty list = everyone's
-// square OR no receipts have a payer set yet.
 const settlements = computed(() => store.eventSettlements())
 
 const COLOR_BG_MAP: Record<string, string> = {
@@ -129,228 +115,179 @@ function confirmDeleteLocation(id: string) {
   deleteLocationId.value = id
   showDeleteLocationModal.value = true
 }
-
-function locationIcon(type: Location['type']) {
-  const icons: Record<string, string> = {
-    hall: 'i-heroicons-building-office',
-    city: 'i-heroicons-building-office-2',
-    country: 'i-heroicons-globe-alt',
-    area: 'i-heroicons-map-pin',
-    district: 'i-heroicons-map',
-  }
-  return icons[type] ?? 'i-heroicons-map-pin'
-}
 </script>
 
 <template>
   <div v-if="event">
-    <!-- Header -->
-    <div class="mb-6">
-      <NuxtLink to="/" class="text-gray-400 hover:text-white flex items-center gap-1 text-sm mb-4">
-        <UIcon name="i-heroicons-arrow-left" class="w-4 h-4" /> {{ t('event.allEvents') }}
-      </NuxtLink>
+    <!-- back link -->
+    <NuxtLink to="/" class="text-muted hover:text-ink flex items-center gap-1.5 text-[12.5px] mb-3">
+      <UIcon name="i-heroicons-chevron-left" class="w-4 h-4" /> {{ t('event.allEvents') }}
+    </NuxtLink>
 
-      <div class="flex items-start justify-between gap-3 flex-wrap">
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-3 mb-1 flex-wrap">
-            <UBadge
-              :label="event.type === 'convention' ? t('events.convention') : t('events.travelType')"
-              :color="event.type === 'convention' ? 'purple' : 'blue'"
-              variant="soft"
-            />
-            <span v-if="event.date" class="text-gray-400 text-sm">{{ formatEventDateRange(event.date, event.dateTo) }}</span>
-          </div>
-          <h1 class="text-2xl sm:text-3xl font-bold text-white break-words">{{ event.name }}</h1>
-          <p v-if="event.location" class="text-gray-400 mt-1">{{ event.location }}</p>
-          <p v-if="event.description" class="text-gray-500 text-sm mt-2">{{ event.description }}</p>
+    <!-- header -->
+    <div class="flex items-start justify-between gap-5 flex-wrap mb-4">
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2.5 mb-2 flex-wrap">
+          <span
+            class="text-[10.5px] font-bold uppercase tracking-[0.05em] px-2.5 py-[3px] rounded-md"
+            :class="isConv ? 'text-conv-soft bg-chip-conv' : 'text-sky-soft bg-chip-sky'"
+          >{{ isConv ? t('events.convention') : t('events.travelType') }}</span>
+          <span v-if="event.date" class="text-[12.5px] text-muted">{{ formatEventDateRange(event.date, event.dateTo) }}</span>
+          <span v-if="event.isPublic" class="text-[10px] font-bold text-bought bg-chip-bought px-2.5 py-[3px] rounded-md flex items-center gap-1">
+            <UIcon name="i-heroicons-globe-alt" class="w-3 h-3" /> {{ t('sharing.public') }}
+          </span>
         </div>
-        <div class="flex gap-2 items-start shrink-0 flex-wrap">
-          <UBadge
-            v-if="event.isPublic"
-            :label="t('sharing.public')"
-            color="green"
-            variant="soft"
-            size="xs"
-            icon="i-heroicons-globe-alt"
-          />
-          <UButton
-            v-if="canShare"
-            icon="i-heroicons-user-group"
-            variant="outline"
-            color="purple"
-            size="sm"
-            @click="showParticipants = true"
-            :title="t('participants.title')"
-          >
-            <span class="hidden sm:inline">{{ t('participants.title') }}</span>
-          </UButton>
-          <UButton
-            v-if="canShare"
-            icon="i-heroicons-share"
-            variant="outline"
-            color="purple"
-            size="sm"
-            @click="showShareEvent = true"
-          >
-            {{ t('sharing.share') }}
-          </UButton>
-          <UButton
-            v-if="authStore.isEditing"
-            icon="i-heroicons-pencil"
-            variant="ghost"
-            color="gray"
-            size="sm"
-            @click="showEditEvent = true"
-          />
+        <h1 class="text-[28px] font-bold text-ink-strong break-words leading-tight">{{ event.name }}</h1>
+        <p v-if="event.location || event.description" class="text-[13.5px] text-muted mt-1">
+          {{ event.description || event.location }}
+        </p>
+      </div>
+      <div class="flex gap-2 items-start shrink-0 flex-wrap">
+        <button
+          v-if="canShare"
+          class="flex items-center gap-1.5 px-3.5 py-2 rounded-field border text-[12.5px] font-semibold transition-colors"
+          :class="isConv ? 'border-[#3b3a6b] text-conv-soft hover:bg-chip-conv/50' : 'border-line-focus text-sky-soft hover:bg-chip-sky/50'"
+          @click="showParticipants = true"
+        >
+          <UIcon name="i-heroicons-user-group" class="w-3.5 h-3.5" />
+          <span class="hidden sm:inline">{{ t('participants.title') }}</span>
+        </button>
+        <button
+          v-if="canShare"
+          class="flex items-center gap-1.5 px-3.5 py-2 rounded-field border text-[12.5px] font-semibold transition-colors"
+          :class="isConv ? 'border-[#3b3a6b] text-conv-soft hover:bg-chip-conv/50' : 'border-line-focus text-sky-soft hover:bg-chip-sky/50'"
+          @click="showShareEvent = true"
+        >
+          <UIcon name="i-heroicons-share" class="w-3.5 h-3.5" /> {{ t('sharing.share') }}
+        </button>
+        <button
+          v-if="authStore.isEditing"
+          class="w-9 h-9 rounded-field border border-line text-muted hover:text-ink flex items-center justify-center transition-colors"
+          @click="showEditEvent = true"
+        >
+          <UIcon name="i-heroicons-pencil" class="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+
+    <!-- person filter notice -->
+    <div v-if="personsStore.currentPerson && authStore.isEditing" class="flex items-center gap-2 mb-3.5 text-[12.5px] text-muted">
+      <span class="w-2.5 h-2.5 rounded-full shrink-0" :class="COLOR_BG_MAP[personsStore.currentPerson.color] ?? 'bg-sky'" />
+      {{ t('event.showingBudgetFor') }} <b class="text-ink-strong">{{ personsStore.currentPerson.name }}</b>
+    </div>
+
+    <!-- stats -->
+    <div :class="['grid gap-3 mb-5', authStore.isEditing ? 'grid-cols-2 md:grid-cols-3 lg:grid-cols-5' : 'grid-cols-3']">
+      <div class="rounded-card border border-line bg-surface p-3.5 text-center">
+        <div class="font-display text-2xl font-bold" :class="isConv ? 'text-conv' : 'text-sky'">{{ event.locations?.length ?? 0 }}</div>
+        <div class="text-[11px] text-muted mt-0.5">{{ isConv ? t('event.halls') : t('event.locations') }}</div>
+      </div>
+      <div class="rounded-card border border-line bg-surface p-3.5 text-center">
+        <div class="font-display text-2xl font-bold" :class="isConv ? 'text-conv-soft' : 'text-conv'">
+          {{ event.locations?.reduce((sum, l) => sum + (l.booths?.length ?? 0), 0) ?? 0 }}
+        </div>
+        <div class="text-[11px] text-muted mt-0.5">{{ isConv ? t('event.booths') : t('event.shops') }}</div>
+      </div>
+      <div class="rounded-card border border-line bg-surface p-3.5 text-center">
+        <div class="font-display text-2xl font-bold text-bought">{{ itemStats.purchased }}/{{ itemStats.total }}</div>
+        <div class="text-[11px] text-muted mt-0.5">{{ t('event.purchased') }}</div>
+      </div>
+      <div v-if="authStore.isEditing" class="rounded-card border border-line bg-surface p-3.5 text-center">
+        <div v-if="plannedEntries.length" class="leading-snug">
+          <div v-for="[cur, amt] in plannedEntries" :key="cur" class="mono text-base font-semibold text-planned">
+            {{ amt.toFixed(0) }} {{ cur }}
+          </div>
+          <div
+            v-if="plannedConvertedTotal && plannedEntries.length > 1"
+            class="text-[10px] text-faint mt-0.5 mono"
+            :title="plannedConvertedTotal.partial ? t('settings.convertedTotalPartial') : ''"
+          >≈ {{ plannedConvertedTotal.value.toFixed(0) }} {{ plannedConvertedTotal.target }}</div>
+        </div>
+        <div v-else class="mono text-base font-semibold text-faint">—</div>
+        <div class="text-[11px] text-muted mt-1">{{ t('event.plannedBudget') }}</div>
+      </div>
+      <div v-if="authStore.isEditing" class="rounded-card border border-line bg-surface p-3.5 text-center">
+        <div v-if="paidEntries.length" class="leading-snug">
+          <div v-for="[cur, amt] in paidEntries" :key="cur" class="mono text-base font-semibold text-bought">
+            {{ amt.toFixed(0) }} {{ cur }}
+          </div>
+          <div
+            v-if="paidConvertedTotal && paidEntries.length > 1"
+            class="text-[10px] text-faint mt-0.5 mono"
+            :title="paidConvertedTotal.partial ? t('settings.convertedTotalPartial') : ''"
+          >≈ {{ paidConvertedTotal.value.toFixed(0) }} {{ paidConvertedTotal.target }}</div>
+        </div>
+        <div v-else class="mono text-base font-semibold text-faint">—</div>
+        <div class="text-[11px] text-muted mt-1">
+          {{ t('event.paid') }}
+          <span v-if="savingsEntries.length" class="text-bought">
+            · <span v-for="([cur, amt], i) in savingsEntries" :key="cur"><span v-if="i > 0"> </span>−{{ amt.toFixed(0) }} {{ cur }}</span> {{ t('discount.saved') }}
+          </span>
         </div>
       </div>
     </div>
 
-    <!-- Person filter notice -->
-    <div v-if="personsStore.currentPerson && authStore.isEditing" class="flex items-center gap-2 mb-3 text-sm text-gray-400">
-      <span
-        :class="['w-2.5 h-2.5 rounded-full shrink-0', {
-          'bg-purple-500': personsStore.currentPerson.color === 'purple',
-          'bg-blue-500': personsStore.currentPerson.color === 'blue',
-          'bg-green-500': personsStore.currentPerson.color === 'green',
-          'bg-yellow-500': personsStore.currentPerson.color === 'yellow',
-          'bg-red-500': personsStore.currentPerson.color === 'red',
-          'bg-pink-500': personsStore.currentPerson.color === 'pink',
-          'bg-orange-500': personsStore.currentPerson.color === 'orange',
-          'bg-teal-500': personsStore.currentPerson.color === 'teal',
-        }]"
-      />
-      {{ t('event.showingBudgetFor') }} <span class="text-white font-medium">{{ personsStore.currentPerson.name }}</span>
-    </div>
-
-    <!-- Stats bar (paid/spent hidden for guests) -->
-    <div :class="['grid grid-cols-2 gap-3 mb-8', authStore.isEditing ? 'md:grid-cols-3 lg:grid-cols-5' : 'md:grid-cols-3']">
-      <UCard class="text-center p-4">
-        <div class="text-2xl font-bold text-purple-400">{{ event.locations?.length ?? 0 }}</div>
-        <div class="text-xs text-gray-400 mt-1">{{ event.type === 'convention' ? t('event.halls') : t('event.locations') }}</div>
-      </UCard>
-      <UCard class="text-center p-4">
-        <div class="text-2xl font-bold text-blue-400">
-          {{ event.locations?.reduce((sum, l) => sum + (l.booths?.length ?? 0), 0) ?? 0 }}
-        </div>
-        <div class="text-xs text-gray-400 mt-1">{{ event.type === 'convention' ? t('event.booths') : t('event.shops') }}</div>
-      </UCard>
-      <UCard class="text-center p-4">
-        <div class="text-2xl font-bold text-green-400">{{ itemStats.purchased }}/{{ itemStats.total }}</div>
-        <div class="text-xs text-gray-400 mt-1">{{ t('event.purchased') }}</div>
-      </UCard>
-      <UCard v-if="authStore.isEditing" class="text-center p-4">
-        <div v-if="plannedEntries.length" class="font-bold text-yellow-400 leading-snug">
-          <div v-for="[cur, amt] in plannedEntries" :key="cur" class="text-xl">
-            {{ amt.toFixed(2) }} {{ cur }}
-            <PriceConverted :amount="amt" :currency="cur" variant="inline" />
-          </div>
-          <div
-            v-if="plannedConvertedTotal && plannedEntries.length > 1"
-            class="text-xs text-gray-500 mt-1 font-mono"
-            :title="plannedConvertedTotal.partial ? t('settings.convertedTotalPartial') : ''"
-          >
-            {{ t('settings.convertedTotal') }}: ≈ {{ plannedConvertedTotal.value.toFixed(2) }} {{ plannedConvertedTotal.target }}
-          </div>
-        </div>
-        <div v-else class="text-xl font-bold text-yellow-400">—</div>
-        <div class="text-xs text-gray-400 mt-1">{{ t('event.plannedBudget') }}</div>
-      </UCard>
-      <UCard v-if="authStore.isEditing" class="text-center p-4">
-        <div v-if="paidEntries.length" class="font-bold text-green-400 leading-snug">
-          <div v-for="[cur, amt] in paidEntries" :key="cur" class="text-xl">
-            {{ amt.toFixed(2) }} {{ cur }}
-            <PriceConverted :amount="amt" :currency="cur" variant="inline" />
-          </div>
-          <div
-            v-if="paidConvertedTotal && paidEntries.length > 1"
-            class="text-xs text-gray-500 mt-1 font-mono"
-            :title="paidConvertedTotal.partial ? t('settings.convertedTotalPartial') : ''"
-          >
-            {{ t('settings.convertedTotal') }}: ≈ {{ paidConvertedTotal.value.toFixed(2) }} {{ paidConvertedTotal.target }}
-          </div>
-        </div>
-        <div v-else class="text-xl font-bold text-gray-600">—</div>
-        <div class="text-xs text-gray-400 mt-1">{{ t('event.paid') }}</div>
-        <!-- Realised savings — discounts that have actually kicked in because
-             matching items are marked purchased. Lives next to "Spent" since
-             that's where the money already moved (forecast savings on planned
-             items aren't surfaced anywhere right now). -->
-        <div v-if="savingsEntries.length" class="text-xs text-green-400 mt-1">
-          <span v-for="([cur, amt], i) in savingsEntries" :key="cur">
-            <span v-if="i > 0" class="text-gray-600"> · </span>− {{ amt.toFixed(2) }} {{ cur }}
-          </span>
-          {{ t('discount.saved') }}
-        </div>
-      </UCard>
-    </div>
-
-    <!-- Cross-receipt settlements. Lives between the totals row and the
-         location list so it's visible without scrolling on a typical trip
-         dashboard. Hidden when there's nothing to settle yet. -->
-    <UCard v-if="settlements.length" class="mb-6">
-      <template #header>
-        <div class="flex items-center gap-2 flex-wrap">
-          <UIcon name="i-heroicons-arrow-path-rounded-square" class="w-5 h-5 text-purple-400" />
-          <h2 class="font-semibold text-white">{{ t('upload.settlementForEvent') }}</h2>
-          <UBadge :label="`${settlements.length}`" variant="soft" color="purple" size="xs" />
-        </div>
-        <p class="text-xs text-gray-500 mt-1">{{ t('upload.settlementForEventHint') }}</p>
-      </template>
+    <!-- settle up -->
+    <div v-if="settlements.length" class="rounded-card border border-[#24374a] bg-surface-2 px-4 py-3.5 mb-5">
+      <div class="flex items-center gap-2 mb-2.5">
+        <UIcon name="i-heroicons-arrow-path-rounded-square" class="w-4 h-4" :class="isConv ? 'text-conv-soft' : 'text-sky'" />
+        <span class="text-[13px] font-bold text-ink-strong">{{ t('upload.settlementForEvent') }}</span>
+        <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-[5px]" :class="isConv ? 'text-conv-soft bg-chip-conv' : 'text-sky-soft bg-chip-sky'">{{ settlements.length }}</span>
+      </div>
       <ul class="space-y-2">
         <li
           v-for="s in settlements"
           :key="`${s.debtorPersonId}-${s.creditorPersonId}`"
-          class="flex items-center gap-2 flex-wrap text-sm"
+          class="flex items-center gap-2 flex-wrap text-[13px]"
         >
           <span
             v-if="settlementPerson(s.debtorPersonId)"
-            class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
-            :class="COLOR_BG_MAP[settlementPerson(s.debtorPersonId)!.color] ?? 'bg-purple-500'"
+            class="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold text-on-accent"
+            :class="COLOR_BG_MAP[settlementPerson(s.debtorPersonId)!.color] ?? 'bg-sky'"
           >{{ settlementInitial(settlementPerson(s.debtorPersonId)!.name) }}</span>
-          <strong class="text-white">{{ settlementPerson(s.debtorPersonId)?.name }}</strong>
-          <span class="text-gray-400">{{ t('upload.owes') }}</span>
+          <b class="text-ink-strong">{{ settlementPerson(s.debtorPersonId)?.name }}</b>
+          <span class="text-muted">{{ t('upload.owes') }}</span>
           <span
             v-if="settlementPerson(s.creditorPersonId)"
-            class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
-            :class="COLOR_BG_MAP[settlementPerson(s.creditorPersonId)!.color] ?? 'bg-purple-500'"
+            class="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold text-on-accent"
+            :class="COLOR_BG_MAP[settlementPerson(s.creditorPersonId)!.color] ?? 'bg-sky'"
           >{{ settlementInitial(settlementPerson(s.creditorPersonId)!.name) }}</span>
-          <strong class="text-white">{{ settlementPerson(s.creditorPersonId)?.name }}</strong>
-          <!-- Primary amount: NET in display currency, computed per-receipt
-               at each receipt's payment-date rate. Falls back to the raw
-               per-currency listing while rates are still loading. -->
+          <b class="text-ink-strong">{{ settlementPerson(s.creditorPersonId)?.name }}</b>
           <template v-if="s.converted != null">
-            <span class="font-mono text-yellow-400">{{ s.converted.toFixed(2) }} {{ s.target }}</span>
+            <span class="mono text-planned font-semibold ml-1">{{ s.converted.toFixed(2) }} {{ s.target }}</span>
             <span
               v-if="Object.keys(s.byCurrency).filter(c => c !== s.target).length"
-              class="text-gray-500 font-mono text-xs"
+              class="text-faint mono text-[11px]"
             >({{ formatSettlementCurrencies(s.byCurrency) }})</span>
-            <span v-if="s.partial" class="text-amber-400 text-xs">{{ t('settings.convertedTotalPartial') }}</span>
+            <span v-if="s.partial" class="text-planned text-[11px]">{{ t('settings.convertedTotalPartial') }}</span>
           </template>
-          <span v-else class="font-mono text-yellow-400">{{ formatSettlementCurrencies(s.byCurrency) }}</span>
+          <span v-else class="mono text-planned font-semibold ml-1">{{ formatSettlementCurrencies(s.byCurrency) }}</span>
         </li>
       </ul>
-    </UCard>
-
-    <!-- Locations/Halls -->
-    <div class="flex items-center justify-between mb-4">
-      <h2 class="text-xl font-bold text-white">
-        {{ event.type === 'convention' ? t('event.halls') : t('event.locations') }}
-      </h2>
-      <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" color="purple" size="sm" @click="showAddLocation = true">
-        {{ event.type === 'convention' ? t('event.addHall') : t('event.addLocation') }}
-      </UButton>
     </div>
 
-    <div v-if="!event.locations?.length" class="text-center py-10 text-gray-500">
-      {{ event.type === 'convention' ? t('event.noHalls') : t('event.noLocations') }}
+    <!-- cities / halls -->
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-[17px] font-bold text-ink-strong">{{ isConv ? t('event.halls') : t('event.locations') }}</h2>
+      <button
+        v-if="authStore.isEditing"
+        class="flex items-center gap-1.5 px-3.5 py-2 rounded-field border text-[12.5px] font-semibold transition-colors"
+        :class="isConv ? 'border-[#3b3a6b] text-conv-soft hover:bg-chip-conv/50' : 'border-line-focus text-sky-soft hover:bg-chip-sky/50'"
+        @click="showAddLocation = true"
+      >
+        <UIcon name="i-heroicons-plus" class="w-3.5 h-3.5" /> {{ isConv ? t('event.addHall') : t('event.addLocation') }}
+      </button>
+    </div>
+
+    <div v-if="!event.locations?.length" class="text-center py-10 text-faint">
+      {{ isConv ? t('event.noHalls') : t('event.noLocations') }}
     </div>
 
     <VueDraggable
       v-if="event.locations?.length"
       v-model="event.locations"
       tag="div"
-      class="space-y-4"
+      class="space-y-3"
       handle=".location-drag-handle"
       :animation="180"
       :disabled="!authStore.isEditing"
@@ -369,27 +306,11 @@ function locationIcon(type: Location['type']) {
       />
     </VueDraggable>
 
-    <!-- Modals -->
-    <AddLocationModal
-      v-model="showAddLocation"
-      :event-id="event.id"
-      :event-type="event.type"
-    />
-
-    <EditEventModal
-      v-model="showEditEvent"
-      :event="event"
-    />
-
-    <ShareEventModal
-      v-model="showShareEvent"
-      :event="event"
-    />
-
-    <EventParticipantsModal
-      v-model="showParticipants"
-      :event-id="event.id"
-    />
+    <!-- modals -->
+    <AddLocationModal v-model="showAddLocation" :event-id="event.id" :event-type="event.type" />
+    <EditEventModal v-model="showEditEvent" :event="event" />
+    <ShareEventModal v-model="showShareEvent" :event="event" />
+    <EventParticipantsModal v-model="showParticipants" :event-id="event.id" />
 
     <QrScannerModal
       v-if="event.type === 'convention'"
@@ -398,31 +319,34 @@ function locationIcon(type: Location['type']) {
       :locations="event.locations ?? []"
     />
 
-    <!-- Floating Scan QR button (convention only) -->
+    <!-- floating scan QR (convention only) -->
     <ClientOnly>
       <button
         v-if="event.type === 'convention'"
         type="button"
-        class="fixed bottom-4 left-4 z-40 flex items-center gap-2 px-4 py-3 rounded-full bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-900/40 transition-colors"
+        class="fixed bottom-24 lg:bottom-6 left-4 lg:left-[238px] z-40 flex items-center gap-2 px-4 py-3 rounded-full grad-conv text-[13px] font-bold shadow-lg"
+        style="box-shadow: 0 12px 30px -8px rgba(129,140,248,0.5);"
         :title="t('qrscan.title')"
         @click="showQrScanner = true"
       >
-        <UIcon name="i-heroicons-qr-code" class="w-5 h-5" />
-        <span class="hidden sm:inline text-sm font-medium">{{ t('qrscan.scan') }}</span>
+        <UIcon name="i-heroicons-qr-code" class="w-4 h-4" />
+        <span class="hidden sm:inline">{{ t('qrscan.scan') }}</span>
       </button>
     </ClientOnly>
 
-    <UModal v-model="showDeleteLocationModal" :ui="{ width: 'sm:max-w-sm' }">
-      <UCard>
-        <template #header><h3 class="font-semibold text-white">{{ t('event.deleteLocation') }}</h3></template>
-        <p class="text-gray-400 text-sm">{{ t('event.deleteLocationDesc') }}</p>
-        <template #footer>
-          <div class="flex gap-2 justify-end">
-            <UButton variant="ghost" color="gray" @click="showDeleteLocationModal = false">{{ t('common.cancel') }}</UButton>
-            <UButton color="red" @click="handleDeleteLocation">{{ t('common.delete') }}</UButton>
-          </div>
-        </template>
-      </UCard>
+    <!-- delete location confirm -->
+    <UModal v-model="showDeleteLocationModal" :ui="{ width: 'sm:max-w-sm', background: '', ring: '', rounded: 'rounded-window', shadow: '' }">
+      <div class="bg-surface border border-line rounded-window p-6 text-center">
+        <div class="w-12 h-12 mx-auto mb-3.5 rounded-card bg-chip-must flex items-center justify-center">
+          <UIcon name="i-heroicons-trash" class="w-6 h-6 text-must" />
+        </div>
+        <h3 class="text-[17px] font-bold text-ink-strong mb-1.5">{{ t('event.deleteLocation') }}</h3>
+        <p class="text-[13px] text-muted mb-5 leading-relaxed">{{ t('event.deleteLocationDesc') }}</p>
+        <div class="flex gap-2.5">
+          <button class="flex-1 py-2.5 rounded-field border border-line text-ink text-[13px] font-semibold" @click="showDeleteLocationModal = false">{{ t('common.cancel') }}</button>
+          <button class="flex-1 py-2.5 rounded-field bg-must text-chip-must text-[13px] font-bold" @click="handleDeleteLocation">{{ t('common.delete') }}</button>
+        </div>
+      </div>
     </UModal>
   </div>
 </template>

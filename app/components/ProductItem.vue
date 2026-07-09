@@ -28,7 +28,6 @@ const person = computed(() =>
 // The viewer's own person id (server-stamped on the event response).
 const viewerPersonId = computed(() => store.currentEvent?.viewerPersonId ?? null)
 
-// Viewer's own mark + the per-person quantity displayed in the stepper.
 const myOwnMark = computed(() =>
   viewerPersonId.value
     ? (props.product.marks ?? []).find(m => m.personId === viewerPersonId.value) ?? null
@@ -41,169 +40,131 @@ async function adjustQty(delta: number) {
   const current = myOwnMark.value?.quantity ?? 1
   const next = current + delta
   if (next < 1) {
-    // Going below 1 means "un-mark everything" — drop BOTH flags. The server
-    // deletes the row when both are false. This avoids stranded
-    // planned-only rows when the user only intended "I'm buying 0 now".
     await store.setMark(props.product.id, { isPlanned: false, isPurchased: false })
     return
   }
-  // Quantity-only update: server preserves both flag fields when they're
-  // omitted from the body, so the user's planned-vs-purchased state is
-  // unchanged (this is important: bumping qty must NOT silently flip
-  // "planned" to "bought").
   await store.setMark(props.product.id, { quantity: next })
 }
 
-// Plan? toggle — independent from Bought? (you can plan, buy, or both).
 async function togglePlanned() {
   if (!canMark.value) return
   await store.setMark(props.product.id, { isPlanned: !props.product.isPlanned })
 }
 
-// (Privacy) We intentionally do NOT expose who else has marked this product.
-// Each viewer sees only their own mark state — the marks array is still
-// served by the API so admins can see things via /admin tooling, but the
-// rest of the UI keeps it private.
-
 const COLOR_MAP: Record<string, string> = {
-  purple: 'bg-purple-500',
-  blue: 'bg-blue-500',
-  green: 'bg-green-500',
-  yellow: 'bg-yellow-500',
-  red: 'bg-red-500',
-  pink: 'bg-pink-500',
-  orange: 'bg-orange-500',
-  teal: 'bg-teal-500',
+  purple: 'bg-purple-500', blue: 'bg-blue-500', green: 'bg-green-500',
+  yellow: 'bg-yellow-500', red: 'bg-red-500', pink: 'bg-pink-500',
+  orange: 'bg-orange-500', teal: 'bg-teal-500',
 }
 
-const priorityColors: Record<number, string> = {
-  0: '',
-  1: 'border-l-2 border-l-yellow-500',
-  2: 'border-l-2 border-l-red-500',
-}
+// Left priority bar — must (2) rose, want (1) amber, normal transparent.
+const priorityBar = computed(() =>
+  props.product.priority === 2 ? 'bg-must' : props.product.priority === 1 ? 'bg-planned' : 'bg-transparent',
+)
 
-// Any logged-in viewer with a person can mark for themselves — view-share
-// users included. Guests (no session) still see a disabled checkbox.
+// Price colour follows state: bought emerald, planned amber, else ink.
+const priceColor = computed(() =>
+  props.product.isPurchased ? 'text-bought' : props.product.isPlanned ? 'text-planned' : 'text-ink',
+)
+const displayQtyMultiplier = computed(() => (props.product.isPurchased || props.product.isPlanned) ? myDisplayQty.value : props.product.quantity)
+
 const canMark = computed(() => authStore.isLoggedIn && !!viewerPersonId.value)
 </script>
 
 <template>
-  <div
-    :class="[
-      'flex items-center gap-3 p-3 rounded-lg bg-gray-900 hover:bg-gray-800/80 transition-colors group',
-      priorityColors[product.priority] ?? '',
-    ]"
-  >
-    <UCheckbox
-      :model-value="product.isPurchased"
-      :disabled="!canMark"
-      @change="canMark && emit('toggle')"
-    />
-
-    <!-- Plan? toggle (orange). Independent from Bought — you can plan AND
-         buy. Same UX as the article-gallery Plan? button so view-share users
-         already know what to do. Hidden for guests with no person. -->
+  <div class="flex items-center gap-3.5 px-2.5 py-3 border-b border-line-hair last:border-0 group">
+    <!-- checkbox -->
     <button
-      v-if="canMark"
       type="button"
-      class="text-xs px-2 py-0.5 rounded-full border transition-colors font-medium shrink-0"
-      :class="product.isPlanned ? 'bg-orange-600 border-orange-500 text-white' : 'border-gray-700 text-gray-400 hover:border-orange-500 hover:text-orange-400'"
-      @click="togglePlanned"
-    >{{ product.isPlanned ? t('catalog.planned') : t('catalog.planQ') }}</button>
-
-    <!-- Per-person qty stepper, shown whenever the viewer has ANY mark on
-         this product (planned, purchased, or both). `−` at qty=1 un-marks
-         entirely (drops both flags). `+` only updates quantity, never flips
-         a planned-only mark into "purchased". -->
-    <div
-      v-if="(product.isPlanned || product.isPurchased) && canMark"
-      class="flex items-center gap-0.5 shrink-0 rounded border border-gray-700 bg-gray-800/60"
+      class="w-5 h-5 rounded-md shrink-0 flex items-center justify-center transition-colors"
+      :class="product.isPurchased ? 'bg-bought' : 'border-2 border-[#2a3a4e]'"
+      :disabled="!canMark"
+      @click="canMark && emit('toggle')"
     >
-      <button
-        type="button"
-        class="w-5 h-5 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded-l"
-        :title="t('product.qtyDecrement')"
-        @click="adjustQty(-1)"
-      >−</button>
-      <span class="px-1 text-xs font-mono tabular-nums text-white min-w-[1.25rem] text-center">{{ myDisplayQty }}</span>
-      <button
-        type="button"
-        class="w-5 h-5 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded-r"
-        :title="t('product.qtyIncrement')"
-        @click="adjustQty(1)"
-      >+</button>
-    </div>
+      <UIcon v-if="product.isPurchased" name="i-heroicons-check" class="w-3.5 h-3.5 text-on-accent" />
+    </button>
 
+    <!-- priority bar -->
+    <span class="w-[3px] h-[26px] rounded-full shrink-0" :class="priorityBar" />
+
+    <!-- body -->
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-2 flex-wrap">
-        <!-- Creator dot (hidden for guests) -->
+        <!-- creator dot (editors only) -->
         <span
           v-if="person && authStore.isEditing"
-          :class="['w-2.5 h-2.5 rounded-full shrink-0', COLOR_MAP[person.color] ?? 'bg-purple-500']"
+          class="w-2.5 h-2.5 rounded-full shrink-0"
+          :class="COLOR_MAP[person.color] ?? 'bg-sky'"
           :title="person.name"
         />
-        <span :class="['font-medium text-sm', product.isPurchased ? 'line-through text-gray-500' : 'text-white']">
+        <span class="text-[13.5px] font-semibold" :class="product.isPurchased ? 'line-through text-muted' : 'text-ink-strong'">
           {{ product.name }}
         </span>
-        <UBadge v-if="product.size" :label="product.size" size="xs" variant="soft" color="gray" />
-        <UBadge v-if="product.category" :label="product.category" size="xs" variant="soft" color="blue" />
-        <UBadge v-if="product.quantity > 1" :label="`×${product.quantity}`" size="xs" variant="soft" color="purple" />
-        <UBadge v-if="product.priority === 1" :label="t('product.want')" size="xs" variant="soft" color="yellow" />
-        <UBadge v-if="product.priority === 2" :label="t('product.must')" size="xs" variant="soft" color="red" />
+        <span v-if="product.priority === 2" class="text-[9px] font-bold text-must bg-chip-must px-1.5 py-0.5 rounded-[5px]">{{ t('product.must') }}</span>
+        <span v-else-if="product.priority === 1" class="text-[9px] font-bold text-planned bg-chip-planned px-1.5 py-0.5 rounded-[5px]">{{ t('product.want') }}</span>
+        <!-- PLANNED toggle chip -->
+        <button
+          v-if="canMark"
+          type="button"
+          class="text-[9px] font-bold px-1.5 py-0.5 rounded-[5px] transition-colors"
+          :class="product.isPlanned ? 'text-planned bg-chip-planned' : 'text-faint border border-line hover:text-planned hover:border-planned'"
+          @click="togglePlanned"
+        >{{ product.isPlanned ? t('catalog.planned') : t('catalog.planQ') }}</button>
+        <span v-if="product.size" class="text-[9px] text-muted bg-line-soft px-1.5 py-0.5 rounded-[5px]">{{ product.size }}</span>
+        <span v-if="product.category" class="text-[9px] text-sky-soft bg-chip-sky px-1.5 py-0.5 rounded-[5px]">{{ product.category }}</span>
+        <span v-if="product.quantity > 1" class="text-[9px] text-conv-soft bg-chip-conv px-1.5 py-0.5 rounded-[5px]">×{{ product.quantity }}</span>
       </div>
-      <p v-if="product.description" class="text-xs text-gray-500 truncate">{{ product.description }}</p>
+      <p v-if="product.description" class="text-[11px] text-faint truncate mt-0.5">{{ product.description }}</p>
     </div>
 
-    <!-- Price -->
+    <!-- qty stepper -->
+    <div
+      v-if="(product.isPlanned || product.isPurchased) && canMark"
+      class="flex items-center border border-line rounded-field bg-surface-2 shrink-0"
+    >
+      <button type="button" class="w-6 h-6 flex items-center justify-center text-muted hover:text-ink" :title="t('product.qtyDecrement')" @click="adjustQty(-1)">−</button>
+      <span class="w-6 text-center mono text-xs text-ink">{{ myDisplayQty }}</span>
+      <button type="button" class="w-6 h-6 flex items-center justify-center text-muted hover:text-ink" :title="t('product.qtyIncrement')" @click="adjustQty(1)">+</button>
+    </div>
+
+    <!-- price -->
     <div class="flex items-center gap-2 shrink-0">
-      <div v-if="!editing" class="text-right">
-        <span
-          v-if="product.price"
-          class="text-yellow-400 text-sm font-medium"
-          :class="authStore.isEditing ? 'cursor-pointer hover:underline' : ''"
-          @click="authStore.isEditing && (editing = true, editPrice = product.price ?? 0)"
-        >
-          {{ (product.price * ((product.isPurchased || product.isPlanned) ? myDisplayQty : product.quantity)).toFixed(2) }}{{ product.currency }}
-        </span>
-        <PriceConverted
-          v-if="product.price"
-          :amount="product.price * ((product.isPurchased || product.isPlanned) ? myDisplayQty : product.quantity)"
-          :currency="product.currency"
-          variant="caption"
-        />
-        <UButton
+      <div v-if="!editing" class="text-right min-w-[70px]">
+        <template v-if="product.price">
+          <div
+            class="mono text-[13.5px] font-semibold"
+            :class="[priceColor, authStore.isEditing ? 'cursor-pointer hover:underline' : '']"
+            @click="authStore.isEditing && (editing = true, editPrice = product.price ?? 0)"
+          >{{ (product.price * displayQtyMultiplier).toFixed(2) }}{{ product.currency }}</div>
+          <PriceConverted :amount="product.price * displayQtyMultiplier" :currency="product.currency" variant="caption" />
+        </template>
+        <button
           v-else-if="authStore.isEditing"
-          variant="ghost"
-          color="gray"
-          size="xs"
-          icon="i-heroicons-currency-euro"
-          class="opacity-0 group-hover:opacity-100"
+          class="opacity-0 group-hover:opacity-100 text-faint hover:text-ink"
           @click="editing = true"
-        />
+        >
+          <UIcon name="i-heroicons-currency-euro" class="w-4 h-4" />
+        </button>
       </div>
       <div v-else class="flex items-center gap-1">
-        <UInput
+        <input
           v-model.number="editPrice"
           type="number"
-          size="xs"
-          class="w-20"
+          class="w-20 px-2 py-1 rounded-field border border-line-focus bg-surface-2 text-xs text-ink mono outline-none"
           @keydown.enter="savePrice"
           @keydown.esc="editing = false"
-          autofocus
         />
-        <UButton size="xs" color="green" icon="i-heroicons-check" @click="savePrice" />
-        <UButton size="xs" color="gray" variant="ghost" icon="i-heroicons-x-mark" @click="editing = false" />
+        <button class="w-6 h-6 rounded-field bg-bought text-on-accent flex items-center justify-center" @click="savePrice"><UIcon name="i-heroicons-check" class="w-3.5 h-3.5" /></button>
+        <button class="w-6 h-6 rounded-field text-muted flex items-center justify-center" @click="editing = false"><UIcon name="i-heroicons-x-mark" class="w-3.5 h-3.5" /></button>
       </div>
 
-      <UButton
+      <button
         v-if="authStore.isEditing"
-        icon="i-heroicons-trash"
-        variant="ghost"
-        color="red"
-        size="xs"
-        class="opacity-0 group-hover:opacity-100"
+        class="opacity-0 group-hover:opacity-100 text-must hover:text-must shrink-0"
         @click="emit('delete', product.id)"
-      />
+      >
+        <UIcon name="i-heroicons-trash" class="w-4 h-4" />
+      </button>
     </div>
   </div>
 </template>

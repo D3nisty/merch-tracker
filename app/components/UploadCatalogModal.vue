@@ -239,7 +239,7 @@ async function handleUrl() {
 const typeColor = computed(() => {
   if (form.imageType === 'article') return 'orange'
   if (form.imageType === 'receipt') return 'green'
-  return 'purple'
+  return 'primary'
 })
 
 const nameLabelComputed = computed(() => {

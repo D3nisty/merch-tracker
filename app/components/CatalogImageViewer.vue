@@ -868,7 +868,7 @@ const displayName = computed(() => props.image.customName || props.image.origina
 const badgeColor = computed(() => {
   if (props.image.imageType === 'article') return 'orange'
   if (props.image.imageType === 'receipt') return 'green'
-  return 'purple'
+  return 'primary'
 })
 
 const badgeLabel = computed(() => {
@@ -945,7 +945,7 @@ function openAddSource() {
           <UButton
             icon="i-heroicons-pencil-square"
             variant="ghost"
-            :color="annotateMode ? 'purple' : 'gray'"
+            :color="annotateMode ? 'primary' : 'gray'"
             size="xs"
             class="sm:hidden"
             @click="annotateMode = !annotateMode; if (!annotateMode) cancelAnnotation()"
@@ -953,7 +953,7 @@ function openAddSource() {
           <UButton
             icon="i-heroicons-pencil-square"
             variant="ghost"
-            :color="annotateMode ? 'purple' : 'gray'"
+            :color="annotateMode ? 'primary' : 'gray'"
             size="xs"
             class="hidden sm:flex"
             @click="annotateMode = !annotateMode; if (!annotateMode) cancelAnnotation()"
@@ -981,7 +981,7 @@ function openAddSource() {
           v-if="galleryCurrent.latitude != null && galleryCurrent.longitude != null"
           icon="i-heroicons-map-pin"
           variant="ghost"
-          color="purple"
+          color="primary"
           size="xs"
           :title="t('upload.openInMaps')"
           @click="openInMaps(galleryCurrent.latitude, galleryCurrent.longitude)"
@@ -989,7 +989,7 @@ function openAddSource() {
         <UButton
           icon="i-heroicons-magnifying-glass-plus"
           variant="ghost"
-          :color="magnifierEnabled ? 'purple' : 'gray'"
+          :color="magnifierEnabled ? 'primary' : 'gray'"
           size="xs"
           class="hidden sm:flex"
           :title="magnifierEnabled ? t('catalog.magnifierOff') : t('catalog.magnifierOn')"
@@ -1006,8 +1006,8 @@ function openAddSource() {
       <div v-if="annotateMode && image.imageType === 'catalog' && authStore.isEditing" class="px-4 py-2 bg-purple-900/30 border-b border-purple-700/40 text-xs text-purple-300 flex items-center gap-2 flex-wrap">
         <UIcon name="i-heroicons-pencil-square" class="w-3.5 h-3.5 shrink-0" />
         <span class="min-w-0">{{ t('catalog.dragHint') }}</span>
-        <UButton size="xs" variant="soft" color="purple" icon="i-heroicons-squares-plus" @click="autoDrawRect">{{ t('catalog.addRect') }}</UButton>
-        <UButton size="xs" variant="link" color="purple" @click="fullscreen = true">{{ t('catalog.fullscreenBtn') }}</UButton>
+        <UButton size="xs" variant="soft" color="primary" icon="i-heroicons-squares-plus" @click="autoDrawRect">{{ t('catalog.addRect') }}</UButton>
+        <UButton size="xs" variant="link" color="primary" @click="fullscreen = true">{{ t('catalog.fullscreenBtn') }}</UButton>
       </div>
 
       <!-- Hidden file inputs for article gallery -->
@@ -1236,9 +1236,9 @@ function openAddSource() {
             </div>
             <div class="flex items-center gap-2">
               <UButton icon="i-heroicons-chevron-right" size="xs" color="gray" variant="ghost" :title="t('catalog.collapse')" @click="showProductsPanel = false" />
-              <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="purple" variant="soft"
+              <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="primary" variant="soft"
                 class="sm:hidden" @click="openQuickAdd" />
-              <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="purple" variant="soft"
+              <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="primary" variant="soft"
                 class="hidden sm:flex" @click="openQuickAdd">{{ t('common.add') }}</UButton>
             </div>
           </div>
@@ -1291,7 +1291,7 @@ function openAddSource() {
             </div>
             <USelect v-model="quickForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
             <div class="flex gap-2">
-              <UButton size="xs" color="purple" :disabled="!quickForm.name.trim()" @click="saveQuickAdd">{{ t('common.save') }}</UButton>
+              <UButton size="xs" color="primary" :disabled="!quickForm.name.trim()" @click="saveQuickAdd">{{ t('common.save') }}</UButton>
               <UButton size="xs" variant="ghost" color="gray" @click="showQuickAdd = false">{{ t('common.cancel') }}</UButton>
             </div>
           </div>
@@ -1348,7 +1348,7 @@ function openAddSource() {
             </div>
             <USelect v-model="annotateForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
             <div class="flex gap-2">
-              <UButton size="xs" color="purple" :disabled="!annotateForm.name.trim()" @click="saveAnnotation">{{ t('common.save') }}</UButton>
+              <UButton size="xs" color="primary" :disabled="!annotateForm.name.trim()" @click="saveAnnotation">{{ t('common.save') }}</UButton>
               <UButton size="xs" variant="ghost" color="gray" @click="cancelAnnotation">{{ t('common.cancel') }}</UButton>
             </div>
           </div>
@@ -1386,7 +1386,7 @@ function openAddSource() {
               <USelect v-model="addSizeForm.currency" :options="currencyOptions" size="sm" class="w-24" />
             </div>
             <div class="flex gap-2">
-              <UButton size="xs" color="purple" :disabled="!addSizeForm.price" @click="saveAddSize">{{ t('common.add') }}</UButton>
+              <UButton size="xs" color="primary" :disabled="!addSizeForm.price" @click="saveAddSize">{{ t('common.add') }}</UButton>
               <UButton size="xs" variant="ghost" color="gray" @click="selectedGroupKey = null">{{ t('common.cancel') }}</UButton>
             </div>
           </div>
@@ -1423,7 +1423,7 @@ function openAddSource() {
               </div>
               <USelect v-model="editProductForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
               <div class="flex gap-2">
-                <UButton size="xs" color="purple" :disabled="!editProductForm.name.trim()" @click="saveEditProduct(product.id)">{{ t('common.save') }}</UButton>
+                <UButton size="xs" color="primary" :disabled="!editProductForm.name.trim()" @click="saveEditProduct(product.id)">{{ t('common.save') }}</UButton>
                 <UButton size="xs" variant="ghost" color="gray" @click="cancelEditProduct">{{ t('common.cancel') }}</UButton>
               </div>
             </div>
@@ -1465,7 +1465,7 @@ function openAddSource() {
               <div v-for="(item, i) in ocrResults" :key="i" class="flex items-center gap-2 text-xs">
                 <span class="flex-1 text-gray-300 truncate">{{ item.text }}</span>
                 <span v-if="item.price" class="text-yellow-400 shrink-0">{{ item.price }}€</span>
-                <UButton size="xs" variant="ghost" color="purple" icon="i-heroicons-plus" @click="addFromOcr(item)" />
+                <UButton size="xs" variant="ghost" color="primary" icon="i-heroicons-plus" @click="addFromOcr(item)" />
               </div>
             </div>
           </div>
@@ -1569,7 +1569,7 @@ function openAddSource() {
                 <UTextarea v-model="editSourceForm.notes" placeholder="Notes…" size="sm" :rows="2" />
                 <USelect v-model="editSourceForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
                 <div class="flex gap-2">
-                  <UButton size="xs" color="purple" :disabled="!editSourceForm.name.trim()" @click="saveEditSource(p.id)">{{ t('common.save') }}</UButton>
+                  <UButton size="xs" color="primary" :disabled="!editSourceForm.name.trim()" @click="saveEditSource(p.id)">{{ t('common.save') }}</UButton>
                   <UButton size="xs" variant="ghost" color="gray" @click="cancelEditSource">{{ t('common.cancel') }}</UButton>
                 </div>
               </div>
@@ -1704,7 +1704,7 @@ function openAddSource() {
       <template #footer>
         <div class="flex gap-2 justify-end">
           <UButton variant="ghost" color="gray" @click="showMoveModal = false; moveTargetBoothId = ''">{{ t('common.cancel') }}</UButton>
-          <UButton color="purple" :disabled="!moveTargetBoothId" :loading="moving" @click="confirmMove">{{ t('common.move') }}</UButton>
+          <UButton color="primary" :disabled="!moveTargetBoothId" :loading="moving" @click="confirmMove">{{ t('common.move') }}</UButton>
         </div>
       </template>
     </UCard>
@@ -1727,13 +1727,13 @@ function openAddSource() {
         <template v-if="image.imageType === 'catalog' && authStore.isEditing">
           <UButton
             icon="i-heroicons-pencil-square"
-            :color="annotateMode ? 'purple' : 'gray'"
+            :color="annotateMode ? 'primary' : 'gray'"
             variant="outline" size="sm"
             @click="annotateMode = !annotateMode; if (!annotateMode) cancelAnnotation()"
           >{{ annotateMode ? t('catalog.drawingOn') : t('catalog.enableDrawing') }}</UButton>
           <UButton v-if="annotateMode"
             icon="i-heroicons-squares-plus"
-            color="purple" variant="soft" size="sm"
+            color="primary" variant="soft" size="sm"
             @click="autoDrawRect"
           >{{ t('catalog.addRect') }}</UButton>
           <span v-if="annotateMode" class="text-xs text-purple-400 hidden sm:inline">{{ t('catalog.dragRectHint') }}</span>
@@ -1742,7 +1742,7 @@ function openAddSource() {
           v-if="galleryCurrent.latitude != null && galleryCurrent.longitude != null"
           icon="i-heroicons-map-pin"
           variant="ghost"
-          color="purple"
+          color="primary"
           size="sm"
           :title="t('upload.openInMaps')"
           @click="openInMaps(galleryCurrent.latitude, galleryCurrent.longitude)"
@@ -1909,9 +1909,9 @@ function openAddSource() {
               </div>
               <div class="flex items-center gap-2">
                 <UButton icon="i-heroicons-chevron-right" size="xs" color="gray" variant="ghost" :title="t('catalog.collapse')" @click="showProductsPanel = false" />
-                <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="purple" variant="soft"
+                <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="primary" variant="soft"
                   class="sm:hidden" @click="openQuickAdd" />
-                <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="purple" variant="soft"
+                <UButton v-if="authStore.isEditing" icon="i-heroicons-plus" size="xs" color="primary" variant="soft"
                   class="hidden sm:flex" @click="openQuickAdd">{{ t('common.add') }}</UButton>
               </div>
             </div>
@@ -1965,7 +1965,7 @@ function openAddSource() {
                 </div>
                 <USelect v-model="annotateForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
                 <div class="flex gap-2">
-                  <UButton size="xs" color="purple" :disabled="!annotateForm.name.trim()" @click="saveAnnotation">{{ t('common.save') }}</UButton>
+                  <UButton size="xs" color="primary" :disabled="!annotateForm.name.trim()" @click="saveAnnotation">{{ t('common.save') }}</UButton>
                   <UButton size="xs" variant="ghost" color="gray" @click="cancelAnnotation">{{ t('common.cancel') }}</UButton>
                 </div>
               </div>
@@ -2017,7 +2017,7 @@ function openAddSource() {
                 </div>
                 <USelect v-model="quickForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
                 <div class="flex gap-2">
-                  <UButton size="xs" color="purple" :disabled="!quickForm.name.trim()" @click="saveQuickAdd">{{ t('common.save') }}</UButton>
+                  <UButton size="xs" color="primary" :disabled="!quickForm.name.trim()" @click="saveQuickAdd">{{ t('common.save') }}</UButton>
                   <UButton size="xs" variant="ghost" color="gray" @click="showQuickAdd = false">{{ t('common.cancel') }}</UButton>
                 </div>
               </div>
@@ -2055,7 +2055,7 @@ function openAddSource() {
                   <USelect v-model="addSizeForm.currency" :options="currencyOptions" size="sm" class="w-24" />
                 </div>
                 <div class="flex gap-2">
-                  <UButton size="xs" color="purple" :disabled="!addSizeForm.price" @click="saveAddSize">{{ t('common.add') }}</UButton>
+                  <UButton size="xs" color="primary" :disabled="!addSizeForm.price" @click="saveAddSize">{{ t('common.add') }}</UButton>
                   <UButton size="xs" variant="ghost" color="gray" @click="selectedGroupKey = null">{{ t('common.cancel') }}</UButton>
                 </div>
               </div>
@@ -2091,7 +2091,7 @@ function openAddSource() {
                   </div>
                   <USelect v-model="editProductForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
                   <div class="flex gap-2">
-                    <UButton size="xs" color="purple" :disabled="!editProductForm.name.trim()" @click="saveEditProduct(product.id)">{{ t('common.save') }}</UButton>
+                    <UButton size="xs" color="primary" :disabled="!editProductForm.name.trim()" @click="saveEditProduct(product.id)">{{ t('common.save') }}</UButton>
                     <UButton size="xs" variant="ghost" color="gray" @click="cancelEditProduct">{{ t('common.cancel') }}</UButton>
                   </div>
                 </div>
@@ -2224,7 +2224,7 @@ function openAddSource() {
                     <UTextarea v-model="editSourceForm.notes" placeholder="Notes…" size="sm" :rows="2" />
                     <USelect v-model="editSourceForm.personId" :options="personOptions" option-attribute="label" value-attribute="value" size="sm" />
                     <div class="flex gap-2">
-                      <UButton size="xs" color="purple" :disabled="!editSourceForm.name.trim()" @click="saveEditSource(p.id)">{{ t('common.save') }}</UButton>
+                      <UButton size="xs" color="primary" :disabled="!editSourceForm.name.trim()" @click="saveEditSource(p.id)">{{ t('common.save') }}</UButton>
                       <UButton size="xs" variant="ghost" color="gray" @click="cancelEditSource">{{ t('common.cancel') }}</UButton>
                     </div>
                   </div>

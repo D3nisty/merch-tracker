@@ -42,6 +42,9 @@ const canEdit = computed(() => booth.value?.canEdit ?? canEdit)
 // Only the event owner / admin can grant new booth shares.
 const canManageBoothShares = computed(() => authStore.isAdmin || event.value?.ownerId === authStore.user?.id)
 
+// Convention context drives the indigo accent variant in the header/icon.
+const isConv = computed(() => event.value?.type === 'convention')
+
 const showShareBoothModal = ref(false)
 const showEditBoothModal = ref(false)
 const showAddProduct = ref(false)
@@ -105,6 +108,66 @@ async function deletePreset(id: string) {
 }
 
 onMounted(loadPresets)
+
+// ── Products list toolbar (Nomad "scroll-hunt fix") ────────────────────
+// Search + state filter + sort combine over the products NOT tied to a
+// catalog image (the flat product list); results group under sticky
+// category sub-headers.
+const productSearch = ref('')
+const productFilter = ref<'all' | 'planned' | 'bought' | 'must'>('all')
+const productSort = ref<'priority' | 'name' | 'price'>('priority')
+const showSortMenu = ref(false)
+
+const standaloneProducts = computed<Product[]>(() => groupedByImage.value['none'] ?? [])
+
+const filterCounts = computed(() => {
+  const list = standaloneProducts.value
+  return {
+    all: list.length,
+    planned: list.filter(p => p.isPlanned).length,
+    bought: list.filter(p => p.isPurchased).length,
+    must: list.filter(p => p.priority === 2).length,
+  }
+})
+
+const filteredProducts = computed(() => {
+  const q = productSearch.value.trim().toLowerCase()
+  const list = standaloneProducts.value.filter((p) => {
+    if (productFilter.value === 'planned' && !p.isPlanned) return false
+    if (productFilter.value === 'bought' && !p.isPurchased) return false
+    if (productFilter.value === 'must' && p.priority !== 2) return false
+    if (q && !(`${p.name} ${p.category ?? ''} ${p.size ?? ''} ${p.description ?? ''}`.toLowerCase().includes(q))) return false
+    return true
+  })
+  return [...list].sort((a, b) => {
+    if (productSort.value === 'name') return a.name.localeCompare(b.name)
+    if (productSort.value === 'price') return (b.price ?? 0) - (a.price ?? 0)
+    return (b.priority ?? 0) - (a.priority ?? 0)
+  })
+})
+
+// Group the filtered list by category with a per-group summed total.
+const productGroups = computed(() => {
+  const groups = new Map<string, Product[]>()
+  for (const p of filteredProducts.value) {
+    const key = p.category?.trim() || t('plist.uncategorized')
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(p)
+  }
+  return Array.from(groups.entries()).map(([label, items]) => {
+    const byCur: Record<string, number> = {}
+    for (const p of items) {
+      if (!p.price) continue
+      byCur[p.currency] = (byCur[p.currency] ?? 0) + p.price * (p.quantity ?? 1)
+    }
+    const top = Object.entries(byCur).sort((a, b) => b[1] - a[1])[0]
+    return { label, items, total: top ? `${top[1].toFixed(0)} ${top[0]}` : null }
+  })
+})
+
+const sortLabel = computed(() => ({
+  priority: t('plist.priority'), name: t('plist.name'), price: t('plist.price'),
+}[productSort.value]))
 
 // ── Discounts ─────────────────────────────────────────────────────────
 const DISCOUNT_CURRENCIES = ['EUR', 'JPY', 'USD', 'GBP', 'CHF', 'KRW']
@@ -527,116 +590,74 @@ const personBreakdown = computed(() => {
   <div v-if="booth">
     <!-- Breadcrumb -->
     <div class="mb-6">
-      <div class="flex items-center gap-1 text-sm text-gray-400 mb-4">
-        <NuxtLink to="/" class="hover:text-white">Events</NuxtLink>
-        <UIcon name="i-heroicons-chevron-right" class="w-4 h-4" />
-        <NuxtLink :to="`/events/${route.params.slug}`" class="hover:text-white">{{ event?.name }}</NuxtLink>
-        <UIcon name="i-heroicons-chevron-right" class="w-4 h-4" />
-        <span class="text-white">{{ booth.name }}</span>
+      <div class="flex items-center gap-1.5 text-[12.5px] text-muted mb-3 flex-wrap">
+        <NuxtLink to="/" class="hover:text-ink">{{ t('event.allEvents') }}</NuxtLink>
+        <span class="text-faint-2">›</span>
+        <NuxtLink :to="`/events/${route.params.slug}`" :class="isConv ? 'text-conv-soft hover:text-conv' : 'text-sky hover:text-sky-soft'">{{ event?.name }}</NuxtLink>
+        <span class="text-faint-2">›</span>
+        <span class="text-ink">{{ booth.name }}</span>
+        <template v-if="booth.boothNr"><span class="text-faint-2">·</span><span class="text-muted">{{ booth.boothNr }}</span></template>
       </div>
 
-      <div class="flex items-start justify-between gap-3 flex-wrap">
-        <div class="min-w-0 flex-1 flex items-start gap-3">
-          <!-- Booth icon (same image shown on the dashboard tile). Editors
-               click to upload; long-press / right-click clears via the
-               handler. Falls back to a generic glyph. -->
+      <div class="flex items-start justify-between gap-4 flex-wrap">
+        <div class="min-w-0 flex-1 flex items-start gap-3.5">
+          <!-- Booth icon — editors click to upload; falls back to a glyph. -->
           <button
             type="button"
-            class="shrink-0 w-12 h-12 rounded-lg overflow-hidden flex items-center justify-center bg-gray-800 border border-gray-700 hover:border-purple-500 transition-colors group/icon relative"
-            :class="canEdit ? 'cursor-pointer' : 'cursor-default'"
+            class="shrink-0 w-[46px] h-[46px] rounded-[12px] overflow-hidden flex items-center justify-center transition-colors group/icon relative"
+            :class="[isConv ? 'cover-conv' : 'cover-travel', canEdit ? 'cursor-pointer hover:opacity-90' : 'cursor-default']"
             :disabled="!canEdit"
             :title="canEdit ? t('booth.uploadIcon') : ''"
             @click="canEdit && iconInputRef?.click()"
           >
-            <img
-              v-if="booth.iconPath"
-              :src="booth.iconPath"
-              alt=""
-              loading="lazy"
-              decoding="async"
-              class="w-full h-full object-cover"
-            />
-            <UIcon v-else name="i-heroicons-shopping-bag" class="w-5 h-5 text-gray-500" />
-            <div v-if="canEdit"
-              class="absolute inset-0 bg-black/60 opacity-0 group-hover/icon:opacity-100 transition-opacity flex items-center justify-center"
-            >
-              <UIcon name="i-heroicons-camera" class="w-5 h-5 text-white" />
+            <img v-if="booth.iconPath" :src="booth.iconPath" alt="" loading="lazy" decoding="async" class="w-full h-full object-cover" />
+            <UIcon v-else name="i-heroicons-shopping-bag" class="w-5 h-5" :class="isConv ? 'text-conv-soft' : 'text-sky-soft'" />
+            <div v-if="canEdit" class="absolute inset-0 bg-app/60 opacity-0 group-hover/icon:opacity-100 transition-opacity flex items-center justify-center">
+              <UIcon name="i-heroicons-camera" class="w-5 h-5 text-ink" />
             </div>
           </button>
-          <input
-            ref="iconInputRef"
-            type="file"
-            accept="image/*"
-            class="hidden"
-            @change="handleIconFile"
-          />
+          <input ref="iconInputRef" type="file" accept="image/*" class="hidden" @change="handleIconFile" />
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2 flex-wrap">
-              <h1 class="text-2xl font-bold text-white break-words">{{ booth.name }}</h1>
-              <UButton
-                v-if="canEdit"
-                icon="i-heroicons-pencil-square"
-                variant="ghost"
-                color="gray"
-                size="xs"
-                :title="t('editBooth.title')"
-                @click="showEditBoothModal = true"
-              />
-              <UButton
-                v-if="canEdit && booth.iconPath"
-                icon="i-heroicons-x-mark"
-                variant="ghost"
-                color="gray"
-                size="xs"
-                :title="t('booth.clearIcon')"
-                @click="clearIcon"
-              />
+              <h1 class="text-[20px] font-bold text-ink-strong break-words">{{ booth.name }}</h1>
+              <button v-if="canEdit" class="text-faint hover:text-ink" :title="t('editBooth.title')" @click="showEditBoothModal = true">
+                <UIcon name="i-heroicons-pencil-square" class="w-4 h-4" />
+              </button>
+              <button v-if="canEdit && booth.iconPath" class="text-faint hover:text-ink" :title="t('booth.clearIcon')" @click="clearIcon">
+                <UIcon name="i-heroicons-x-mark" class="w-4 h-4" />
+              </button>
             </div>
-          <div class="flex items-center gap-3 mt-1 text-gray-400 text-sm">
-            <span v-if="booth.hallNr">{{ t('booth.hallLabel') }} {{ booth.hallNr }}</span>
-            <span v-if="booth.boothNr">{{ t('booth.boothOf') }} {{ booth.boothNr }}</span>
-            <a v-if="booth.website" :href="booth.website" target="_blank" class="text-purple-400 hover:underline">
-              Website
-            </a>
-          </div>
-          <p v-if="booth.notes" class="text-gray-500 text-sm mt-1">{{ booth.notes }}</p>
-          <div v-if="booth.shopCategory" class="flex flex-wrap gap-1.5 mt-2">
-            <span
-              v-for="cat in booth.shopCategory.split(',')"
-              :key="cat"
-              class="px-2 py-0.5 rounded-full text-xs bg-gray-800 text-gray-300 border border-gray-700"
-            >
-              {{ cat }}
-            </span>
-          </div>
-          </div><!-- /inner text wrap -->
-        </div><!-- /icon + text flex -->
-        <div v-if="canEdit" class="text-right">
-          <div v-if="formatCostMap(costByCurrency)" class="font-bold text-yellow-400 leading-tight">
-            <div v-for="[cur, amt] in Object.entries(costByCurrency)" :key="cur" class="text-xl">
-              {{ amt.toFixed(2) }} {{ cur }}
-              <PriceConverted :amount="amt" :currency="cur" variant="inline" />
+            <div class="flex items-center gap-3 mt-1 text-muted text-[12.5px]">
+              <span v-if="booth.hallNr">{{ t('booth.hallLabel') }} {{ booth.hallNr }}</span>
+              <span v-if="booth.boothNr">{{ t('booth.boothOf') }} {{ booth.boothNr }}</span>
+              <a v-if="booth.website" :href="booth.website" target="_blank" class="text-sky hover:underline">Website</a>
             </div>
-            <div v-if="costConvertedTotal && Object.keys(costByCurrency).length > 1" class="text-xs text-gray-500 mt-1 font-mono">
-              ≈ {{ costConvertedTotal.value.toFixed(2) }} {{ costConvertedTotal.target }}
+            <p v-if="booth.notes" class="text-faint text-[12.5px] mt-1">{{ booth.notes }}</p>
+            <div v-if="booth.shopCategory" class="flex flex-wrap gap-1.5 mt-2">
+              <span v-for="cat in booth.shopCategory.split(',')" :key="cat" class="text-[10.5px] text-sky-soft bg-chip-sky px-2 py-0.5 rounded-md">{{ cat }}</span>
             </div>
           </div>
-          <div v-else class="text-xl font-bold text-yellow-400">—</div>
-          <div class="text-sm text-gray-400 mt-0.5">
-            {{ formatCostMap(purchasedByCurrency) ?? '0.00' }} {{ t('booth.spent') }}
+        </div>
+        <!-- Planned | Spent | Buy all summary -->
+        <div v-if="canEdit" class="flex items-center gap-4 shrink-0">
+          <div class="text-right">
+            <div class="text-[9.5px] uppercase tracking-[0.05em] text-faint">{{ t('booth.planned') }}</div>
+            <div class="mono text-[17px] font-semibold text-planned">{{ formatCostMap(costByCurrency) ?? '—' }}</div>
+            <div v-if="costConvertedTotal && Object.keys(costByCurrency).length > 1" class="text-[10px] text-faint mono">≈ {{ costConvertedTotal.value.toFixed(0) }} {{ costConvertedTotal.target }}</div>
           </div>
-          <div
-            v-if="paidConvertedTotal && Object.keys(purchasedByCurrency).length > 1"
-            class="text-xs text-gray-500 font-mono"
-          >
-            ≈ {{ paidConvertedTotal.value.toFixed(2) }} {{ paidConvertedTotal.target }}
+          <div class="w-px h-8 bg-line" />
+          <div class="text-right">
+            <div class="text-[9.5px] uppercase tracking-[0.05em] text-faint">{{ t('booth.spent') }}</div>
+            <div class="mono text-[17px] font-semibold text-bought">{{ formatCostMap(purchasedByCurrency) ?? '0' }}</div>
+            <div v-if="paidConvertedTotal && Object.keys(purchasedByCurrency).length > 1" class="text-[10px] text-faint mono">≈ {{ paidConvertedTotal.value.toFixed(0) }} {{ paidConvertedTotal.target }}</div>
           </div>
-          <!-- Hypothetical "buy everything once" total — independent of any
-               viewer's marks. Cheapest source per article + each catalog
-               product at unit price. -->
-          <div v-if="formatCostMap(buyEverythingByCurrency)" class="text-xs text-gray-500 mt-1">
-            {{ formatCostMap(buyEverythingByCurrency) }} {{ t('booth.buyEverything') }}
-          </div>
+          <template v-if="formatCostMap(buyEverythingByCurrency)">
+            <div class="w-px h-8 bg-line" />
+            <div class="text-right">
+              <div class="text-[9.5px] uppercase tracking-[0.05em] text-faint">{{ t('booth.buyEverything') }}</div>
+              <div class="mono text-[17px] font-semibold text-muted">{{ formatCostMap(buyEverythingByCurrency) }}</div>
+            </div>
+          </template>
         </div>
       </div>
     </div>
@@ -644,43 +665,43 @@ const personBreakdown = computed(() => {
     <!-- Action bar (edit mode only). "Share booth" only shows for event
          owner / admin since booth-edit-share users can't onward-share. -->
     <div v-if="canEdit || canManageBoothShares" class="flex gap-2 mb-6 flex-wrap">
-      <UButton v-if="canEdit" icon="i-heroicons-plus" color="purple" @click="showAddProduct = true">{{ t('booth.addProduct') }}</UButton>
-      <UButton v-if="canEdit" icon="i-heroicons-photo" variant="outline" color="gray" @click="showUploadImage = true">{{ t('booth.uploadImage') }}</UButton>
-      <UButton v-if="canManageBoothShares" icon="i-heroicons-share" variant="outline" color="purple" @click="showShareBoothModal = true">{{ t('boothShare.shareBooth') }}</UButton>
+      <button v-if="canEdit" class="flex items-center gap-1.5 px-4 py-2.5 rounded-field grad-primary text-[13px] font-bold" @click="showAddProduct = true">
+        <UIcon name="i-heroicons-plus" class="w-4 h-4" /> {{ t('booth.addProduct') }}
+      </button>
+      <button v-if="canEdit" class="flex items-center gap-1.5 px-4 py-2.5 rounded-field border border-line text-muted hover:text-ink text-[13px] font-semibold transition-colors" @click="showUploadImage = true">
+        <UIcon name="i-heroicons-photo" class="w-4 h-4" /> {{ t('booth.uploadImage') }}
+      </button>
+      <button v-if="canManageBoothShares" class="flex items-center gap-1.5 px-4 py-2.5 rounded-field border border-line-focus text-sky-soft hover:bg-chip-sky/50 text-[13px] font-semibold transition-colors" @click="showShareBoothModal = true">
+        <UIcon name="i-heroicons-share" class="w-4 h-4" /> {{ t('boothShare.shareBooth') }}
+      </button>
     </div>
 
     <!-- Price presets (edit mode only) -->
     <div v-if="canEdit" class="mb-6">
       <div class="flex items-center justify-between mb-2">
-        <h3 class="text-sm font-semibold text-gray-400">{{ t('booth.pricePresets') }}</h3>
-        <UButton
-          icon="i-heroicons-plus"
-          variant="ghost"
-          color="gray"
-          size="xs"
-          @click="showAddPreset = !showAddPreset"
-        >
-          {{ t('booth.addPreset') }}
-        </UButton>
+        <h3 class="text-[11px] font-bold uppercase tracking-[0.08em] text-faint">{{ t('booth.pricePresets') }}</h3>
+        <button class="flex items-center gap-1 text-xs text-muted hover:text-ink" @click="showAddPreset = !showAddPreset">
+          <UIcon name="i-heroicons-plus" class="w-3.5 h-3.5" /> {{ t('booth.addPreset') }}
+        </button>
       </div>
 
       <div v-if="presets.length" class="flex flex-wrap gap-2 mb-2">
         <div
           v-for="preset in presets"
           :key="preset.id"
-          class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-800 border border-gray-700 text-xs group"
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-2 border border-line text-xs group"
         >
-          <span class="text-gray-300">{{ preset.label }}</span>
-          <span class="text-yellow-400 font-medium">{{ preset.price.toFixed(2) }} {{ preset.currency }}</span>
+          <span class="text-muted">{{ preset.label }}</span>
+          <span class="text-planned font-medium mono">{{ preset.price.toFixed(2) }} {{ preset.currency }}</span>
           <button
-            class="text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+            class="text-faint hover:text-must opacity-0 group-hover:opacity-100 transition-opacity"
             @click="deletePreset(preset.id)"
           >
             <UIcon name="i-heroicons-x-mark" class="w-3 h-3" />
           </button>
         </div>
       </div>
-      <p v-else-if="!showAddPreset" class="text-xs text-gray-600">{{ t('booth.noPresetsHint') }}</p>
+      <p v-else-if="!showAddPreset" class="text-xs text-faint">{{ t('booth.noPresetsHint') }}</p>
 
       <div v-if="showAddPreset" class="flex gap-2 items-end mt-2">
         <UFormGroup :label="t('booth.size')" class="w-40">
@@ -704,7 +725,7 @@ const personBreakdown = computed(() => {
             size="sm"
           />
         </UFormGroup>
-        <UButton color="purple" size="sm" @click="addPreset">{{ t('common.save') }}</UButton>
+        <UButton color="primary" size="sm" @click="addPreset">{{ t('common.save') }}</UButton>
         <UButton variant="ghost" color="gray" size="sm" @click="showAddPreset = false">{{ t('common.cancel') }}</UButton>
       </div>
     </div>
@@ -712,48 +733,41 @@ const personBreakdown = computed(() => {
     <!-- Discounts -->
     <div v-if="(booth.discounts?.length ?? 0) > 0 || canEdit" class="mb-6">
       <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
-        <h3 class="text-sm font-semibold text-gray-400 flex items-center gap-2">
-          <UIcon name="i-heroicons-tag" class="w-4 h-4" />
+        <h3 class="text-[11px] font-bold uppercase tracking-[0.08em] text-faint flex items-center gap-2">
+          <UIcon name="i-heroicons-tag" class="w-3.5 h-3.5" />
           {{ t('discount.title') }}
-          <span v-if="discountSavingsLabel" class="text-xs text-green-400 font-normal">
+          <span v-if="discountSavingsLabel" class="text-bought font-normal normal-case tracking-normal">
             − {{ discountSavingsLabel }} {{ t('discount.saved') }}
           </span>
         </h3>
-        <UButton
-          v-if="canEdit"
-          icon="i-heroicons-plus"
-          variant="ghost"
-          color="gray"
-          size="xs"
-          @click="openCreateDiscount"
-        >
-          {{ t('discount.add') }}
-        </UButton>
+        <button v-if="canEdit" class="flex items-center gap-1 text-xs text-muted hover:text-ink" @click="openCreateDiscount">
+          <UIcon name="i-heroicons-plus" class="w-3.5 h-3.5" /> {{ t('discount.add') }}
+        </button>
       </div>
       <div v-if="(booth.discounts?.length ?? 0) > 0" class="flex flex-wrap gap-2">
         <div
           v-for="d in booth.discounts"
           :key="d.id"
-          class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-gray-900 border border-gray-700 text-sm group"
+          class="flex items-center gap-2 px-2.5 py-1.5 rounded-field bg-surface-2 border border-line text-sm group"
         >
-          <UIcon name="i-heroicons-tag" class="w-3.5 h-3.5 text-green-400 shrink-0" />
-          <span class="text-gray-200">{{ d.label }}</span>
-          <span v-if="d.type === 'bundle'" class="text-xs text-gray-500">
+          <UIcon name="i-heroicons-tag" class="w-3.5 h-3.5 text-bought shrink-0" />
+          <span class="text-ink">{{ d.label }}</span>
+          <span v-if="d.type === 'bundle'" class="text-xs text-faint">
             ({{ t('discount.bundleSummary', { n: d.triggerQty, price: d.bundlePrice?.toFixed(2) ?? '0.00', cur: d.bundleCurrency ?? '', scope: d.scopeValue }) }})
           </span>
-          <span v-else class="text-xs text-gray-500">
+          <span v-else class="text-xs text-faint">
             ({{ t('discount.buyN', { n: d.triggerQty - (d.freeQty ?? 0) }) }} {{ d.scopeValue }} {{ t('discount.getM', { m: d.freeQty ?? 0 }) }})
           </span>
           <template v-if="canEdit">
             <button
-              class="text-gray-500 hover:text-purple-400 opacity-0 group-hover:opacity-100 transition-opacity"
+              class="text-faint hover:text-sky opacity-0 group-hover:opacity-100 transition-opacity"
               :title="t('common.edit')"
               @click="openEditDiscount(d)"
             >
               <UIcon name="i-heroicons-pencil-square" class="w-3.5 h-3.5" />
             </button>
             <button
-              class="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+              class="text-faint hover:text-must opacity-0 group-hover:opacity-100 transition-opacity"
               :title="t('common.delete')"
               @click="deleteDiscount(d.id)"
             >
@@ -762,27 +776,27 @@ const personBreakdown = computed(() => {
           </template>
         </div>
       </div>
-      <p v-else-if="canEdit" class="text-xs text-gray-600">{{ t('discount.empty') }}</p>
+      <p v-else-if="canEdit" class="text-xs text-faint">{{ t('discount.empty') }}</p>
     </div>
 
     <!-- Per-person breakdown — admin-only for privacy. Regular users see only
          their own totals in the booth header (filtered via effectivePersonId);
          we don't expose what other people are buying. -->
-    <div v-if="authStore.isAdmin && personBreakdown.length > 1" class="mb-6 p-4 rounded-xl bg-gray-900 border border-gray-800">
-      <h3 class="text-sm font-semibold text-gray-400 mb-3">{{ t('booth.costByPerson') }}</h3>
+    <div v-if="authStore.isAdmin && personBreakdown.length > 1" class="mb-6 p-4 rounded-card bg-surface border border-line">
+      <h3 class="text-[11px] font-bold uppercase tracking-[0.08em] text-faint mb-3">{{ t('booth.costByPerson') }}</h3>
       <div class="space-y-2">
         <div v-for="item in personBreakdown" :key="item.label" class="flex items-center justify-between text-sm">
           <div class="flex items-center gap-2">
             <span
               v-if="item.person"
-              :class="['w-2.5 h-2.5 rounded-full', COLOR_MAP[item.person.color] ?? 'bg-purple-500']"
+              :class="['w-2.5 h-2.5 rounded-full', COLOR_MAP[item.person.color] ?? 'bg-sky']"
             />
-            <UIcon v-else name="i-heroicons-user" class="w-3 h-3 text-gray-500" />
-            <span class="text-gray-300">{{ item.label }}</span>
+            <UIcon v-else name="i-heroicons-user" class="w-3 h-3 text-faint" />
+            <span class="text-ink">{{ item.label }}</span>
           </div>
-          <div class="text-yellow-400 font-medium">
+          <div class="text-planned font-medium mono">
             <span v-for="([cur, amt], i) in item.entries" :key="cur">
-              <span v-if="i > 0" class="text-gray-600"> · </span>{{ amt.toFixed(2) }} {{ cur }}
+              <span v-if="i > 0" class="text-faint-2"> · </span>{{ amt.toFixed(2) }} {{ cur }}
             </span>
           </div>
         </div>
@@ -818,21 +832,21 @@ const personBreakdown = computed(() => {
       <button
         v-if="personsStore.currentPersonId && hiddenArticleCount > 0"
         type="button"
-        class="w-full flex items-center gap-2 text-xs pb-2 border-b border-gray-800 hover:text-white transition-colors flex-wrap"
-        :class="showAllArticles ? 'text-purple-300' : 'text-gray-500'"
+        class="w-full flex items-center gap-2 text-xs pb-2 border-b border-line-soft hover:text-ink transition-colors flex-wrap"
+        :class="showAllArticles ? 'text-sky-soft' : 'text-faint'"
         :title="showAllArticles ? t('booth.showOnlyMine') : t('booth.showAllArticles')"
         @click="showAllArticles = !showAllArticles"
       >
         <UIcon :name="showAllArticles ? 'i-heroicons-eye' : 'i-heroicons-funnel'" class="w-3.5 h-3.5 shrink-0" />
         <template v-if="showAllArticles">
           <span>{{ t('booth.showingAllArticles') }}</span>
-          <span class="text-purple-400 underline ml-auto">{{ t('booth.showOnlyMine') }}</span>
+          <span class="text-sky underline ml-auto">{{ t('booth.showOnlyMine') }}</span>
         </template>
         <template v-else>
           <span>{{ t('booth.showingArticlesFor') }}</span>
-          <strong class="text-gray-300">{{ personsStore.persons.find(p => p.id === personsStore.currentPersonId)?.name }}</strong>
-          <span class="text-gray-600">({{ hiddenArticleCount }} {{ t('booth.hidden') }})</span>
-          <span class="text-purple-400 underline ml-auto">{{ t('booth.showAllArticles') }}</span>
+          <strong class="text-ink">{{ personsStore.persons.find(p => p.id === personsStore.currentPersonId)?.name }}</strong>
+          <span class="text-faint-2">({{ hiddenArticleCount }} {{ t('booth.hidden') }})</span>
+          <span class="text-sky underline ml-auto">{{ t('booth.showAllArticles') }}</span>
         </template>
       </button>
 
@@ -855,7 +869,7 @@ const personBreakdown = computed(() => {
           <button
             v-if="canEdit && sortedImages.length > 1"
             type="button"
-            class="image-drag-handle absolute -left-8 top-2 w-6 h-6 flex items-center justify-center rounded bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 cursor-grab active:cursor-grabbing touch-none opacity-70 hover:opacity-100 transition-opacity z-10"
+            class="image-drag-handle absolute -left-8 top-2 w-6 h-6 flex items-center justify-center rounded bg-surface-2 border border-line text-muted hover:text-ink hover:border-line-focus cursor-grab active:cursor-grabbing touch-none opacity-70 hover:opacity-100 transition-opacity z-10"
             :title="t('common.drag')"
           >
             <UIcon name="i-heroicons-bars-3" class="w-3.5 h-3.5" />
@@ -871,25 +885,71 @@ const personBreakdown = computed(() => {
         </div>
       </VueDraggable>
 
-      <!-- Products not linked to any image -->
-      <div v-if="(groupedByImage['none'] ?? []).length > 0 || booth.images?.length === 0">
-        <h3 class="text-lg font-semibold text-white mb-3">
-          {{ booth.images?.length ? t('booth.otherProducts') : t('booth.products') }}
-        </h3>
-        <div class="space-y-2">
-          <ProductItem
-            v-for="product in groupedByImage['none']"
-            :key="product.id"
-            :product="product"
-            @toggle="handleToggle(product)"
-            @delete="confirmDeleteProduct(product.id)"
-          />
+      <!-- Products not linked to any image — Nomad list: search + filter chips
+           + sort + category grouping (the "scroll-hunt fix"). -->
+      <div v-if="standaloneProducts.length > 0 || booth.images?.length === 0">
+        <h3 v-if="booth.images?.length" class="text-[17px] font-bold text-ink-strong mb-3">{{ t('booth.otherProducts') }}</h3>
+
+        <div v-if="standaloneProducts.length" class="rounded-window border border-line bg-surface overflow-hidden">
+          <!-- sticky toolbar -->
+          <div class="px-4 py-3 border-b border-line-soft bg-sidebar flex items-center gap-2.5 flex-wrap">
+            <div class="flex items-center gap-2 px-3 py-2 rounded-field border border-line bg-surface-2 flex-1 min-w-[180px] focus-within:border-line-focus transition-colors">
+              <UIcon name="i-heroicons-magnifying-glass" class="w-4 h-4 text-faint shrink-0" />
+              <input v-model="productSearch" type="text" :placeholder="t('plist.search')" class="w-full bg-transparent text-[13px] text-ink placeholder:text-faint outline-none border-0 p-0 focus:ring-0" />
+            </div>
+            <div class="flex gap-1 p-1 rounded-field bg-surface-2 border border-line">
+              <button class="px-3 py-1.5 rounded-[7px] text-xs transition-colors" :class="productFilter === 'all' ? 'bg-sky text-on-accent font-bold' : 'text-muted hover:text-ink font-medium'" @click="productFilter = 'all'">{{ t('plist.all') }} <span class="opacity-70">{{ filterCounts.all }}</span></button>
+              <button class="px-3 py-1.5 rounded-[7px] text-xs font-medium transition-colors" :class="productFilter === 'planned' ? 'bg-chip-planned text-planned' : 'text-planned/80 hover:text-planned'" @click="productFilter = 'planned'">{{ t('plist.planned') }} {{ filterCounts.planned }}</button>
+              <button class="px-3 py-1.5 rounded-[7px] text-xs font-medium transition-colors" :class="productFilter === 'bought' ? 'bg-chip-bought text-bought' : 'text-bought/80 hover:text-bought'" @click="productFilter = 'bought'">{{ t('plist.bought') }} {{ filterCounts.bought }}</button>
+              <button class="px-3 py-1.5 rounded-[7px] text-xs font-medium transition-colors" :class="productFilter === 'must' ? 'bg-chip-must text-must' : 'text-must/80 hover:text-must'" @click="productFilter = 'must'">{{ t('plist.must') }} {{ filterCounts.must }}</button>
+            </div>
+            <div class="relative">
+              <button class="flex items-center gap-1.5 px-3 py-2 rounded-field border border-line text-muted hover:text-ink text-xs transition-colors" @click="showSortMenu = !showSortMenu">
+                {{ t('plist.sort') }}: {{ sortLabel }} <UIcon name="i-heroicons-chevron-down" class="w-3 h-3" />
+              </button>
+              <div v-if="showSortMenu" class="absolute right-0 top-full mt-1 w-36 bg-surface border border-line rounded-card shadow-pop p-1 z-20">
+                <button v-for="opt in (['priority','name','price'] as const)" :key="opt" class="w-full text-left px-2.5 py-1.5 rounded-[7px] text-xs text-muted hover:bg-surface-2 hover:text-ink" :class="productSort === opt ? 'text-sky' : ''" @click="productSort = opt; showSortMenu = false">{{ t(`plist.${opt}`) }}</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- grouped list -->
+          <div>
+            <template v-for="grp in productGroups" :key="grp.label">
+              <div class="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-surface-2 border-y border-line-soft">
+                <span class="font-display text-[11.5px] font-bold uppercase tracking-[0.08em] text-sky-soft">{{ grp.label }}</span>
+                <span class="mono text-[10.5px] text-faint">{{ grp.items.length }}<template v-if="grp.total"> · {{ grp.total }}</template></span>
+              </div>
+              <div class="px-3">
+                <ProductItem
+                  v-for="product in grp.items"
+                  :key="product.id"
+                  :product="product"
+                  @toggle="handleToggle(product)"
+                  @delete="confirmDeleteProduct(product.id)"
+                />
+              </div>
+            </template>
+            <div v-if="!productGroups.length" class="px-4 py-8 text-center text-faint text-sm">{{ t('booth.noProductsYet') }}</div>
+          </div>
+
+          <!-- footer bar -->
+          <div class="px-4 py-3 border-t border-line bg-sidebar flex items-center justify-between flex-wrap gap-2">
+            <div class="text-[12px] text-muted">
+              {{ t('plist.showing') }} <b class="text-ink">{{ filteredProducts.length }}</b> ·
+              <b class="text-bought">{{ filterCounts.bought }}</b> {{ t('plist.bought').toLowerCase() }} ·
+              <b class="text-planned">{{ filterCounts.planned }}</b> {{ t('plist.planned').toLowerCase() }}
+            </div>
+            <button v-if="canEdit" class="flex items-center gap-1.5 px-3.5 py-2 rounded-field grad-primary text-[12.5px] font-bold" @click="showAddProduct = true">
+              <UIcon name="i-heroicons-plus" class="w-3.5 h-3.5" /> {{ t('booth.addProduct') }}
+            </button>
+          </div>
         </div>
       </div>
 
       <!-- Empty state -->
-      <div v-if="!booth.products?.length && !booth.images?.length" class="text-center py-12 text-gray-500">
-        <UIcon name="i-heroicons-shopping-bag" class="w-12 h-12 mx-auto mb-3 text-gray-600" />
+      <div v-if="!booth.products?.length && !booth.images?.length" class="text-center py-12 text-faint">
+        <UIcon name="i-heroicons-shopping-bag" class="w-12 h-12 mx-auto mb-3 text-faint-2" />
         <p>{{ t('booth.noContent') }}</p>
         <p v-if="canEdit" class="text-sm mt-1">{{ t('booth.uploadHint') }}</p>
       </div>
@@ -911,23 +971,24 @@ const personBreakdown = computed(() => {
       :booth="booth"
     />
 
-    <UModal v-model="showDeleteProductModal" :ui="{ width: 'sm:max-w-sm' }">
-      <UCard>
-        <template #header><h3 class="font-semibold text-white">{{ t('booth.deleteProduct') }}</h3></template>
-        <p class="text-gray-400 text-sm">{{ t('booth.deleteProductDesc') }}</p>
-        <template #footer>
-          <div class="flex gap-2 justify-end">
-            <UButton variant="ghost" color="gray" @click="showDeleteProductModal = false">{{ t('common.cancel') }}</UButton>
-            <UButton color="red" @click="handleDeleteProduct">{{ t('common.delete') }}</UButton>
-          </div>
-        </template>
-      </UCard>
+    <UModal v-model="showDeleteProductModal" :ui="{ width: 'sm:max-w-sm', background: '', ring: '', rounded: 'rounded-window', shadow: '' }">
+      <div class="bg-surface border border-line rounded-window p-6 text-center">
+        <div class="w-12 h-12 mx-auto mb-3.5 rounded-card bg-chip-must flex items-center justify-center">
+          <UIcon name="i-heroicons-trash" class="w-6 h-6 text-must" />
+        </div>
+        <h3 class="text-[17px] font-bold text-ink-strong mb-1.5">{{ t('booth.deleteProduct') }}</h3>
+        <p class="text-[13px] text-muted mb-5 leading-relaxed">{{ t('booth.deleteProductDesc') }}</p>
+        <div class="flex gap-2.5">
+          <button class="flex-1 py-2.5 rounded-field border border-line text-ink text-[13px] font-semibold" @click="showDeleteProductModal = false">{{ t('common.cancel') }}</button>
+          <button class="flex-1 py-2.5 rounded-field bg-must text-chip-must text-[13px] font-bold" @click="handleDeleteProduct">{{ t('common.delete') }}</button>
+        </div>
+      </div>
     </UModal>
 
     <UModal v-model="showDiscountModal" :ui="{ width: 'sm:max-w-md' }">
       <UCard>
         <template #header>
-          <h3 class="font-semibold text-white">
+          <h3 class="font-bold text-ink-strong">
             {{ editingDiscountId ? t('discount.edit') : t('discount.add') }}
           </h3>
         </template>
@@ -944,8 +1005,8 @@ const personBreakdown = computed(() => {
                 :class="[
                   'p-2 rounded border text-left text-sm transition-colors',
                   discountForm.type === 'buy_get_free'
-                    ? 'border-purple-500 bg-purple-600/20 text-white'
-                    : 'border-gray-700 bg-gray-900 text-gray-400 hover:border-gray-500',
+                    ? 'border-sky bg-chip-sky text-ink-strong'
+                    : 'border-line bg-surface-2 text-muted hover:border-line-focus',
                 ]"
                 @click="discountForm.type = 'buy_get_free'"
               >
@@ -957,8 +1018,8 @@ const personBreakdown = computed(() => {
                 :class="[
                   'p-2 rounded border text-left text-sm transition-colors',
                   discountForm.type === 'bundle'
-                    ? 'border-purple-500 bg-purple-600/20 text-white'
-                    : 'border-gray-700 bg-gray-900 text-gray-400 hover:border-gray-500',
+                    ? 'border-sky bg-chip-sky text-ink-strong'
+                    : 'border-line bg-surface-2 text-muted hover:border-line-focus',
                 ]"
                 @click="discountForm.type = 'bundle'"
               >
@@ -984,7 +1045,7 @@ const personBreakdown = computed(() => {
               <button
                 v-for="s in sizePills" :key="s" type="button"
                 class="px-2 py-1 text-xs rounded border transition-colors"
-                :class="discountForm.scopeValue === s ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'"
+                :class="discountForm.scopeValue === s ? 'bg-sky border-sky text-on-accent' : 'border-line text-muted hover:border-line-focus'"
                 @click="pickScopePill(s)"
               >{{ s }}</button>
               <template v-if="addingCustomScope">
@@ -997,7 +1058,7 @@ const personBreakdown = computed(() => {
               </template>
               <button
                 v-else type="button" :title="t('catalog.addCustomSize')"
-                class="px-2 py-1 text-xs rounded border border-dashed border-gray-600 text-gray-500 hover:border-purple-500 hover:text-purple-300 transition-colors"
+                class="px-2 py-1 text-xs rounded border border-dashed border-line text-faint hover:border-sky hover:text-sky-soft transition-colors"
                 @click="startAddCustomScope"
               >+</button>
             </div>
@@ -1005,7 +1066,7 @@ const personBreakdown = computed(() => {
               <button
                 v-for="c in categoryPills" :key="c" type="button"
                 class="px-1.5 py-0.5 text-xs rounded border transition-colors"
-                :class="discountForm.scopeValue === c ? 'bg-purple-600 border-purple-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'"
+                :class="discountForm.scopeValue === c ? 'bg-sky border-sky text-on-accent' : 'border-line text-muted hover:border-line-focus'"
                 @click="pickScopePill(c)"
               >{{ c }}</button>
               <template v-if="addingCustomScope">
@@ -1018,7 +1079,7 @@ const personBreakdown = computed(() => {
               </template>
               <button
                 v-else type="button" :title="t('catalog.addCustomCategory')"
-                class="px-1.5 py-0.5 text-xs rounded border border-dashed border-gray-600 text-gray-500 hover:border-purple-500 hover:text-purple-300 transition-colors"
+                class="px-1.5 py-0.5 text-xs rounded border border-dashed border-line text-faint hover:border-sky hover:text-sky-soft transition-colors"
                 @click="startAddCustomScope"
               >+</button>
             </div>
@@ -1052,8 +1113,8 @@ const personBreakdown = computed(() => {
             </UFormGroup>
           </div>
 
-          <div class="text-xs text-gray-400 px-2 py-1.5 rounded bg-gray-900/60 border border-gray-800">
-            <UIcon name="i-heroicons-information-circle" class="w-3.5 h-3.5 inline mr-1" />
+          <div class="text-xs text-muted px-2.5 py-2 rounded-field bg-surface-2 border border-line">
+            <UIcon name="i-heroicons-information-circle" class="w-3.5 h-3.5 inline mr-1 text-sky" />
             <span v-if="discountForm.type === 'buy_get_free'">
               {{ t('discount.previewLine', {
                   pay: Math.max(0, discountForm.triggerQty - discountForm.freeQty),
@@ -1074,14 +1135,14 @@ const personBreakdown = computed(() => {
         </div>
         <template #footer>
           <div class="flex gap-2 justify-end">
-            <UButton variant="ghost" color="gray" @click="showDiscountModal = false">{{ t('common.cancel') }}</UButton>
-            <UButton
-              color="purple"
+            <button class="px-4 py-2 rounded-field text-[13px] font-semibold text-muted hover:text-ink" @click="showDiscountModal = false">{{ t('common.cancel') }}</button>
+            <button
+              class="px-4 py-2 rounded-field grad-primary text-[13px] font-bold disabled:opacity-50"
               :disabled="!discountFormValid"
               @click="saveDiscount"
             >
               {{ t('common.save') }}
-            </UButton>
+            </button>
           </div>
         </template>
       </UCard>

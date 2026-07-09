@@ -220,7 +220,7 @@ watch(() => props.modelValue, (open) => { if (open) refresh() })
             value-attribute="value"
             class="w-24"
           />
-          <UButton color="purple" :loading="submitting" :disabled="!targetId" @click="addShare">
+          <UButton color="primary" :loading="submitting" :disabled="!targetId" @click="addShare">
             {{ t('common.add') }}
           </UButton>
         </div>
@@ -253,7 +253,7 @@ watch(() => props.modelValue, (open) => { if (open) refresh() })
             :placeholder="t('boothShare.inviteHoursPlaceholder')"
             class="flex-1"
           />
-          <UButton color="purple" icon="i-heroicons-link" :loading="inviteSubmitting" @click="mintInvite">
+          <UButton color="primary" icon="i-heroicons-link" :loading="inviteSubmitting" @click="mintInvite">
             {{ t('boothShare.createInvite') }}
           </UButton>
         </div>
@@ -262,7 +262,7 @@ watch(() => props.modelValue, (open) => { if (open) refresh() })
             class="flex items-center gap-2 px-2 py-1.5 rounded bg-gray-900 border border-gray-800 text-xs">
             <UBadge
               :label="inv.level === 'edit' ? t('boothShare.levelEdit') : t('boothShare.levelView')"
-              :color="inv.level === 'edit' ? 'purple' : 'gray'"
+              :color="inv.level === 'edit' ? 'primary' : 'gray'"
               variant="soft"
               size="xs"
             />
@@ -305,7 +305,7 @@ watch(() => props.modelValue, (open) => { if (open) refresh() })
           </div>
           <UBadge
             :label="s.level === 'edit' ? t('boothShare.levelEdit') : t('boothShare.levelView')"
-            :color="s.level === 'edit' ? 'purple' : 'gray'"
+            :color="s.level === 'edit' ? 'primary' : 'gray'"
             variant="soft"
             size="xs"
           />
@@ -328,7 +328,7 @@ watch(() => props.modelValue, (open) => { if (open) refresh() })
           </div>
           <UBadge
             :label="s.level === 'edit' ? t('boothShare.levelEdit') : t('boothShare.levelView')"
-            :color="s.level === 'edit' ? 'purple' : 'gray'"
+            :color="s.level === 'edit' ? 'primary' : 'gray'"
             variant="soft"
             size="xs"
           />

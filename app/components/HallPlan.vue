@@ -474,7 +474,7 @@ function boothBorderColor(booth: Booth): string {
               v-if="authStore.isEditing"
               size="xs"
               :variant="drawMode ? 'solid' : 'outline'"
-              :color="drawMode ? 'purple' : 'gray'"
+              :color="drawMode ? 'primary' : 'gray'"
               icon="i-heroicons-pencil-square"
               @click="toggleDrawMode"
             >
@@ -736,7 +736,7 @@ function boothBorderColor(booth: Booth): string {
             </div>
 
             <div class="flex gap-2 pt-1">
-              <UButton color="purple" size="sm" :disabled="!manualForm.name.trim()" class="flex-1" @click="saveManualBooth">
+              <UButton color="primary" size="sm" :disabled="!manualForm.name.trim()" class="flex-1" @click="saveManualBooth">
                 {{ replicatePreview.length > 1
                   ? t('hallplan.addNBooths').replace('{n}', String(replicatePreview.length))
                   : t('hallplan.addBooth') }}

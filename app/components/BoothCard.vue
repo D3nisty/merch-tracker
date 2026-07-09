@@ -16,20 +16,9 @@ const personsStore = usePersonsStore()
 const authStore = useAuthStore()
 const { t } = useLocale()
 
-const COLOR_MAP: Record<string, string> = {
-  purple: 'bg-purple-500', blue: 'bg-blue-500', green: 'bg-green-500',
-  yellow: 'bg-yellow-500', red: 'bg-red-500', pink: 'bg-pink-500',
-  orange: 'bg-orange-500', teal: 'bg-teal-500',
-}
+const isConv = computed(() => props.eventType === 'convention')
 
-const boothPerson = computed(() =>
-  props.booth.personId ? personsStore.persons.find(p => p.id === props.booth.personId) ?? null : null,
-)
-
-// Filter to the same person the event header uses — view-as picker on /account
-// takes priority; otherwise fall back to the viewer's own person. Without a
-// filter we'd show the union across all marks and the booth card would look
-// inflated for someone who's only personally marked a few items.
+// Filter to the active person (view-as picker → viewer's own person).
 const effectivePersonId = computed<string | null>(() =>
   personsStore.currentPersonId
   ?? store.currentEvent?.viewerPersonId
@@ -40,9 +29,7 @@ const effectivePersonId = computed<string | null>(() =>
 const plannedByCurrency = computed(() =>
   store.getBoothPlannedByCurrency(props.booth.id, effectivePersonId.value),
 )
-// Net paid = gross paid − realised savings. Subtraction lives here so we
-// don't depend on store-function HMR — when discounts apply, the tile shows
-// the after-discount number directly.
+// Net paid = gross paid − realised savings (colocated with display per store note).
 const paidByCurrency = computed(() => {
   const gross = store.getBoothPaidByCurrency(props.booth.id, effectivePersonId.value)
   const savings = store.getBoothSavingsByCurrency(props.booth.id, effectivePersonId.value)
@@ -50,24 +37,18 @@ const paidByCurrency = computed(() => {
   for (const [cur, save] of Object.entries(savings)) net[cur] = (net[cur] ?? 0) - save
   return net
 })
-// Hypothetical cost to buy one of everything at this booth — same across
-// viewers, doesn't depend on marks. Useful for "is this vendor worth a trip?"
-const buyEverythingByCurrency = computed(() =>
-  store.getBoothBuyEverythingByCurrency(props.booth.id),
-)
 const hasPlanned = computed(() => Object.keys(plannedByCurrency.value).some(k => Math.abs(plannedByCurrency.value[k]!) > 0.005))
 const hasPaid = computed(() => Object.keys(paidByCurrency.value).some(k => Math.abs(paidByCurrency.value[k]!) > 0.005))
-const hasBuyEverything = computed(() => Object.keys(buyEverythingByCurrency.value).some(k => Math.abs(buyEverythingByCurrency.value[k]!) > 0.005))
+function firstCur(map: Record<string, number>) {
+  const e = Object.entries(map).filter(([, v]) => Math.abs(v) > 0.005)[0]
+  return e ? { amt: e[1], cur: e[0] } : null
+}
 
-// Progress reflects the active person's marks too — gross item count
-// (articles = 1, non-article products = each one) for total; their purchased
-// items for the numerator.
 const totalCount = computed(() => {
   const images = props.booth.images ?? []
   const articleImageIds = new Set(images.filter(i => i.imageType === 'article').map(i => i.id))
-  const articleImageCount = articleImageIds.size
   const nonArticleProductCount = (props.booth.products ?? []).filter(p => !articleImageIds.has(p.catalogImageId ?? '')).length
-  return articleImageCount + nonArticleProductCount
+  return articleImageIds.size + nonArticleProductCount
 })
 
 function markedPurchasedByPerson(productId: string, personId: string | null): boolean {
@@ -95,104 +76,65 @@ const purchasedCount = computed(() => {
   return count
 })
 
-const progress = computed(() => totalCount.value ? (purchasedCount.value / totalCount.value) * 100 : 0)
+const progress = computed(() => totalCount.value ? Math.round((purchasedCount.value / totalCount.value) * 100) : 0)
 </script>
 
 <template>
-  <NuxtLink :to="`/events/${route.params.slug}/booth/${booth.slug ?? booth.id}`">
-    <UCard class="hover:border-purple-500/50 transition-colors cursor-pointer h-full">
-      <div class="space-y-2">
-        <div class="flex items-start justify-between gap-2">
-          <!-- Booth icon — same image surfaced on the booth detail header.
-               Falls back to a generic shopping-bag glyph when none uploaded. -->
-          <div class="shrink-0 w-9 h-9 rounded-md overflow-hidden flex items-center justify-center bg-gray-800 border border-gray-700">
-            <img
-              v-if="booth.iconPath"
-              :src="booth.iconPath"
-              alt=""
-              loading="lazy"
-              decoding="async"
-              class="w-full h-full object-cover"
-            />
-            <UIcon v-else name="i-heroicons-shopping-bag" class="w-4 h-4 text-gray-500" />
+  <NuxtLink :to="`/events/${route.params.slug}/booth/${booth.slug ?? booth.id}`" class="block h-full">
+    <div class="rounded-[13px] bg-surface-2 border border-line p-[13px] h-full transition-colors hover:border-line-focus">
+      <!-- header -->
+      <div class="flex gap-2.5 mb-2.5">
+        <div
+          class="shrink-0 w-9 h-9 rounded-[10px] overflow-hidden flex items-center justify-center"
+          :class="isConv ? 'cover-conv' : 'cover-travel'"
+        >
+          <img v-if="booth.iconPath" :src="booth.iconPath" alt="" loading="lazy" decoding="async" class="w-full h-full object-cover" />
+          <UIcon v-else name="i-heroicons-shopping-bag" class="w-4 h-4" :class="isConv ? 'text-conv-soft' : 'text-sky-soft'" />
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="text-[13.5px] font-bold text-ink-strong truncate">{{ booth.name }}</div>
+          <div v-if="booth.boothNr || booth.hallNr" class="text-[10px] text-faint mt-0.5">
+            <span v-if="booth.hallNr">{{ booth.hallNr }}</span><span v-if="booth.hallNr && booth.boothNr">-</span><span v-if="booth.boothNr">{{ booth.boothNr }}</span>
           </div>
-          <div class="flex-1 min-w-0">
-            <h4 class="font-semibold text-white text-sm">{{ booth.name }}</h4>
-            <div class="text-xs text-gray-500 mt-0.5">
-              <span v-if="booth.hallNr">{{ t('booth.hallLabel') }} {{ booth.hallNr }}</span>
-              <span v-if="booth.hallNr && booth.boothNr"> · </span>
-              <span v-if="booth.boothNr">{{ t('booth.boothOf') }} {{ booth.boothNr }}</span>
-            </div>
-            <div v-if="booth.shopCategory" class="flex flex-wrap gap-1 mt-1.5">
-              <span
-                v-for="cat in booth.shopCategory.split(',')"
-                :key="cat"
-                class="px-1.5 py-0.5 rounded text-xs bg-gray-800 text-gray-300 border border-gray-700"
-              >
-                {{ cat }}
-              </span>
-            </div>
-          </div>
-          <div class="flex flex-col items-end gap-1 shrink-0">
-            <div v-if="boothPerson && authStore.isEditing" class="flex items-center gap-1 text-xs text-gray-400">
-              <span :class="['w-2 h-2 rounded-full', COLOR_MAP[boothPerson.color] ?? 'bg-purple-500']" />
-              {{ boothPerson.name }}
-            </div>
-            <template v-if="authStore.isLoggedIn">
-              <!-- Planned (yellow) — what the viewing person plans to spend
-                   at this booth. Gross of any discount; the event header
-                   shows the savings line separately. -->
-              <div v-if="hasPlanned" class="text-right leading-tight">
-                <div class="text-[10px] uppercase tracking-wide text-gray-500">{{ t('booth.planned') }}</div>
-                <div class="text-yellow-400 text-xs font-semibold">
-                  <div v-for="[cur, amt] in Object.entries(plannedByCurrency)" :key="cur">
-                    {{ amt.toFixed(2) }} {{ cur }}
-                    <PriceConverted :amount="amt" :currency="cur" variant="inline" />
-                  </div>
-                </div>
-              </div>
-              <!-- Spent (green) — items the viewing person has marked
-                   purchased. Hidden when zero so cards stay compact. -->
-              <div v-if="hasPaid" class="text-right leading-tight">
-                <div class="text-[10px] uppercase tracking-wide text-gray-500">{{ t('booth.spent') }}</div>
-                <div class="text-green-400 text-xs font-semibold">
-                  <div v-for="[cur, amt] in Object.entries(paidByCurrency)" :key="cur">
-                    {{ amt.toFixed(2) }} {{ cur }}
-                    <PriceConverted :amount="amt" :currency="cur" variant="inline" />
-                  </div>
-                </div>
-              </div>
-              <!-- Hypothetical "buy one of each" total — same for everyone,
-                   independent of marks. Dimmed since it's reference data. -->
-              <div v-if="hasBuyEverything" class="text-right leading-tight">
-                <div class="text-[10px] uppercase tracking-wide text-gray-500">{{ t('booth.buyEverything') }}</div>
-                <div class="text-gray-400 text-xs font-medium">
-                  <div v-for="[cur, amt] in Object.entries(buyEverythingByCurrency)" :key="cur">
-                    {{ amt.toFixed(2) }} {{ cur }}
-                    <PriceConverted :amount="amt" :currency="cur" variant="inline" />
-                  </div>
-                </div>
-              </div>
-            </template>
+          <div v-if="booth.shopCategory" class="flex flex-wrap gap-1 mt-1">
+            <span
+              v-for="cat in booth.shopCategory.split(',').slice(0, 2)"
+              :key="cat"
+              class="text-[9px] text-sky-soft bg-chip-sky px-1.5 py-0.5 rounded-[4px]"
+            >{{ cat }}</span>
           </div>
         </div>
-
-        <!-- Progress bar -->
-        <div v-if="totalCount > 0">
-          <div class="flex justify-between text-xs text-gray-400 mb-1">
-            <span>{{ purchasedCount }}/{{ totalCount }}</span>
-            <span>{{ Math.round(progress) }}%</span>
-          </div>
-          <div class="h-1 bg-gray-800 rounded-full overflow-hidden">
-            <div
-              class="h-full bg-gradient-to-r from-purple-500 to-green-500 rounded-full transition-all"
-              :style="{ width: `${progress}%` }"
-            />
-          </div>
-        </div>
-
-        <div v-if="!totalCount" class="text-xs text-gray-600">{{ t('booth.noProductsYet') }}</div>
       </div>
-    </UCard>
+
+      <!-- planned / spent mini row (logged-in only) -->
+      <div v-if="authStore.isLoggedIn && (hasPlanned || hasPaid)" class="flex justify-between mb-1.5">
+        <div>
+          <div class="text-[9px] uppercase text-faint">{{ t('booth.planned') }}</div>
+          <div class="mono text-[12px] font-semibold text-planned">
+            <template v-if="firstCur(plannedByCurrency)">{{ firstCur(plannedByCurrency)!.amt.toFixed(0) }} {{ firstCur(plannedByCurrency)!.cur }}</template>
+            <template v-else>—</template>
+          </div>
+        </div>
+        <div class="text-right">
+          <div class="text-[9px] uppercase text-faint">{{ t('booth.spent') }}</div>
+          <div class="mono text-[12px] font-semibold" :class="hasPaid ? 'text-bought' : 'text-faint'">
+            <template v-if="firstCur(paidByCurrency)">{{ firstCur(paidByCurrency)!.amt.toFixed(0) }} {{ firstCur(paidByCurrency)!.cur }}</template>
+            <template v-else>—</template>
+          </div>
+        </div>
+      </div>
+
+      <!-- progress -->
+      <template v-if="totalCount > 0">
+        <div class="flex justify-between text-[10px] text-muted mb-1">
+          <span>{{ purchasedCount }}/{{ totalCount }}</span>
+          <span>{{ progress }}%</span>
+        </div>
+        <div class="h-[5px] rounded-full bg-line-soft overflow-hidden">
+          <div class="h-full" :class="isConv ? 'grad-progress-conv' : 'grad-progress'" :style="{ width: `${progress}%` }" />
+        </div>
+      </template>
+      <div v-else class="text-[10px] text-faint">{{ t('booth.noProductsYet') }}</div>
+    </div>
   </NuxtLink>
 </template>

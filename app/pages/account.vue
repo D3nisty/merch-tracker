@@ -242,21 +242,16 @@ onMounted(() => { loadPurchases() })
 
 <template>
   <div v-if="authStore.user" class="max-w-md mx-auto">
-    <UCard class="mb-4">
-      <template #header>
-        <h1 class="font-bold text-white text-lg">{{ t('auth.accountTitle') }}</h1>
-      </template>
-      <dl class="text-sm space-y-2">
-        <div class="flex justify-between">
-          <dt class="text-gray-400">{{ t('nav.username') }}</dt>
-          <dd class="text-white font-medium">{{ authStore.user.username }}</dd>
-        </div>
-        <div class="flex justify-between">
-          <dt class="text-gray-400">{{ t('auth.role') }}</dt>
-          <dd class="text-white font-medium capitalize">{{ authStore.user.role }}</dd>
-        </div>
-      </dl>
-    </UCard>
+    <!-- identity header -->
+    <div class="flex items-center gap-4 mb-5">
+      <div class="w-14 h-14 rounded-[16px] grad-primary flex items-center justify-center text-[22px] font-extrabold text-on-accent font-display">
+        {{ (authStore.user.person?.name || authStore.user.username || '?').trim()[0]?.toUpperCase() }}
+      </div>
+      <div class="min-w-0">
+        <h1 class="text-[21px] font-bold text-ink-strong truncate">{{ authStore.user.person?.name || authStore.user.username }}</h1>
+        <div class="text-[12.5px] text-muted">@{{ authStore.user.username }} · <span class="text-bought capitalize">{{ authStore.user.role }}</span></div>
+      </div>
+    </div>
 
     <!-- Display name -->
     <UCard class="mb-4">
@@ -272,7 +267,7 @@ onMounted(() => { loadPurchases() })
           @keydown.enter="saveName"
         />
         <UButton
-          color="purple"
+          color="primary"
           :loading="nameSaving"
           :disabled="!displayName.trim() || displayName.trim() === authStore.user?.person?.name"
           @click="saveName"
@@ -444,7 +439,7 @@ onMounted(() => { loadPurchases() })
       <template #footer>
         <div class="flex justify-end">
           <UButton
-            color="purple"
+            color="primary"
             :loading="submitting"
             :disabled="!currentPassword || newPassword.length < 6"
             @click="submit"

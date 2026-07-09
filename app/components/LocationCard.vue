@@ -27,6 +27,8 @@ const showAddReceipt = ref(false)
 const viewingReceipt = ref<LocationReceipt | null>(null)
 const expanded = ref(true)
 
+const isConv = computed(() => props.eventType === 'convention')
+
 // City receipts are only meaningful for travel events with at least one shop.
 const canHaveReceipts = computed(() => props.eventType === 'travel')
 const hasShops = computed(() => (props.location.booths?.length ?? 0) > 0)
@@ -107,136 +109,126 @@ function formatDateRange(from: string | null, to: string | null) {
 </script>
 
 <template>
-  <UCard>
-    <template #header>
-      <div class="flex items-center justify-between gap-2">
-        <button
-          v-if="showDragHandle"
-          type="button"
-          class="location-drag-handle shrink-0 px-1 py-1 -ml-1 text-gray-500 hover:text-gray-300 cursor-grab active:cursor-grabbing touch-none"
-          :title="t('common.drag')"
+  <div :id="`loc-${location.id}`" class="rounded-window bg-surface border border-line overflow-hidden scroll-mt-24">
+    <!-- header -->
+    <div class="flex items-center gap-3 px-[18px] py-[15px]" :class="expanded ? 'border-b border-line-soft' : ''">
+      <button
+        v-if="showDragHandle"
+        type="button"
+        class="location-drag-handle shrink-0 text-faint hover:text-muted cursor-grab active:cursor-grabbing touch-none"
+        :title="t('common.drag')"
+        @click.stop
+      >
+        <UIcon name="i-heroicons-bars-3" class="w-4 h-4" />
+      </button>
+      <button type="button" class="shrink-0 text-muted" @click="expanded = !expanded">
+        <UIcon :name="expanded ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'" class="w-4 h-4" />
+      </button>
+      <div class="flex items-center gap-2.5 flex-wrap min-w-0 flex-1 cursor-pointer" @click="expanded = !expanded">
+        <span class="text-[10px] font-bold uppercase tracking-[0.05em] text-muted bg-line-soft px-2 py-[3px] rounded-[5px]">{{ typeLabel }}</span>
+        <span class="text-[15px] font-bold text-ink-strong">{{ location.name }}</span>
+        <span class="text-xs text-muted">{{ location.booths?.length ?? 0 }} {{ isConv ? t('events.booths') : t('events.shops') }} · {{ purchasedProducts }}/{{ totalProducts }} {{ t('event.purchased') }}</span>
+        <!-- date chip (travel) -->
+        <template v-if="eventType === 'travel'">
+          <span
+            v-if="!editingDates && formatDateRange(location.dateFrom, location.dateTo)"
+            class="text-xs text-sky-soft flex items-center gap-1"
+            @click.stop
+          >
+            <UIcon name="i-heroicons-calendar" class="w-3 h-3" />
+            {{ formatDateRange(location.dateFrom, location.dateTo) }}
+            <button v-if="authStore.isEditing" class="hover:text-ink ml-0.5" @click.stop="editingDates = true">
+              <UIcon name="i-heroicons-pencil-square" class="w-3 h-3" />
+            </button>
+          </span>
+          <button
+            v-else-if="!editingDates && authStore.isEditing"
+            class="text-faint hover:text-sky-soft flex items-center gap-1 text-xs"
+            @click.stop="editingDates = true"
+          >
+            <UIcon name="i-heroicons-calendar-days" class="w-3 h-3" /> {{ t('event.addDates') }}
+          </button>
+        </template>
+      </div>
+
+      <!-- actions -->
+      <div class="flex items-center gap-1 shrink-0">
+        <NuxtLink
+          v-if="isConv"
+          :to="`/events/${route.params.slug}/hallplan`"
+          class="w-7 h-7 rounded-md flex items-center justify-center text-muted hover:text-ink hover:bg-surface-2 transition-colors"
+          :title="t('booth.viewHallPlan')"
           @click.stop
         >
-          <UIcon name="i-heroicons-bars-3" class="w-4 h-4" />
-        </button>
-        <div class="flex items-center gap-3 cursor-pointer min-w-0 flex-1" @click="expanded = !expanded">
-          <UIcon
-            :name="expanded ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'"
-            class="w-4 h-4 text-gray-400 shrink-0"
-          />
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2 flex-wrap">
-              <UBadge :label="typeLabel" variant="soft" color="gray" size="xs" />
-              <span class="font-semibold text-white break-words">{{ location.name }}</span>
-            </div>
-            <div class="text-xs text-gray-400 mt-0.5 flex items-center gap-2 flex-wrap">
-              <span>
-                {{ location.booths?.length ?? 0 }} {{ eventType === 'convention' ? t('events.booths') : t('events.shops') }} ·
-                {{ purchasedProducts }}/{{ totalProducts }} {{ t('event.purchased') }}
-              </span>
-              <template v-if="eventType === 'travel'">
-                <span v-if="!editingDates && formatDateRange(location.dateFrom, location.dateTo)" class="text-blue-400 flex items-center gap-1">
-                  <UIcon name="i-heroicons-calendar" class="w-3 h-3" />
-                  {{ formatDateRange(location.dateFrom, location.dateTo) }}
-                  <button v-if="authStore.isEditing" class="hover:text-white ml-0.5" @click.stop="editingDates = true">
-                    <UIcon name="i-heroicons-pencil-square" class="w-3 h-3" />
-                  </button>
-                </span>
-                <button
-                  v-else-if="!editingDates && authStore.isEditing"
-                  class="text-gray-600 hover:text-blue-400 flex items-center gap-1"
-                  @click.stop="editingDates = true"
-                >
-                  <UIcon name="i-heroicons-calendar-days" class="w-3 h-3" />
-                  {{ t('event.addDates') }}
-                </button>
-              </template>
-            </div>
-            <!-- Inline date editor -->
-            <div v-if="editingDates" class="flex items-center gap-2 mt-2 flex-wrap" @click.stop>
-              <UInput v-model="dateForm.dateFrom" type="date" size="xs" class="w-32 sm:w-36" />
-              <span class="text-gray-500 text-xs">–</span>
-              <UInput v-model="dateForm.dateTo" type="date" size="xs" class="w-32 sm:w-36" />
-              <UButton size="xs" color="purple" @click.stop="saveDates">{{ t('common.save') }}</UButton>
-              <UButton size="xs" color="gray" variant="ghost" @click.stop="editingDates = false">✕</UButton>
-            </div>
-          </div>
-        </div>
-
-        <div class="flex items-center gap-1 shrink-0">
-          <UButton
-            v-if="eventType === 'convention'"
-            icon="i-heroicons-map"
-            variant="ghost"
-            color="gray"
-            size="xs"
-            :to="`/events/${route.params.slug}/hallplan`"
-            :title="t('booth.viewHallPlan')"
-          />
-          <template v-if="authStore.isEditing">
-            <UButton
-              v-if="canHaveReceipts"
-              icon="i-heroicons-receipt-percent"
-              variant="ghost"
-              color="green"
-              size="xs"
-              :disabled="!hasShops"
-              :title="hasShops ? t('upload.addLocationReceipt') : t('upload.noShopsYet')"
-              @click="hasShops && (showAddReceipt = true)"
-            />
-            <UButton
-              icon="i-heroicons-plus"
-              variant="ghost"
-              color="gray"
-              size="xs"
-              @click="showAddBooth = true"
-            />
-            <UButton
-              icon="i-heroicons-trash"
-              variant="ghost"
-              color="red"
-              size="xs"
-              @click="emit('delete', location.id)"
-            />
-          </template>
-        </div>
+          <UIcon name="i-heroicons-map" class="w-4 h-4" />
+        </NuxtLink>
+        <template v-if="authStore.isEditing">
+          <button
+            v-if="canHaveReceipts"
+            class="w-7 h-7 rounded-md flex items-center justify-center text-bought hover:bg-surface-2 disabled:opacity-40 transition-colors"
+            :disabled="!hasShops"
+            :title="hasShops ? t('upload.addLocationReceipt') : t('upload.noShopsYet')"
+            @click.stop="hasShops && (showAddReceipt = true)"
+          >
+            <UIcon name="i-heroicons-receipt-percent" class="w-4 h-4" />
+          </button>
+          <button class="w-7 h-7 rounded-md flex items-center justify-center text-muted hover:text-ink hover:bg-surface-2 transition-colors" @click.stop="showAddBooth = true">
+            <UIcon name="i-heroicons-plus" class="w-4 h-4" />
+          </button>
+          <button class="w-7 h-7 rounded-md flex items-center justify-center text-must hover:bg-chip-must/50 transition-colors" @click.stop="emit('delete', location.id)">
+            <UIcon name="i-heroicons-trash" class="w-4 h-4" />
+          </button>
+        </template>
       </div>
-    </template>
+    </div>
 
-    <div v-show="expanded">
-      <!-- City receipts (travel mode only) -->
-      <div v-if="canHaveReceipts && receipts.length" class="mb-3">
-        <div class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-          <UIcon name="i-heroicons-receipt-percent" class="w-3.5 h-3.5 text-green-400" />
-          {{ t('upload.cityReceipts') }}
+    <!-- inline date editor -->
+    <div v-if="editingDates" class="flex items-center gap-2 flex-wrap px-[18px] py-2.5 border-b border-line-soft" @click.stop>
+      <input v-model="dateForm.dateFrom" type="date" class="px-2 py-1 rounded-field border border-line bg-surface-2 text-xs text-ink w-36" />
+      <span class="text-faint text-xs">–</span>
+      <input v-model="dateForm.dateTo" type="date" class="px-2 py-1 rounded-field border border-line bg-surface-2 text-xs text-ink w-36" />
+      <button class="px-2.5 py-1 rounded-field grad-primary text-xs font-bold" @click.stop="saveDates">{{ t('common.save') }}</button>
+      <button class="px-2 py-1 rounded-field text-muted text-xs" @click.stop="editingDates = false">✕</button>
+    </div>
+
+    <div v-show="expanded" class="p-[18px]">
+      <!-- city receipts (travel) -->
+      <div v-if="canHaveReceipts && receipts.length" class="mb-4">
+        <div class="text-[10.5px] font-bold uppercase tracking-[0.08em] text-faint mb-2 flex items-center gap-1.5">
+          <UIcon name="i-heroicons-receipt-percent" class="w-3.5 h-3.5 text-bought" /> {{ t('upload.cityReceipts') }}
         </div>
         <div class="flex flex-wrap gap-2">
           <button
             v-for="r in receipts"
             :key="r.id"
             type="button"
-            class="group relative w-24 h-24 rounded-lg overflow-hidden border border-gray-800 hover:border-green-500/60 transition-colors bg-black"
+            class="group relative w-[70px] h-[70px] rounded-[10px] overflow-hidden border border-line hover:border-bought/60 transition-colors bg-surface-2"
             :title="r.customName || r.originalName"
             @click="openReceipt(r)"
           >
             <img :src="r.path" :alt="r.customName || r.originalName" class="w-full h-full object-cover" />
-            <div class="absolute inset-x-0 bottom-0 px-1 py-0.5 bg-black/70 text-xs text-white truncate">
-              {{ r.customName || t('catalog.receipt') }}
-            </div>
+            <div class="absolute inset-x-0 bottom-0 px-1 py-0.5 bg-app/70 text-[9px] text-ink truncate">{{ r.customName || t('catalog.receipt') }}</div>
+          </button>
+          <button
+            v-if="authStore.isEditing"
+            type="button"
+            class="w-[70px] h-[70px] rounded-[10px] border-[1.5px] border-dashed border-line-focus flex items-center justify-center text-faint hover:text-bought transition-colors"
+            @click="showAddReceipt = true"
+          >
+            <UIcon name="i-heroicons-plus" class="w-4.5 h-4.5" />
           </button>
         </div>
       </div>
 
-      <p v-if="!location.booths?.length" class="text-center py-2 text-gray-500 text-sm">
-        {{ eventType === 'convention' ? t('event.noBoothsYet') : t('event.noShopsYet') }}
+      <p v-if="!location.booths?.length" class="text-center py-2 text-faint text-sm">
+        {{ isConv ? t('event.noBoothsYet') : t('event.noShopsYet') }}
       </p>
 
-      <!-- min-h ensures an empty hall still presents a drop zone wide enough
-           to release onto on mobile, even before any booths exist. -->
       <VueDraggable
         v-model="boothsList"
         tag="div"
-        class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 min-h-[3rem]"
+        class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 min-h-[3rem]"
+        :class="isConv ? 'xl:grid-cols-4' : ''"
         :group="{ name: 'booths', pull: authStore.isEditing, put: authStore.isEditing }"
         handle=".booth-drag-handle"
         :animation="180"
@@ -249,7 +241,7 @@ function formatDateRange(from: string | null, to: string | null) {
           <button
             v-if="authStore.isEditing"
             type="button"
-            class="booth-drag-handle absolute top-1 right-1 z-10 p-1 rounded text-gray-500 hover:text-gray-200 hover:bg-gray-800/80 cursor-grab active:cursor-grabbing touch-none"
+            class="booth-drag-handle absolute top-1.5 right-1.5 z-10 p-1 rounded text-faint hover:text-ink hover:bg-app/60 cursor-grab active:cursor-grabbing touch-none"
             :title="t('common.drag')"
             @click.stop
           >
@@ -275,5 +267,5 @@ function formatDateRange(from: string | null, to: string | null) {
       :can-edit="authStore.isEditing"
       @update:model-value="(v: boolean) => { if (!v) viewingReceipt = null }"
     />
-  </UCard>
+  </div>
 </template>

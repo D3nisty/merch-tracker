@@ -100,7 +100,12 @@ async function handleSubmit() {
   <UModal :model-value="modelValue" @update:model-value="emit('update:modelValue', $event)" :ui="{ width: 'sm:max-w-lg' }">
     <UCard>
       <template #header>
-        <h3 class="font-semibold text-white">{{ t('booth.addProduct') }}</h3>
+        <div class="flex items-center justify-between">
+          <h3 class="font-bold text-ink-strong text-base">{{ t('booth.addProduct') }}</h3>
+          <button type="button" class="text-faint hover:text-ink" @click="emit('update:modelValue', false)">
+            <UIcon name="i-heroicons-x-mark" class="w-4.5 h-4.5" />
+          </button>
+        </div>
       </template>
 
       <form @submit.prevent="handleSubmit" class="space-y-4">
@@ -147,8 +152,8 @@ async function handleSubmit() {
                 type="button"
                 class="px-1.5 py-0.5 text-xs rounded border transition-colors"
                 :class="form.category === c
-                  ? 'bg-purple-600 border-purple-500 text-white'
-                  : 'border-gray-700 text-gray-400 hover:border-gray-500'"
+                  ? 'bg-chip-sky border-sky text-sky-soft'
+                  : 'border-line text-muted hover:border-line-focus'"
                 @click="form.category = form.category === c ? '' : c"
               >{{ c }}</button>
             </div>
@@ -157,12 +162,18 @@ async function handleSubmit() {
 
         <div class="grid grid-cols-2 gap-3">
           <UFormGroup :label="t('addProduct.priority')">
-            <USelect
-              v-model.number="form.priority"
-              :options="priorityOptions"
-              option-attribute="label"
-              value-attribute="value"
-            />
+            <div class="flex gap-1.5">
+              <button
+                v-for="opt in priorityOptions"
+                :key="opt.value"
+                type="button"
+                class="flex-1 text-center py-2 rounded-field border text-[12.5px] font-semibold transition-colors"
+                :class="form.priority === opt.value
+                  ? (opt.value === 2 ? 'border-must/60 bg-chip-must text-must' : opt.value === 1 ? 'border-planned/60 bg-chip-planned text-planned' : 'border-line-focus bg-surface-2 text-ink')
+                  : 'border-line text-muted hover:border-line-focus'"
+                @click="form.priority = opt.value"
+              >{{ opt.label }}</button>
+            </div>
           </UFormGroup>
           <UFormGroup :label="t('nav.person')" v-if="personsStore.persons.length">
             <USelect
@@ -182,7 +193,7 @@ async function handleSubmit() {
       <template #footer>
         <div class="flex gap-2 justify-end">
           <UButton variant="ghost" color="gray" @click="emit('update:modelValue', false)">{{ t('common.cancel') }}</UButton>
-          <UButton color="purple" :loading="submitting" @click="handleSubmit">{{ t('booth.addProduct') }}</UButton>
+          <UButton color="primary" :loading="submitting" @click="handleSubmit">{{ t('booth.addProduct') }}</UButton>
         </div>
       </template>
     </UCard>
