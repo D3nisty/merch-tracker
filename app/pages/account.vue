@@ -2,6 +2,7 @@
 import { useAuthStore } from '~/stores/auth'
 import { usePersonsStore } from '~/stores/persons'
 import { useLocale } from '~/composables/useLocale'
+import { exportCsv, exportXlsx, type ExportColumn, type ExportSheet } from '~/composables/useExport'
 
 definePageMeta({ layout: 'default' })
 
@@ -238,6 +239,77 @@ async function executeClear() {
 }
 
 onMounted(() => { loadPurchases() })
+
+// ── Export (CSV / Excel) ──────────────────────────────────────────────
+function exportColumns(includeEvent: boolean): ExportColumn[] {
+  const cols: ExportColumn[] = []
+  if (includeEvent) cols.push({ key: 'event', label: t('purchases.colEvent') })
+  cols.push(
+    { key: 'booth', label: t('purchases.colBooth') },
+    { key: 'item', label: t('purchases.colItem') },
+    { key: 'size', label: t('purchases.colSize') },
+    { key: 'category', label: t('purchases.colCategory') },
+    { key: 'qty', label: t('purchases.colQty'), numeric: true },
+    { key: 'unit', label: t('purchases.colUnit'), numeric: true },
+    { key: 'currency', label: t('purchases.colCurrency') },
+    { key: 'lineTotal', label: t('purchases.colLineTotal'), numeric: true },
+    { key: 'planned', label: t('purchases.colPlanned') },
+  )
+  return cols
+}
+function exportRows(group: PurchaseGroup, includeEvent: boolean): Record<string, unknown>[] {
+  return group.items.map((it) => {
+    const row: Record<string, unknown> = {
+      booth: it.boothName,
+      item: it.productName,
+      size: it.size ?? '',
+      category: it.category ?? '',
+      qty: it.quantity,
+      unit: it.price ?? '',
+      currency: it.currency,
+      lineTotal: it.price != null ? +(it.price * it.quantity).toFixed(2) : '',
+      planned: it.isPlanned ? '✓' : '',
+    }
+    if (includeEvent) row.event = group.eventName
+    return row
+  })
+}
+function safeFile(name: string) {
+  return name.replace(/[^\w\-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'purchases'
+}
+
+function exportEvent(group: PurchaseGroup, fmt: 'csv' | 'xlsx') {
+  const file = `purchases-${safeFile(group.eventName)}`
+  if (fmt === 'csv') exportCsv(file, exportColumns(false), exportRows(group, false))
+  else exportXlsx(file, [{ name: group.eventName, columns: exportColumns(false), rows: exportRows(group, false) }])
+}
+function exportAll(fmt: 'csv' | 'xlsx') {
+  if (!purchases.value.length) return
+  if (fmt === 'csv') {
+    // one flat sheet with an Event column
+    const rows = purchases.value.flatMap(g => exportRows(g, true))
+    exportCsv('purchases-all', exportColumns(true), rows)
+  } else {
+    // one sheet per event
+    const sheets: ExportSheet[] = purchases.value.map(g => ({
+      name: g.eventName,
+      columns: exportColumns(false),
+      rows: exportRows(g, false),
+    }))
+    exportXlsx('purchases-all', sheets)
+  }
+}
+
+function eventExportMenu(group: PurchaseGroup) {
+  return [[
+    { label: t('purchases.exportCsv'), icon: 'i-heroicons-document-text', click: () => exportEvent(group, 'csv') },
+    { label: t('purchases.exportExcel'), icon: 'i-heroicons-table-cells', click: () => exportEvent(group, 'xlsx') },
+  ]]
+}
+const allExportMenu = computed(() => [[
+  { label: t('purchases.exportCsv'), icon: 'i-heroicons-document-text', click: () => exportAll('csv') },
+  { label: t('purchases.exportExcel'), icon: 'i-heroicons-table-cells', click: () => exportAll('xlsx') },
+]])
 </script>
 
 <template>
@@ -320,48 +392,58 @@ onMounted(() => { loadPurchases() })
     <!-- My purchases — per event, with unmark/clear -->
     <UCard class="mb-4">
       <template #header>
-        <div class="flex items-center justify-between gap-2">
+        <div class="flex items-start justify-between gap-2">
           <div>
-            <h2 class="font-semibold text-white">{{ t('purchases.title') }}</h2>
-            <p class="text-xs text-gray-400 mt-0.5">{{ t('purchases.desc') }}</p>
+            <h2 class="font-semibold text-ink-strong">{{ t('purchases.title') }}</h2>
+            <p class="text-xs text-muted mt-0.5">{{ t('purchases.desc') }}</p>
           </div>
-          <UButton
-            v-if="purchases.length > 0"
-            size="xs"
-            variant="ghost"
-            color="red"
-            icon="i-heroicons-trash"
-            :title="t('purchases.clearAll')"
-            @click="confirmClear(null)"
-          >
-            {{ t('purchases.clearAll') }}
-          </UButton>
+          <div v-if="purchases.length > 0" class="flex items-center gap-1.5 shrink-0">
+            <UDropdown :items="allExportMenu" :popper="{ placement: 'bottom-end' }">
+              <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-field border border-line-focus text-sky-soft hover:bg-chip-sky/50 text-xs font-semibold transition-colors">
+                <UIcon name="i-heroicons-arrow-down-tray" class="w-3.5 h-3.5" /> {{ t('purchases.exportAll') }}
+                <UIcon name="i-heroicons-chevron-down" class="w-3 h-3" />
+              </button>
+            </UDropdown>
+            <UButton
+              size="xs"
+              variant="ghost"
+              color="red"
+              icon="i-heroicons-trash"
+              :title="t('purchases.clearAll')"
+              @click="confirmClear(null)"
+            />
+          </div>
         </div>
       </template>
       <UAlert v-if="purchasesError" color="red" variant="soft" :title="purchasesError" class="mb-3" />
       <p v-if="!purchasesLoading && purchases.length === 0" class="text-sm text-gray-500 text-center py-3">
         {{ t('purchases.empty') }}
       </p>
-      <div v-else class="space-y-4">
-        <div v-for="g in purchases" :key="g.eventId" class="rounded-lg bg-gray-950 border border-gray-800">
-          <div class="flex items-center justify-between gap-2 px-3 py-2 border-b border-gray-800">
+      <div v-else class="space-y-3">
+        <div v-for="g in purchases" :key="g.eventId" class="rounded-card bg-surface-2 border border-line overflow-hidden">
+          <div class="flex items-center gap-2 px-3 py-2.5 border-b border-line-soft">
             <button
               type="button"
-              class="flex items-center gap-2 text-left flex-1 min-w-0 text-sm text-white hover:text-purple-300 transition-colors"
+              class="flex items-center gap-2 text-left flex-1 min-w-0 text-sm text-ink hover:text-sky-soft transition-colors"
               @click="collapsedEvents[g.eventId] = !collapsedEvents[g.eventId]"
             >
               <UIcon
                 :name="collapsedEvents[g.eventId] ? 'i-heroicons-chevron-right' : 'i-heroicons-chevron-down'"
                 class="w-3.5 h-3.5 shrink-0"
               />
-              <span class="font-medium truncate">{{ g.eventName }}</span>
-              <span class="text-xs text-gray-500 shrink-0">· {{ g.items.length }} {{ t('purchases.items') }}</span>
-              <span v-if="Object.keys(g.totals).length" class="text-xs text-yellow-400 ml-auto shrink-0">
-                <span v-for="([cur, amt], i) in Object.entries(g.totals)" :key="cur">
-                  <span v-if="i > 0" class="text-gray-600"> · </span>{{ amt.toFixed(2) }} {{ cur }}
-                </span>
-              </span>
+              <span class="font-semibold truncate">{{ g.eventName }}</span>
+              <span class="text-xs text-faint shrink-0">· {{ g.items.length }} {{ t('purchases.items') }}</span>
             </button>
+            <span v-if="Object.keys(g.totals).length" class="text-xs text-planned mono shrink-0">
+              <span v-for="([cur, amt], i) in Object.entries(g.totals)" :key="cur">
+                <span v-if="i > 0" class="text-faint-2"> · </span>{{ amt.toFixed(2) }} {{ cur }}
+              </span>
+            </span>
+            <UDropdown :items="eventExportMenu(g)" :popper="{ placement: 'bottom-end' }">
+              <button class="w-7 h-7 rounded-md flex items-center justify-center text-muted hover:text-sky hover:bg-surface transition-colors" :title="t('purchases.export')">
+                <UIcon name="i-heroicons-arrow-down-tray" class="w-4 h-4" />
+              </button>
+            </UDropdown>
             <UButton
               size="xs"
               variant="ghost"
@@ -371,7 +453,7 @@ onMounted(() => { loadPurchases() })
               @click="confirmClear(g)"
             />
           </div>
-          <div v-show="!collapsedEvents[g.eventId]" class="divide-y divide-gray-800">
+          <div v-show="!collapsedEvents[g.eventId]" class="divide-y divide-line-hair">
             <div
               v-for="item in g.items"
               :key="item.productId"
@@ -379,31 +461,34 @@ onMounted(() => { loadPurchases() })
             >
               <NuxtLink
                 :to="`/events/${g.eventSlug ?? g.eventId}/booth/${item.boothSlug ?? item.boothId}`"
-                class="flex-1 min-w-0 hover:text-purple-300 transition-colors"
+                class="flex-1 min-w-0 group/link"
               >
-                <div class="text-white truncate">{{ item.productName }}</div>
-                <div class="text-xs text-gray-500 truncate">
+                <div class="text-ink truncate group-hover/link:text-sky-soft transition-colors">
+                  {{ item.productName }}
+                  <span v-if="item.isPlanned" class="text-[9px] font-bold text-planned bg-chip-planned px-1.5 py-0.5 rounded-[5px] ml-1 align-middle">{{ t('catalog.planned') }}</span>
+                </div>
+                <div class="text-xs text-faint truncate">
                   {{ item.boothName }}
                   <span v-if="item.size"> · {{ item.size }}</span>
                   <span v-if="item.category"> · {{ item.category }}</span>
                 </div>
               </NuxtLink>
-              <div class="flex items-center gap-0.5 shrink-0 rounded border border-gray-700 bg-gray-800/60">
+              <div class="flex items-center gap-0.5 shrink-0 rounded-field border border-line bg-surface">
                 <button
                   type="button"
-                  class="w-5 h-5 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded-l"
+                  class="w-5 h-5 flex items-center justify-center text-muted hover:text-ink hover:bg-surface-2 rounded-l"
                   :title="t('product.qtyDecrement')"
                   @click="adjustItemQty(item, item.quantity - 1)"
                 >−</button>
-                <span class="px-1 text-xs font-mono tabular-nums text-white min-w-[1.25rem] text-center">{{ item.quantity }}</span>
+                <span class="px-1 text-xs mono tabular-nums text-ink min-w-[1.25rem] text-center">{{ item.quantity }}</span>
                 <button
                   type="button"
-                  class="w-5 h-5 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded-r"
+                  class="w-5 h-5 flex items-center justify-center text-muted hover:text-ink hover:bg-surface-2 rounded-r"
                   :title="t('product.qtyIncrement')"
                   @click="adjustItemQty(item, item.quantity + 1)"
                 >+</button>
               </div>
-              <span v-if="item.price" class="text-xs text-yellow-400 tabular-nums shrink-0">
+              <span v-if="item.price" class="text-xs text-planned mono tabular-nums shrink-0 w-24 text-right">
                 {{ (item.price * item.quantity).toFixed(2) }} {{ item.currency }}
               </span>
               <UButton

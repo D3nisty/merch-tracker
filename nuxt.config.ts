@@ -52,7 +52,7 @@ export default defineNuxtConfig({
         },
       ],
       meta: [
-        { name: 'theme-color', content: '#a855f7' },
+        { name: 'theme-color', content: '#38bdf8' },
         { name: 'description', content: 'Plan and track merch purchases at anime conventions and travel destinations.' },
       ],
     },

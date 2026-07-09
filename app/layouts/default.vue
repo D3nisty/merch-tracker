@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { onClickOutside } from '@vueuse/core'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '~/stores/auth'
 import { usePersonsStore } from '~/stores/persons'
@@ -14,6 +15,12 @@ const route = useRoute()
 const router = useRouter()
 
 const showUserMenu = ref(false)
+// Close the popup on any click outside the user-card wrapper. We use this
+// instead of a full-screen overlay because the sidebar's `position: sticky`
+// creates a stacking context that would trap the popup *below* such an
+// overlay — the overlay would then eat every menu click.
+const userMenuRef = ref<HTMLElement | null>(null)
+onClickOutside(userMenuRef, () => { showUserMenu.value = false })
 
 // Global search box in the top utility bar. The trips-home page reads this
 // state to filter its card grid live.
@@ -178,7 +185,7 @@ const initial = computed(() => (displayName.value.trim()[0] ?? '?').toUpperCase(
       </NuxtLink>
 
       <!-- user card / sign-in -->
-      <div v-if="authStore.isLoggedIn" class="relative mt-1.5">
+      <div v-if="authStore.isLoggedIn" ref="userMenuRef" class="relative mt-1.5">
         <button
           type="button"
           class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-field bg-surface-2 border border-line-soft hover:border-line transition-colors text-left"
@@ -309,8 +316,5 @@ const initial = computed(() => (displayName.value.trim()[0] ?? '?').toUpperCase(
         <UIcon v-else name="i-heroicons-arrow-left-on-rectangle" class="w-6 h-6 text-faint" />
       </NuxtLink>
     </nav>
-
-    <!-- click-outside to close user menu -->
-    <div v-if="showUserMenu" class="fixed inset-0 z-40" @click="showUserMenu = false" />
   </div>
 </template>
