@@ -529,10 +529,19 @@ const productCount = computed(() => {
 const canMark = computed(() => authStore.isLoggedIn && !!store.currentEvent?.viewerPersonId)
 
 const tabs = computed(() => [
-  { key: 'products' as const, label: t('booth.tabProducts'), count: productCount.value },
-  { key: 'articles' as const, label: t('booth.tabArticles'), count: articleTabImages.value.length },
+  // Products tab = plain-text list of products with no image (standalone).
+  { key: 'products' as const, label: t('booth.tabProducts'), count: standaloneProducts.value.length },
+  // Article gallery = everything image-backed (article compare cards + catalog pages).
+  { key: 'articles' as const, label: t('booth.tabArticles'), count: articleTabImages.value.length + productTabImages.value.length },
   { key: 'receipt' as const, label: t('booth.tabReceipt'), count: receiptTabImages.value.length },
 ])
+
+// Add-action label for the floating button, per active tab.
+const addLabel = computed(() => activeTab.value === 'articles' ? t('booth.newArticle') : t('booth.addProduct'))
+function onFabAdd() {
+  if (activeTab.value === 'articles') showUploadImage.value = true
+  else showAddProduct.value = true
+}
 
 // Article gallery cards — each article image + its price sources, cheapest
 // wins, savings vs. average. `isPurchased`/`isPlanned` on each source are the
@@ -752,16 +761,10 @@ const personBreakdown = computed(() => {
 
     <!-- ═══════════════ PRODUCTS TAB ═══════════════ -->
     <div v-show="activeTab === 'products'">
-    <!-- Action bar (edit mode only). "Share booth" only shows for event
-         owner / admin since booth-edit-share users can't onward-share. -->
-    <div v-if="canEdit || canManageBoothShares" class="flex gap-2 mb-6 flex-wrap">
-      <button v-if="canEdit" class="flex items-center gap-1.5 px-4 py-2.5 rounded-field grad-primary text-[13px] font-bold" @click="showAddProduct = true">
-        <UIcon name="i-heroicons-plus" class="w-4 h-4" /> {{ t('booth.addProduct') }}
-      </button>
-      <button v-if="canEdit" class="flex items-center gap-1.5 px-4 py-2.5 rounded-field border border-line text-muted hover:text-ink text-[13px] font-semibold transition-colors" @click="showUploadImage = true">
-        <UIcon name="i-heroicons-photo" class="w-4 h-4" /> {{ t('booth.uploadImage') }}
-      </button>
-      <button v-if="canManageBoothShares" class="flex items-center gap-1.5 px-4 py-2.5 rounded-field border border-line-focus text-sky-soft hover:bg-chip-sky/50 text-[13px] font-semibold transition-colors" @click="showShareBoothModal = true">
+    <!-- Action bar: booth-wide "Share booth" (owner/admin). Add product /
+         upload image are the floating action button (see FAB below). -->
+    <div v-if="canManageBoothShares" class="flex gap-2 mb-6 flex-wrap">
+      <button class="flex items-center gap-1.5 px-4 py-2.5 rounded-field border border-line-focus text-sky-soft hover:bg-chip-sky/50 text-[13px] font-semibold transition-colors" @click="showShareBoothModal = true">
         <UIcon name="i-heroicons-share" class="w-4 h-4" /> {{ t('boothShare.shareBooth') }}
       </button>
     </div>
@@ -893,67 +896,11 @@ const personBreakdown = computed(() => {
       </div>
     </div>
 
-    <!-- Catalog images with products -->
-    <div :class="['space-y-8', canEdit && productTabImages.length > 1 ? 'pl-8' : '']">
-      <!-- Collapse-all / Expand-all toggle: makes drag-reordering practical
-           when individual catalogs are 1000+ px tall. Shown when there are
-           2+ images so single-image booths don't get a useless button. -->
-      <div
-        v-if="productTabImages.length >= 2"
-        class="flex items-center justify-end pb-2"
-      >
-        <UButton
-          variant="ghost"
-          color="gray"
-          size="xs"
-          :icon="allExpanded ? 'i-heroicons-bars-arrow-down' : 'i-heroicons-bars-arrow-up'"
-          @click="allExpanded = !allExpanded"
-        >
-          {{ allExpanded ? t('booth.collapseAll') : t('booth.expandAll') }}
-        </UButton>
-      </div>
-
-      <VueDraggable
-        v-model="draggableImages"
-        tag="div"
-        class="space-y-8"
-        handle=".image-drag-handle"
-        :animation="180"
-        :disabled="!canEdit || productTabImages.length < 2"
-        ghost-class="opacity-40"
-        drag-class="cursor-grabbing"
-        @start="onImagesDragStart"
-        @end="onImagesDragEnd"
-      >
-        <div v-for="img in draggableImages" :key="img.id" class="relative group/img">
-          <!-- Drag handle (replaces the old chevron-up/down arrows). Only
-               rendered when the user can edit and there's more than one
-               image to reorder. -->
-          <button
-            v-if="canEdit && productTabImages.length > 1"
-            type="button"
-            class="image-drag-handle absolute -left-8 top-2 w-6 h-6 flex items-center justify-center rounded bg-surface-2 border border-line text-muted hover:text-ink hover:border-line-focus cursor-grab active:cursor-grabbing touch-none opacity-70 hover:opacity-100 transition-opacity z-10"
-            :title="t('common.drag')"
-          >
-            <UIcon name="i-heroicons-bars-3" class="w-3.5 h-3.5" />
-          </button>
-          <CatalogImageViewer
-            :image="img"
-            :products="groupedByImage[img.id] ?? []"
-            :presets="presets"
-            :booth-products="img.imageType === 'receipt' ? booth.products : undefined"
-            :sub-images="img.imageType === 'article' ? subImagesFor(img.id) : undefined"
-            :default-expanded="allExpanded"
-          />
-        </div>
-      </VueDraggable>
-
-      <!-- Products not linked to any image — Nomad list: search + filter chips
-           + sort + category grouping (the "scroll-hunt fix"). -->
-      <div v-if="standaloneProducts.length > 0 || booth.images?.length === 0">
-        <h3 v-if="booth.images?.length" class="text-[17px] font-bold text-ink-strong mb-3">{{ t('booth.otherProducts') }}</h3>
-
-        <div v-if="standaloneProducts.length" class="rounded-window border border-line bg-surface overflow-hidden">
+    <!-- Products list — plain text, no images (image-backed items live in the
+         Article gallery). Search + filter chips + sort + category grouping. -->
+    <div>
+      <div v-if="standaloneProducts.length">
+        <div class="rounded-window border border-line bg-surface overflow-hidden">
           <!-- sticky toolbar -->
           <div class="px-4 py-3 border-b border-line-soft bg-sidebar flex items-center gap-2.5 flex-wrap">
             <div class="flex items-center gap-2 px-3 py-2 rounded-field border border-line bg-surface-2 flex-1 min-w-[180px] focus-within:border-line-focus transition-colors">
@@ -1010,10 +957,10 @@ const personBreakdown = computed(() => {
         </div>
       </div>
 
-      <!-- Empty state -->
-      <div v-if="!booth.products?.length && !booth.images?.length" class="text-center py-12 text-faint">
+      <!-- Empty state (no plain-text products) -->
+      <div v-if="!standaloneProducts.length" class="text-center py-12 text-faint">
         <UIcon name="i-heroicons-shopping-bag" class="w-12 h-12 mx-auto mb-3 text-faint-2" />
-        <p>{{ t('booth.noContent') }}</p>
+        <p>{{ (booth.images?.length ?? 0) > 0 ? t('booth.noTextProducts') : t('booth.noContent') }}</p>
         <p v-if="canEdit" class="text-sm mt-1">{{ t('booth.uploadHint') }}</p>
       </div>
     </div>
@@ -1057,12 +1004,12 @@ const personBreakdown = computed(() => {
         </template>
       </button>
 
-      <div v-if="!articleCards.length" class="text-center py-12 text-faint">
+      <div v-if="!articleCards.length && !productTabImages.length" class="text-center py-12 text-faint">
         <UIcon name="i-heroicons-photo" class="w-12 h-12 mx-auto mb-3 text-faint-2" />
         <p>{{ t('booth.noArticles') }}</p>
       </div>
 
-      <div v-else class="flex flex-col gap-3">
+      <div v-if="articleCards.length" class="flex flex-col gap-3">
         <div v-for="card in articleCards" :key="card.img.id" class="rounded-card border border-line bg-surface overflow-hidden">
           <div class="flex gap-3 p-3.5">
             <div class="w-16 h-16 rounded-[10px] overflow-hidden shrink-0 flex items-center justify-center" :class="isConv ? 'cover-conv' : 'cover-travel'">
@@ -1113,6 +1060,50 @@ const personBreakdown = computed(() => {
           </div>
         </div>
       </div>
+
+      <!-- Catalog pages: scanned pages with drawn/annotated products (shown with the image). -->
+      <div v-if="productTabImages.length" :class="['space-y-8 mt-4', canEdit && productTabImages.length > 1 ? 'pl-8' : '']">
+        <div v-if="productTabImages.length >= 2" class="flex items-center justify-end pb-1">
+          <UButton
+            variant="ghost"
+            color="gray"
+            size="xs"
+            :icon="allExpanded ? 'i-heroicons-bars-arrow-down' : 'i-heroicons-bars-arrow-up'"
+            @click="allExpanded = !allExpanded"
+          >
+            {{ allExpanded ? t('booth.collapseAll') : t('booth.expandAll') }}
+          </UButton>
+        </div>
+        <VueDraggable
+          v-model="draggableImages"
+          tag="div"
+          class="space-y-8"
+          handle=".image-drag-handle"
+          :animation="180"
+          :disabled="!canEdit || productTabImages.length < 2"
+          ghost-class="opacity-40"
+          drag-class="cursor-grabbing"
+          @start="onImagesDragStart"
+          @end="onImagesDragEnd"
+        >
+          <div v-for="img in draggableImages" :key="img.id" class="relative group/img">
+            <button
+              v-if="canEdit && productTabImages.length > 1"
+              type="button"
+              class="image-drag-handle absolute -left-8 top-2 w-6 h-6 flex items-center justify-center rounded bg-surface-2 border border-line text-muted hover:text-ink hover:border-line-focus cursor-grab active:cursor-grabbing touch-none opacity-70 hover:opacity-100 transition-opacity z-10"
+              :title="t('common.drag')"
+            >
+              <UIcon name="i-heroicons-bars-3" class="w-3.5 h-3.5" />
+            </button>
+            <CatalogImageViewer
+              :image="img"
+              :products="groupedByImage[img.id] ?? []"
+              :presets="presets"
+              :default-expanded="allExpanded"
+            />
+          </div>
+        </VueDraggable>
+      </div>
     </div><!-- /Article gallery tab -->
 
     <!-- ═══════════════ RECEIPT MODE TAB ═══════════════ -->
@@ -1136,6 +1127,20 @@ const personBreakdown = computed(() => {
         />
       </div>
     </div><!-- /Receipt mode tab -->
+
+    <!-- Floating add button — stays put while the list scrolls. Context-aware:
+         "Add product" on Products, "New article" on the gallery. -->
+    <button
+      v-if="canEdit && activeTab !== 'receipt'"
+      type="button"
+      class="fixed bottom-24 lg:bottom-6 right-4 lg:right-6 z-40 flex items-center gap-2 px-5 py-3.5 rounded-full text-[13px] font-bold shadow-lg"
+      :class="isConv ? 'grad-conv' : 'grad-primary'"
+      :title="addLabel"
+      @click="onFabAdd"
+    >
+      <UIcon name="i-heroicons-plus" class="w-5 h-5" />
+      <span class="hidden sm:inline">{{ addLabel }}</span>
+    </button>
 
     <!-- Modals -->
     <AddProductModal v-model="showAddProduct" :booth-id="booth.id" />
