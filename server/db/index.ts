@@ -437,6 +437,11 @@ export function useDb() {
   const seedSettings: Array<[string, string]> = [
     ['currency_provider', 'visa'],
     ['display_currency', 'EUR'],
+    // Instance defaults (admin-managed via /admin/settings):
+    //   default_public — new events start public when true
+    //   allow_guest    — anonymous (logged-out) visitors may browse public events
+    ['default_public', 'false'],
+    ['allow_guest', 'true'],
   ]
   const ts = now()
   for (const [key, value] of seedSettings) {

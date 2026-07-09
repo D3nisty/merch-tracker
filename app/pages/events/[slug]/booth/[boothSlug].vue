@@ -506,13 +506,81 @@ const groupedByImage = computed(() => {
   return groups
 })
 
+// ── Tabs: Products · Article gallery · Receipt mode ────────────────────
+type BoothTab = 'products' | 'articles' | 'receipt'
+const activeTab = ref<BoothTab>('products')
+
+// Partition the (person-filtered) images by type. The Products tab shows
+// catalog pages, the Article gallery shows article images (as compare cards),
+// Receipt mode shows receipt images.
+const productTabImages = computed(() => filteredImages.value.filter(i => i.imageType !== 'article' && i.imageType !== 'receipt'))
+const articleTabImages = computed(() => filteredImages.value.filter(i => i.imageType === 'article'))
+const receiptTabImages = computed(() => sortedImages.value.filter(i => i.imageType === 'receipt'))
+
+// Products count = every product NOT belonging to an article image.
+const productCount = computed(() => {
+  const imgs = booth.value?.images ?? []
+  return (booth.value?.products ?? []).filter((p) => {
+    const img = imgs.find(i => i.id === p.catalogImageId)
+    return img?.imageType !== 'article'
+  }).length
+})
+
+const canMark = computed(() => authStore.isLoggedIn && !!store.currentEvent?.viewerPersonId)
+
+const tabs = computed(() => [
+  { key: 'products' as const, label: t('booth.tabProducts'), count: productCount.value },
+  { key: 'articles' as const, label: t('booth.tabArticles'), count: articleTabImages.value.length },
+  { key: 'receipt' as const, label: t('booth.tabReceipt'), count: receiptTabImages.value.length },
+])
+
+// Article gallery cards — each article image + its price sources, cheapest
+// wins, savings vs. average. `isPurchased`/`isPlanned` on each source are the
+// VIEWER's own marks (server-substituted), so each viewer sees their winner.
+const articleCards = computed(() =>
+  articleTabImages.value.map((img) => {
+    const sources = (groupedByImage.value[img.id] ?? [])
+    const priced = sources.filter(s => s.price != null && s.price > 0)
+      .slice().sort((a, b) => (a.price! - b.price!))
+    const best = priced[0] ?? null
+    const avg = priced.length ? priced.reduce((s, p) => s + p.price!, 0) / priced.length : 0
+    const saved = best && priced.length > 1 ? avg - best.price! : 0
+    return {
+      img,
+      sources,
+      best,
+      saved,
+      currency: best?.currency ?? sources[0]?.currency ?? 'EUR',
+      anyPurchased: sources.some(s => s.isPurchased),
+      anyPlanned: sources.some(s => s.isPlanned),
+      anyMust: sources.some(s => s.priority === 2),
+    }
+  }),
+)
+
+// Mark a source paid/planned with the "only one source at a time (per viewer)"
+// rule — mirrors CatalogImageViewer's markAsPaid/markAsPlanned.
+async function toggleArticlePaid(sources: Product[], source: Product) {
+  if (!canMark.value) return
+  if (source.isPurchased) { await store.setMark(source.id, { isPurchased: false }); return }
+  const current = sources.find(p => p.isPurchased && p.id !== source.id)
+  if (current) await store.setMark(current.id, { isPurchased: false })
+  await store.setMark(source.id, { isPurchased: true })
+}
+async function toggleArticlePlanned(sources: Product[], source: Product) {
+  if (!canMark.value) return
+  if (source.isPlanned) { await store.setMark(source.id, { isPlanned: false }); return }
+  const current = sources.find(p => p.isPlanned && p.id !== source.id)
+  if (current) await store.setMark(current.id, { isPlanned: false })
+  await store.setMark(source.id, { isPlanned: true })
+}
+
 // vuedraggable splices into the array bound via `:list`, but computeds return
 // a fresh array each call so the splice would be on a throwaway. We mirror
-// `filteredImages` into a real ref and let vuedraggable mutate THAT in place;
-// a watcher keeps it in sync whenever the underlying data shifts (image
-// added/deleted, person filter switched, etc.).
+// the Products-tab image list into a real ref and let vuedraggable mutate THAT
+// in place; a watcher keeps it in sync when the underlying data shifts.
 const draggableImages = ref<CatalogImage[]>([])
-watch(filteredImages, (fresh) => {
+watch(productTabImages, (fresh) => {
   // Avoid clobbering the in-progress drag: if the IDs are already the same
   // set in the same order, leave the array alone so we don't re-render the
   // ghost element under the user's cursor.
@@ -528,7 +596,7 @@ async function onImagesDragEnd() {
   // (person-filtered) images keep their original slots; visible slots get
   // filled in order from `draggableImages`.
   const allParents = sortedImages.value
-  const visibleIds = new Set(filteredImages.value.map(i => i.id))
+  const visibleIds = new Set(productTabImages.value.map(i => i.id))
   let visIdx = 0
   const newOrderedIds = allParents.map(img => {
     if (visibleIds.has(img.id)) {
@@ -662,6 +730,28 @@ const personBreakdown = computed(() => {
       </div>
     </div>
 
+    <!-- Tabs: Products · Article gallery · Receipt mode -->
+    <div class="flex items-center gap-6 border-b border-line-soft mb-6">
+      <button
+        v-for="tab in tabs"
+        :key="tab.key"
+        type="button"
+        class="relative py-2.5 text-[13px] font-semibold transition-colors"
+        :class="activeTab === tab.key ? 'text-ink-strong' : 'text-muted hover:text-ink'"
+        @click="activeTab = tab.key"
+      >
+        {{ tab.label }}
+        <span v-if="tab.count" class="text-faint font-medium ml-0.5">{{ tab.count }}</span>
+        <span
+          v-if="activeTab === tab.key"
+          class="absolute -bottom-px left-0 right-0 h-0.5 rounded-full"
+          :class="isConv ? 'bg-conv' : 'bg-sky'"
+        />
+      </button>
+    </div>
+
+    <!-- ═══════════════ PRODUCTS TAB ═══════════════ -->
+    <div v-show="activeTab === 'products'">
     <!-- Action bar (edit mode only). "Share booth" only shows for event
          owner / admin since booth-edit-share users can't onward-share. -->
     <div v-if="canEdit || canManageBoothShares" class="flex gap-2 mb-6 flex-wrap">
@@ -804,12 +894,12 @@ const personBreakdown = computed(() => {
     </div>
 
     <!-- Catalog images with products -->
-    <div :class="['space-y-8', canEdit && sortedImages.length > 1 ? 'pl-8' : '']">
+    <div :class="['space-y-8', canEdit && productTabImages.length > 1 ? 'pl-8' : '']">
       <!-- Collapse-all / Expand-all toggle: makes drag-reordering practical
            when individual catalogs are 1000+ px tall. Shown when there are
            2+ images so single-image booths don't get a useless button. -->
       <div
-        v-if="filteredImages.length >= 2"
+        v-if="productTabImages.length >= 2"
         class="flex items-center justify-end pb-2"
       >
         <UButton
@@ -823,40 +913,13 @@ const personBreakdown = computed(() => {
         </UButton>
       </div>
 
-      <!--
-        Person filter notice. Renders whenever there ARE hidden articles for
-        the current person (so the user can flip it back to "all" even when
-        none are currently hidden by chance). The whole notice is a toggle:
-        click anywhere on it to flip `showAllArticles`.
-      -->
-      <button
-        v-if="personsStore.currentPersonId && hiddenArticleCount > 0"
-        type="button"
-        class="w-full flex items-center gap-2 text-xs pb-2 border-b border-line-soft hover:text-ink transition-colors flex-wrap"
-        :class="showAllArticles ? 'text-sky-soft' : 'text-faint'"
-        :title="showAllArticles ? t('booth.showOnlyMine') : t('booth.showAllArticles')"
-        @click="showAllArticles = !showAllArticles"
-      >
-        <UIcon :name="showAllArticles ? 'i-heroicons-eye' : 'i-heroicons-funnel'" class="w-3.5 h-3.5 shrink-0" />
-        <template v-if="showAllArticles">
-          <span>{{ t('booth.showingAllArticles') }}</span>
-          <span class="text-sky underline ml-auto">{{ t('booth.showOnlyMine') }}</span>
-        </template>
-        <template v-else>
-          <span>{{ t('booth.showingArticlesFor') }}</span>
-          <strong class="text-ink">{{ personsStore.persons.find(p => p.id === personsStore.currentPersonId)?.name }}</strong>
-          <span class="text-faint-2">({{ hiddenArticleCount }} {{ t('booth.hidden') }})</span>
-          <span class="text-sky underline ml-auto">{{ t('booth.showAllArticles') }}</span>
-        </template>
-      </button>
-
       <VueDraggable
         v-model="draggableImages"
         tag="div"
         class="space-y-8"
         handle=".image-drag-handle"
         :animation="180"
-        :disabled="!canEdit || filteredImages.length < 2"
+        :disabled="!canEdit || productTabImages.length < 2"
         ghost-class="opacity-40"
         drag-class="cursor-grabbing"
         @start="onImagesDragStart"
@@ -867,7 +930,7 @@ const personBreakdown = computed(() => {
                rendered when the user can edit and there's more than one
                image to reorder. -->
           <button
-            v-if="canEdit && sortedImages.length > 1"
+            v-if="canEdit && productTabImages.length > 1"
             type="button"
             class="image-drag-handle absolute -left-8 top-2 w-6 h-6 flex items-center justify-center rounded bg-surface-2 border border-line text-muted hover:text-ink hover:border-line-focus cursor-grab active:cursor-grabbing touch-none opacity-70 hover:opacity-100 transition-opacity z-10"
             :title="t('common.drag')"
@@ -954,6 +1017,125 @@ const personBreakdown = computed(() => {
         <p v-if="canEdit" class="text-sm mt-1">{{ t('booth.uploadHint') }}</p>
       </div>
     </div>
+    </div><!-- /Products tab -->
+
+    <!-- ═══════════════ ARTICLE GALLERY TAB ═══════════════ -->
+    <div v-show="activeTab === 'articles'">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-2">
+          <UIcon name="i-heroicons-photo" class="w-4 h-4" :class="isConv ? 'text-conv-soft' : 'text-sky'" />
+          <h3 class="text-[15px] font-bold text-ink-strong">{{ t('booth.tabArticles') }}</h3>
+        </div>
+        <button
+          v-if="canEdit"
+          class="flex items-center gap-1.5 px-3.5 py-2 rounded-field border text-[12.5px] font-semibold transition-colors"
+          :class="isConv ? 'border-[#3b3a6b] text-conv-soft hover:bg-chip-conv/50' : 'border-line-focus text-sky-soft hover:bg-chip-sky/50'"
+          @click="showUploadImage = true"
+        >
+          <UIcon name="i-heroicons-plus" class="w-3.5 h-3.5" /> {{ t('booth.newArticle') }}
+        </button>
+      </div>
+
+      <!-- article-scoped person filter notice -->
+      <button
+        v-if="personsStore.currentPersonId && hiddenArticleCount > 0"
+        type="button"
+        class="w-full flex items-center gap-2 text-xs pb-2 mb-3 border-b border-line-soft hover:text-ink transition-colors flex-wrap"
+        :class="showAllArticles ? 'text-sky-soft' : 'text-faint'"
+        @click="showAllArticles = !showAllArticles"
+      >
+        <UIcon :name="showAllArticles ? 'i-heroicons-eye' : 'i-heroicons-funnel'" class="w-3.5 h-3.5 shrink-0" />
+        <template v-if="showAllArticles">
+          <span>{{ t('booth.showingAllArticles') }}</span>
+          <span class="text-sky underline ml-auto">{{ t('booth.showOnlyMine') }}</span>
+        </template>
+        <template v-else>
+          <span>{{ t('booth.showingArticlesFor') }}</span>
+          <strong class="text-ink">{{ personsStore.persons.find(p => p.id === personsStore.currentPersonId)?.name }}</strong>
+          <span class="text-faint-2">({{ hiddenArticleCount }} {{ t('booth.hidden') }})</span>
+          <span class="text-sky underline ml-auto">{{ t('booth.showAllArticles') }}</span>
+        </template>
+      </button>
+
+      <div v-if="!articleCards.length" class="text-center py-12 text-faint">
+        <UIcon name="i-heroicons-photo" class="w-12 h-12 mx-auto mb-3 text-faint-2" />
+        <p>{{ t('booth.noArticles') }}</p>
+      </div>
+
+      <div v-else class="flex flex-col gap-3">
+        <div v-for="card in articleCards" :key="card.img.id" class="rounded-card border border-line bg-surface overflow-hidden">
+          <div class="flex gap-3 p-3.5">
+            <div class="w-16 h-16 rounded-[10px] overflow-hidden shrink-0 flex items-center justify-center" :class="isConv ? 'cover-conv' : 'cover-travel'">
+              <img v-if="card.img.path" :src="card.img.path" alt="" class="w-full h-full object-cover" loading="lazy" />
+              <UIcon v-else name="i-heroicons-photo" class="w-6 h-6" :class="isConv ? 'text-conv-soft' : 'text-sky-soft'" />
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-sm font-bold text-ink-strong">{{ card.img.customName || card.img.originalName }}</span>
+                <span v-if="card.anyMust" class="text-[9px] font-bold text-must bg-chip-must px-1.5 py-0.5 rounded-[5px]">{{ t('product.must') }}</span>
+                <span v-else-if="card.anyPlanned && !card.anyPurchased" class="text-[9px] font-bold text-planned bg-chip-planned px-1.5 py-0.5 rounded-[5px]">{{ t('catalog.planned') }}</span>
+              </div>
+              <div class="text-[11.5px] text-muted mt-1">{{ t('booth.articleCompare', { n: card.sources.length }) }}</div>
+              <div v-if="card.best" class="flex items-center gap-2 mt-2 flex-wrap">
+                <span class="text-[10.5px] font-semibold text-bought bg-chip-bought px-2 py-0.5 rounded-md mono">{{ t('booth.articleBest') }} {{ (card.best.price ?? 0).toFixed(0) }} {{ card.currency }}</span>
+                <span v-if="card.saved > 0.5" class="text-[10.5px] text-faint">{{ t('booth.articleSaved', { amt: `${card.saved.toFixed(0)} ${card.currency}` }) }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="border-t border-line-soft px-3.5">
+            <div v-for="s in card.sources" :key="s.id" class="flex items-center gap-2.5 py-2.5 border-b border-line-hair last:border-0">
+              <button
+                type="button"
+                class="w-[18px] h-[18px] rounded-[5px] shrink-0 flex items-center justify-center transition-colors"
+                :class="s.isPurchased ? 'bg-bought' : 'border-2 border-[#2a3a4e]'"
+                :disabled="!canMark"
+                @click="toggleArticlePaid(card.sources, s)"
+              >
+                <UIcon v-if="s.isPurchased" name="i-heroicons-check" class="w-3 h-3 text-on-accent" />
+              </button>
+              <span class="flex-1 min-w-0 text-[12.5px] truncate flex items-center gap-1.5" :class="s.isPurchased ? 'text-muted line-through' : 'text-ink'">
+                {{ s.name }}
+                <a v-if="s.website" :href="s.website" target="_blank" class="text-faint hover:text-sky shrink-0" @click.stop>
+                  <UIcon name="i-heroicons-arrow-top-right-on-square" class="w-3 h-3" />
+                </a>
+                <UIcon v-if="card.best && s.id === card.best.id && card.sources.length > 1" name="i-heroicons-sparkles" class="w-3 h-3 text-bought/70 shrink-0" />
+              </span>
+              <button
+                v-if="canMark"
+                type="button"
+                class="text-[9px] font-bold px-1.5 py-0.5 rounded-[5px] transition-colors shrink-0"
+                :class="s.isPlanned ? 'text-planned bg-chip-planned' : 'text-faint border border-line hover:text-planned hover:border-planned'"
+                @click="toggleArticlePlanned(card.sources, s)"
+              >{{ s.isPlanned ? t('catalog.planned') : t('catalog.planQ') }}</button>
+              <span v-if="s.price != null" class="mono text-[12.5px] font-semibold shrink-0 w-20 text-right" :class="s.isPurchased ? 'text-bought' : s.isPlanned ? 'text-planned' : 'text-ink'">{{ s.price.toFixed(0) }} {{ s.currency }}</span>
+            </div>
+            <div v-if="!card.sources.length" class="py-3 text-center text-xs text-faint">{{ t('booth.articleSources', { n: 0 }) }}</div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /Article gallery tab -->
+
+    <!-- ═══════════════ RECEIPT MODE TAB ═══════════════ -->
+    <div v-show="activeTab === 'receipt'">
+      <div v-if="!receiptTabImages.length" class="text-center py-12 text-faint">
+        <UIcon name="i-heroicons-receipt-percent" class="w-12 h-12 mx-auto mb-3 text-faint-2" />
+        <p>{{ t('booth.noReceipts') }}</p>
+        <button v-if="canEdit" class="mt-3 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-field border border-line text-muted hover:text-ink text-[12.5px] font-semibold" @click="showUploadImage = true">
+          <UIcon name="i-heroicons-photo" class="w-3.5 h-3.5" /> {{ t('booth.uploadImage') }}
+        </button>
+      </div>
+      <div v-else class="space-y-8">
+        <CatalogImageViewer
+          v-for="img in receiptTabImages"
+          :key="img.id"
+          :image="img"
+          :products="groupedByImage[img.id] ?? []"
+          :presets="presets"
+          :booth-products="booth.products"
+          :default-expanded="true"
+        />
+      </div>
+    </div><!-- /Receipt mode tab -->
 
     <!-- Modals -->
     <AddProductModal v-model="showAddProduct" :booth-id="booth.id" />

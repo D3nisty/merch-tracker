@@ -18,6 +18,12 @@ import {
   type User,
 } from '../db/schema'
 import { requireUser } from './auth'
+import { getAppSetting } from './currency'
+
+/** Whether logged-out (guest) visitors may browse public events. */
+function guestBrowsingAllowed(): boolean {
+  return getAppSetting('allow_guest', 'true') === 'true'
+}
 
 /**
  * Event-level access model
@@ -85,7 +91,8 @@ async function shareLevel(eventId: string, user: User): Promise<'view' | 'edit' 
 export async function canViewEvent(user: User | null, eventId: string): Promise<boolean> {
   const evt = await findEvent(eventId)
   if (!evt) return false
-  if (evt.isPublic) return true
+  // Public events are visible to guests only when guest browsing is enabled.
+  if (evt.isPublic && (user || guestBrowsingAllowed())) return true
   if (!user) return false
   if (user.role === 'admin') return true
   if (evt.ownerId === user.id) return true
@@ -308,6 +315,8 @@ export async function eventIdForDiscount(discountId: string): Promise<string | n
 export async function accessibleEventIds(user: User | null): Promise<string[] | null> {
   const db = useDb()
   if (user?.role === 'admin') return null
+  // Guests only see public events when guest browsing is enabled.
+  if (!user && !guestBrowsingAllowed()) return []
   const publicRows = await db.select({ id: events.id }).from(events).where(eq(events.isPublic, true)).all()
   const ids = new Set<string>(publicRows.map(r => r.id))
   if (!user) return Array.from(ids)

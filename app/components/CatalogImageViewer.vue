@@ -1068,8 +1068,8 @@ function openAddSource() {
                 :style="{
                   borderStyle: 'solid',
                   borderWidth: selectedGroupKey === groupKey(group[0]) ? '3px' : '2px',
-                  borderColor: group.every(p => p.isPurchased) ? '#22c55e' : personHex(group[0].personId),
-                  backgroundColor: hoveredProductId === group[0].id ? (group.every(p => p.isPurchased) ? '#22c55e33' : personHex(group[0].personId) + '33') : 'transparent',
+                  borderColor: group.every(p => p.isPurchased) ? '#2dd4a7' : personHex(group[0].personId),
+                  backgroundColor: hoveredProductId === group[0].id ? (group.every(p => p.isPurchased) ? '#2dd4a733' : personHex(group[0].personId) + '33') : 'transparent',
                 }" />
               <div v-if="showBoxLabels" class="absolute top-0 left-0 text-xs font-medium px-1 py-0.5 rounded-br truncate max-w-full leading-tight pointer-events-none text-white"
                 :style="{ backgroundColor: (group.every(p => p.isPurchased) ? '#22c55e' : personHex(group[0].personId)) + 'e6' }">

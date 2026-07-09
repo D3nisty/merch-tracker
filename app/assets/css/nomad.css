@@ -144,6 +144,11 @@ h1, h2, h3, h4 {
 :root .bg-purple-600\/20 { background-color: rgba(56, 189, 248, 0.16); }
 :root .bg-purple-500\/10 { background-color: rgba(56, 189, 248, 0.10); }
 :root .bg-purple-500\/20 { background-color: rgba(56, 189, 248, 0.18); }
+:root .bg-purple-900\/30 { background-color: rgba(56, 189, 248, 0.10); }
+:root .bg-purple-900\/20 { background-color: rgba(56, 189, 248, 0.08); }
+:root .border-purple-700\/40 { border-color: rgba(56, 189, 248, 0.30); }
+:root .border-purple-600\/60 { border-color: rgba(56, 189, 248, 0.45); }
+:root .border-purple-500\/40 { border-color: rgba(56, 189, 248, 0.35); }
 :root .ring-purple-500 { --tw-ring-color: #38bdf8; }
 :root .from-purple-500 { --tw-gradient-from: #38bdf8 var(--tw-gradient-from-position); --tw-gradient-to: rgba(56,189,248,0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
 

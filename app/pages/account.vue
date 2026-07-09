@@ -1,15 +1,40 @@
 <script setup lang="ts">
 import { useAuthStore } from '~/stores/auth'
 import { usePersonsStore } from '~/stores/persons'
-import { useLocale } from '~/composables/useLocale'
+import { useCurrencyStore } from '~/stores/currency'
+import { useLocale, type Locale } from '~/composables/useLocale'
 import { exportCsv, exportXlsx, type ExportColumn, type ExportSheet } from '~/composables/useExport'
 
 definePageMeta({ layout: 'default' })
 
 const authStore = useAuthStore()
 const personsStore = usePersonsStore()
-const { t } = useLocale()
+const currencyStore = useCurrencyStore()
+const { t, locale, setLocale } = useLocale()
 const router = useRouter()
+
+// @ts-expect-error Nuxt auto-import
+const colorMode = useColorMode()
+
+// ── Preferences ────────────────────────────────────────────────────────
+const displayCurrencyOptions = ['EUR', 'JPY', 'USD', 'GBP', 'CHF', 'KRW', 'TWD']
+const currencySaving = ref(false)
+const currencyError = ref('')
+onMounted(() => currencyStore.fetchSettings())
+async function setDisplayCurrency(cur: string) {
+  if (!authStore.isAdmin || cur === currencyStore.displayCurrency) return
+  currencySaving.value = true
+  currencyError.value = ''
+  try {
+    await $fetch('/api/admin/settings', { method: 'PUT', body: { displayCurrency: cur } })
+    await currencyStore.fetchSettings(true)
+  } catch (e) {
+    currencyError.value = e instanceof Error ? e.message : 'Failed'
+  } finally {
+    currencySaving.value = false
+  }
+}
+function setAppearance(mode: 'dark' | 'light') { colorMode.preference = mode }
 
 useHead({ title: 'Account' })
 
@@ -373,6 +398,71 @@ const allExportMenu = computed(() => [[
       </div>
       <p v-if="colorError" class="text-red-400 text-xs mt-3">{{ colorError }}</p>
       <p v-if="colorSuccess" class="text-green-400 text-xs mt-3">{{ t('auth.colorUpdated') }}</p>
+    </UCard>
+
+    <!-- Preferences: display currency · language · appearance -->
+    <UCard class="mb-4">
+      <template #header>
+        <h2 class="font-semibold text-ink-strong">{{ t('auth.preferences') }}</h2>
+      </template>
+      <div class="space-y-4">
+        <!-- Display currency (admins set it instance-wide; others read-only) -->
+        <div>
+          <label class="block text-xs font-semibold text-muted mb-1.5">{{ t('auth.displayCurrency') }}</label>
+          <div v-if="authStore.isAdmin" class="flex flex-wrap gap-1.5">
+            <button
+              v-for="cur in displayCurrencyOptions"
+              :key="cur"
+              type="button"
+              class="px-3 py-1.5 rounded-field border text-xs font-semibold mono transition-colors"
+              :class="currencyStore.displayCurrency === cur ? 'border-line-focus bg-chip-sky text-sky-soft' : 'border-line text-muted hover:border-line-focus'"
+              :disabled="currencySaving"
+              @click="setDisplayCurrency(cur)"
+            >{{ cur }}</button>
+          </div>
+          <div v-else class="mono text-sm text-ink px-3 py-2 rounded-field bg-surface-2 border border-line inline-block">{{ currencyStore.displayCurrency }}</div>
+          <p class="text-[11px] text-faint mt-1.5">{{ authStore.isAdmin ? t('auth.displayCurrencyHint') : t('auth.displayCurrencyAdminOnly') }}</p>
+          <p v-if="currencyError" class="text-must text-xs mt-1">{{ currencyError }}</p>
+        </div>
+
+        <!-- Language segmented -->
+        <div>
+          <label class="block text-xs font-semibold text-muted mb-1.5">{{ t('auth.language') }}</label>
+          <div class="flex gap-2">
+            <button
+              type="button"
+              class="flex-1 text-center py-2 rounded-field border text-[12.5px] font-semibold transition-colors"
+              :class="locale === 'en' ? 'border-line-focus bg-chip-sky text-sky-soft' : 'border-line text-muted hover:border-line-focus'"
+              @click="setLocale('en' as Locale)"
+            >🇬🇧 English</button>
+            <button
+              type="button"
+              class="flex-1 text-center py-2 rounded-field border text-[12.5px] font-semibold transition-colors"
+              :class="locale === 'de' ? 'border-line-focus bg-chip-sky text-sky-soft' : 'border-line text-muted hover:border-line-focus'"
+              @click="setLocale('de' as Locale)"
+            >🇩🇪 Deutsch</button>
+          </div>
+        </div>
+
+        <!-- Appearance segmented -->
+        <div>
+          <label class="block text-xs font-semibold text-muted mb-1.5">{{ t('auth.appearance') }}</label>
+          <div class="flex gap-2">
+            <button
+              type="button"
+              class="flex-1 text-center py-2 rounded-field border text-[12.5px] font-semibold transition-colors"
+              :class="colorMode.value === 'dark' ? 'border-line-focus bg-chip-sky text-sky-soft' : 'border-line text-muted hover:border-line-focus'"
+              @click="setAppearance('dark')"
+            >🌙 {{ t('auth.dark') }}</button>
+            <button
+              type="button"
+              class="flex-1 text-center py-2 rounded-field border text-[12.5px] font-semibold transition-colors"
+              :class="colorMode.value === 'light' ? 'border-line-focus bg-chip-sky text-sky-soft' : 'border-line text-muted hover:border-line-focus'"
+              @click="setAppearance('light')"
+            >☀️ {{ t('auth.light') }}</button>
+          </div>
+        </div>
+      </div>
     </UCard>
 
     <!-- Admin: view as another person -->

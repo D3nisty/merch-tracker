@@ -15,6 +15,15 @@ const form = reactive({
   dateTo: '',
   location: '',
   description: '',
+  isPublic: false,
+})
+
+// Default the visibility toggle from the instance setting (admin-configurable).
+onMounted(async () => {
+  try {
+    const s = await $fetch<{ defaultPublic?: boolean }>('/api/settings/public')
+    form.isPublic = !!s.defaultPublic
+  } catch { /* keep default */ }
 })
 
 const dateToMin = computed(() => form.date || undefined)
@@ -38,6 +47,7 @@ async function handleSubmit() {
       dateTo: normalisedDateTo,
       location: form.location || null,
       description: form.description || null,
+      isPublic: form.isPublic,
     })
     router.push(`/events/${created.slug ?? created.id}`)
   } catch (e: unknown) {
@@ -107,6 +117,21 @@ const typeOptions = computed(() => [
         <UFormGroup :label="t('common.description')">
           <UTextarea v-model="form.description" :placeholder="t('createEvent.descriptionPlaceholder')" :rows="3" />
         </UFormGroup>
+
+        <!-- Public toggle (defaulted from the instance setting) -->
+        <div class="flex items-center justify-between px-3.5 py-3 rounded-card bg-surface-2 border border-line">
+          <span class="text-sm text-ink flex items-center gap-2">
+            <UIcon name="i-heroicons-globe-alt" class="w-4 h-4 text-bought" /> {{ t('sharing.publicEvent') }}
+          </span>
+          <button
+            type="button"
+            class="w-[42px] h-6 rounded-full relative transition-colors shrink-0"
+            :class="form.isPublic ? 'bg-bought' : 'bg-line-soft'"
+            @click="form.isPublic = !form.isPublic"
+          >
+            <span class="absolute top-[3px] w-[18px] h-[18px] rounded-full transition-all" :class="form.isPublic ? 'right-[3px] bg-on-accent' : 'left-[3px] bg-faint'" />
+          </button>
+        </div>
 
         <UAlert v-if="error" color="red" :description="error" />
 

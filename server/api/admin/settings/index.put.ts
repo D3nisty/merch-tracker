@@ -1,5 +1,5 @@
 import { requireRole } from '../../../utils/auth'
-import { setAppSetting, clearRateCache, getConfiguredProvider, getConfiguredDisplayCurrency } from '../../../utils/currency'
+import { setAppSetting, clearRateCache, getConfiguredProvider, getConfiguredDisplayCurrency, getAppSetting } from '../../../utils/currency'
 
 /**
  * Update one or both currency settings. Body shape: `{ currencyProvider?,
@@ -14,9 +14,18 @@ export default defineEventHandler(async (event) => {
   const body = await readBody(event) as {
     currencyProvider?: string
     displayCurrency?: string
+    defaultPublic?: boolean
+    allowGuest?: boolean
   }
 
   let changed = false
+
+  if (typeof body.defaultPublic === 'boolean') {
+    setAppSetting('default_public', body.defaultPublic ? 'true' : 'false')
+  }
+  if (typeof body.allowGuest === 'boolean') {
+    setAppSetting('allow_guest', body.allowGuest ? 'true' : 'false')
+  }
 
   if (typeof body.currencyProvider === 'string') {
     const v = body.currencyProvider.toLowerCase()
@@ -41,5 +50,7 @@ export default defineEventHandler(async (event) => {
   return {
     currencyProvider: getConfiguredProvider(),
     displayCurrency: getConfiguredDisplayCurrency(),
+    defaultPublic: getAppSetting('default_public', 'false') === 'true',
+    allowGuest: getAppSetting('allow_guest', 'true') === 'true',
   }
 })

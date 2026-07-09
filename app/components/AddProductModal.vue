@@ -97,9 +97,19 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <UModal :model-value="modelValue" @update:model-value="emit('update:modelValue', $event)" :ui="{ width: 'sm:max-w-lg' }">
+  <UModal
+    :model-value="modelValue"
+    @update:model-value="emit('update:modelValue', $event)"
+    :ui="{
+      width: 'w-full sm:max-w-lg',
+      container: 'flex min-h-full items-end sm:items-center justify-center',
+      rounded: 'rounded-t-window sm:rounded-window',
+    }"
+  >
     <UCard>
       <template #header>
+        <!-- mobile grab handle (bottom-sheet affordance) -->
+        <div class="sm:hidden w-10 h-1 rounded-full bg-line mx-auto mb-3" />
         <div class="flex items-center justify-between">
           <h3 class="font-bold text-ink-strong text-base">{{ t('booth.addProduct') }}</h3>
           <button type="button" class="text-faint hover:text-ink" @click="emit('update:modelValue', false)">

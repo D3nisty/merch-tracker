@@ -209,10 +209,10 @@ const locationStats = computed(() => {
         :key="loc.id"
         @click="selectedLocationId = loc.id; selectedBoothId = null"
         :class="[
-          'px-4 py-2 rounded-lg text-sm font-medium transition-all border',
+          'px-4 py-2 rounded-field text-sm font-medium transition-all border',
           selectedLocationId === loc.id
-            ? 'bg-purple-600 border-purple-500 text-white'
-            : 'bg-gray-900 border-gray-700 text-gray-400 hover:border-gray-600 hover:text-white',
+            ? 'bg-chip-conv border-conv text-conv-soft'
+            : 'bg-surface border-line text-muted hover:border-line-focus hover:text-ink',
         ]"
       >
         {{ loc.name }}
@@ -222,25 +222,25 @@ const locationStats = computed(() => {
 
     <!-- Stats bar -->
     <div v-if="selectedLocation" class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
-      <div class="bg-gray-900 rounded-lg p-3 text-center">
-        <div class="text-lg font-bold text-rose-400">{{ locationStats.booths }}</div>
-        <div class="text-xs text-gray-500">{{ t('hallplan.booths') }}</div>
+      <div class="bg-surface border border-line rounded-card p-3 text-center">
+        <div class="text-lg font-bold font-display text-conv">{{ locationStats.booths }}</div>
+        <div class="text-xs text-muted">{{ t('hallplan.booths') }}</div>
       </div>
-      <div class="bg-gray-900 rounded-lg p-3 text-center">
-        <div class="text-lg font-bold text-purple-400">{{ locationStats.products }}</div>
-        <div class="text-xs text-gray-500">{{ t('hallplan.products') }}</div>
+      <div class="bg-surface border border-line rounded-card p-3 text-center">
+        <div class="text-lg font-bold font-display text-conv-soft">{{ locationStats.products }}</div>
+        <div class="text-xs text-muted">{{ t('hallplan.products') }}</div>
       </div>
-      <div class="bg-gray-900 rounded-lg p-3 text-center">
-        <div class="text-lg font-bold text-green-400">{{ locationStats.purchased }}/{{ locationStats.products }}</div>
-        <div class="text-xs text-gray-500">{{ t('event.purchased') }}</div>
+      <div class="bg-surface border border-line rounded-card p-3 text-center">
+        <div class="text-lg font-bold font-display text-bought">{{ locationStats.purchased }}/{{ locationStats.products }}</div>
+        <div class="text-xs text-muted">{{ t('event.purchased') }}</div>
       </div>
-      <div class="bg-gray-900 rounded-lg p-3 text-center">
-        <div class="text-lg font-bold text-yellow-400">{{ locationStats.total.toFixed(0) }}€</div>
-        <div class="text-xs text-gray-500">{{ t('hallplan.budget') }}</div>
+      <div class="bg-surface border border-line rounded-card p-3 text-center">
+        <div class="text-lg font-bold mono text-planned">{{ locationStats.total.toFixed(0) }}€</div>
+        <div class="text-xs text-muted">{{ t('hallplan.budget') }}</div>
       </div>
-      <div class="bg-gray-900 rounded-lg p-3 text-center">
-        <div class="text-lg font-bold text-blue-400">{{ locationStats.spent.toFixed(0) }}€</div>
-        <div class="text-xs text-gray-500">{{ t('hallplan.spent') }}</div>
+      <div class="bg-surface border border-line rounded-card p-3 text-center">
+        <div class="text-lg font-bold mono text-bought">{{ locationStats.spent.toFixed(0) }}€</div>
+        <div class="text-xs text-muted">{{ t('hallplan.spent') }}</div>
       </div>
     </div>
 

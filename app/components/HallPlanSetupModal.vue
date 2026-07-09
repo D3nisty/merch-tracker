@@ -295,7 +295,7 @@ const anyProcessing = computed(() => images.value.some(i => i.status === 'upload
                 <span
                   v-for="b in img.booths.slice(0, 20)"
                   :key="b.boothNr"
-                  class="text-xs font-mono px-1.5 py-0.5 rounded bg-gray-800 text-purple-300"
+                  class="text-xs font-mono px-1.5 py-0.5 rounded bg-chip-conv text-conv-soft"
                 >{{ b.boothNr }}</span>
                 <span v-if="img.booths.length > 20" class="text-xs text-gray-500">
                   +{{ img.booths.length - 20 }} more
