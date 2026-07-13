@@ -110,10 +110,15 @@ const en = {
     inCity: 'You’re in',
     nothing: 'Nothing planned for today.',
   },
+  calendar: {
+    allDay: 'All day',
+    empty: 'Nothing booked yet.',
+  },
   timetable: {
     viewToday: 'Today',
     viewPlan: 'Overview',
     viewTimetable: 'Timetable',
+    viewCalendar: 'Calendar',
     empty: 'Nothing scheduled yet.',
     emptyHint: 'Add tickets, transport and activities in a city’s plan to see them here by day.',
     inCity: 'stay begins',
@@ -926,10 +931,15 @@ const de: typeof en = {
     inCity: 'Du bist in',
     nothing: 'Für heute ist nichts geplant.',
   },
+  calendar: {
+    allDay: 'Ganztägig',
+    empty: 'Noch nichts gebucht.',
+  },
   timetable: {
     viewToday: 'Heute',
     viewPlan: 'Übersicht',
     viewTimetable: 'Zeitplan',
+    viewCalendar: 'Kalender',
     empty: 'Noch nichts geplant.',
     emptyHint: 'Füge im Städte-Plan Tickets, Transport und Aktivitäten hinzu, um sie hier nach Tag zu sehen.',
     inCity: 'Aufenthalt beginnt',
