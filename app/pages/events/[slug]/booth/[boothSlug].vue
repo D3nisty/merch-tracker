@@ -529,8 +529,8 @@ const productCount = computed(() => {
 const canMark = computed(() => authStore.isLoggedIn && !!store.currentEvent?.viewerPersonId)
 
 const tabs = computed(() => [
-  // Products tab = plain-text list of products with no image (standalone).
-  { key: 'products' as const, label: t('booth.tabProducts'), count: standaloneProducts.value.length },
+  // Products tab = plain-text list: standalone products + articles (grouped).
+  { key: 'products' as const, label: t('booth.tabProducts'), count: standaloneProducts.value.length + articleTabImages.value.length },
   // Article gallery = everything image-backed (article compare cards + catalog pages).
   { key: 'articles' as const, label: t('booth.tabArticles'), count: articleTabImages.value.length + productTabImages.value.length },
   { key: 'receipt' as const, label: t('booth.tabReceipt'), count: receiptTabImages.value.length },
@@ -582,6 +582,48 @@ async function toggleArticlePlanned(sources: Product[], source: Product) {
   const current = sources.find(p => p.isPlanned && p.id !== source.id)
   if (current) await store.setMark(current.id, { isPlanned: false })
   await store.setMark(source.id, { isPlanned: true })
+}
+
+// Articles ALSO surface in the Products (text) list — one group per article,
+// header = article name, its price sources as rows below. Search + state
+// filter apply the same way as for plain products.
+const articleGroups = computed(() => {
+  const q = productSearch.value.trim().toLowerCase()
+  const out: { articleId: string; label: string; items: Product[]; all: Product[]; best: Product | null; currency: string }[] = []
+  for (const img of articleTabImages.value) {
+    const name = img.customName || img.originalName || t('catalog.article')
+    const all = groupedByImage.value[img.id] ?? []
+    const nameMatches = !q || name.toLowerCase().includes(q)
+    let items = all.filter((s) => {
+      if (productFilter.value === 'planned' && !s.isPlanned) return false
+      if (productFilter.value === 'bought' && !s.isPurchased) return false
+      if (productFilter.value === 'must' && s.priority !== 2) return false
+      if (q && !nameMatches && !(`${s.name} ${s.category ?? ''}`.toLowerCase().includes(q))) return false
+      return true
+    })
+    // Filter=all + (no query or the article name itself matches): show all sources.
+    if (!items.length) {
+      if (productFilter.value !== 'all' || (q && !nameMatches)) continue
+      items = all
+    }
+    const priced = all.filter(s => s.price != null).slice().sort((a, b) => (a.price! - b.price!))
+    const best = priced[0] ?? null
+    out.push({ articleId: img.id, label: name, items, all, best, currency: best?.currency ?? all[0]?.currency ?? 'EUR' })
+  }
+  return out
+})
+
+// Article gallery cards are collapsible; jumping from the Products list opens
+// the gallery, expands the target card, and scrolls to it.
+const collapsedArticles = ref<Record<string, boolean>>({})
+function toggleArticleCollapse(id: string) {
+  collapsedArticles.value[id] = !collapsedArticles.value[id]
+}
+async function jumpToArticle(id: string) {
+  activeTab.value = 'articles'
+  collapsedArticles.value[id] = false
+  await nextTick()
+  document.getElementById(`article-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 // vuedraggable splices into the array bound via `:list`, but computeds return
@@ -899,7 +941,7 @@ const personBreakdown = computed(() => {
     <!-- Products list — plain text, no images (image-backed items live in the
          Article gallery). Search + filter chips + sort + category grouping. -->
     <div>
-      <div v-if="standaloneProducts.length">
+      <div v-if="standaloneProducts.length || articleGroups.length">
         <div class="rounded-window border border-line bg-surface overflow-hidden">
           <!-- sticky toolbar -->
           <div class="px-4 py-3 border-b border-line-soft bg-sidebar flex items-center gap-2.5 flex-wrap">
@@ -940,7 +982,34 @@ const personBreakdown = computed(() => {
                 />
               </div>
             </template>
-            <div v-if="!productGroups.length" class="px-4 py-8 text-center text-faint text-sm">{{ t('booth.noProductsYet') }}</div>
+
+            <!-- Article groups: header = article name (jumps to gallery), price sources below -->
+            <template v-for="grp in articleGroups" :key="grp.articleId">
+              <div class="sticky top-0 z-10 flex items-center justify-between gap-2 px-4 py-2.5 bg-surface-2 border-y border-line-soft">
+                <button type="button" class="flex items-center gap-1.5 min-w-0 group/aj" :title="t('booth.jumpToGallery')" @click="jumpToArticle(grp.articleId)">
+                  <UIcon name="i-heroicons-photo" class="w-3 h-3 text-sky-soft shrink-0" />
+                  <span class="font-display text-[11.5px] font-bold uppercase tracking-[0.08em] text-sky-soft truncate">{{ grp.label }}</span>
+                  <UIcon name="i-heroicons-arrow-top-right-on-square" class="w-3 h-3 text-faint group-hover/aj:text-sky shrink-0" />
+                </button>
+                <span class="mono text-[10.5px] text-faint shrink-0">{{ grp.items.length }}<template v-if="grp.best"> · {{ t('booth.articleBest') }} {{ (grp.best.price ?? 0).toFixed(0) }} {{ grp.currency }}</template></span>
+              </div>
+              <div class="px-3">
+                <div v-for="s in grp.items" :key="s.id" class="flex items-center gap-3 px-2.5 py-2.5 border-b border-line-hair last:border-0">
+                  <button type="button" class="w-[18px] h-[18px] rounded-[5px] shrink-0 flex items-center justify-center transition-colors" :class="s.isPurchased ? 'bg-bought' : 'border-2 border-[#2a3a4e]'" :disabled="!canMark" @click="toggleArticlePaid(grp.all, s)">
+                    <UIcon v-if="s.isPurchased" name="i-heroicons-check" class="w-3 h-3 text-on-accent" />
+                  </button>
+                  <span class="flex-1 min-w-0 text-[13px] truncate flex items-center gap-1.5" :class="s.isPurchased ? 'text-muted line-through' : 'text-ink'">
+                    {{ s.name }}
+                    <a v-if="s.website" :href="s.website" target="_blank" class="text-faint hover:text-sky shrink-0" @click.stop><UIcon name="i-heroicons-arrow-top-right-on-square" class="w-3 h-3" /></a>
+                    <UIcon v-if="grp.best && s.id === grp.best.id && grp.items.length > 1" name="i-heroicons-sparkles" class="w-3 h-3 text-bought/70 shrink-0" />
+                  </span>
+                  <button v-if="canMark" type="button" class="text-[9px] font-bold px-1.5 py-0.5 rounded-[5px] transition-colors shrink-0" :class="s.isPlanned ? 'text-planned bg-chip-planned' : 'text-faint border border-line hover:text-planned hover:border-planned'" @click="toggleArticlePlanned(grp.all, s)">{{ s.isPlanned ? t('catalog.planned') : t('catalog.planQ') }}</button>
+                  <span v-if="s.price != null" class="mono text-[12.5px] font-semibold shrink-0 w-20 text-right" :class="s.isPurchased ? 'text-bought' : s.isPlanned ? 'text-planned' : 'text-ink'">{{ s.price.toFixed(0) }} {{ s.currency }}</span>
+                </div>
+              </div>
+            </template>
+
+            <div v-if="!productGroups.length && !articleGroups.length" class="px-4 py-8 text-center text-faint text-sm">{{ t('booth.noProductsYet') }}</div>
           </div>
 
           <!-- footer bar -->
@@ -957,8 +1026,8 @@ const personBreakdown = computed(() => {
         </div>
       </div>
 
-      <!-- Empty state (no plain-text products) -->
-      <div v-if="!standaloneProducts.length" class="text-center py-12 text-faint">
+      <!-- Empty state (no plain-text products and no articles) -->
+      <div v-if="!standaloneProducts.length && !articleGroups.length" class="text-center py-12 text-faint">
         <UIcon name="i-heroicons-shopping-bag" class="w-12 h-12 mx-auto mb-3 text-faint-2" />
         <p>{{ (booth.images?.length ?? 0) > 0 ? t('booth.noTextProducts') : t('booth.noContent') }}</p>
         <p v-if="canEdit" class="text-sm mt-1">{{ t('booth.uploadHint') }}</p>
@@ -1010,8 +1079,8 @@ const personBreakdown = computed(() => {
       </div>
 
       <div v-if="articleCards.length" class="flex flex-col gap-3">
-        <div v-for="card in articleCards" :key="card.img.id" class="rounded-card border border-line bg-surface overflow-hidden">
-          <div class="flex gap-3 p-3.5">
+        <div v-for="card in articleCards" :id="`article-${card.img.id}`" :key="card.img.id" class="rounded-card border border-line bg-surface overflow-hidden scroll-mt-24">
+          <div class="flex gap-3 p-3.5 cursor-pointer select-none" @click="toggleArticleCollapse(card.img.id)">
             <div class="w-16 h-16 rounded-[10px] overflow-hidden shrink-0 flex items-center justify-center" :class="isConv ? 'cover-conv' : 'cover-travel'">
               <img v-if="card.img.path" :src="card.img.path" alt="" class="w-full h-full object-cover" loading="lazy" />
               <UIcon v-else name="i-heroicons-photo" class="w-6 h-6" :class="isConv ? 'text-conv-soft' : 'text-sky-soft'" />
@@ -1028,8 +1097,9 @@ const personBreakdown = computed(() => {
                 <span v-if="card.saved > 0.5" class="text-[10.5px] text-faint">{{ t('booth.articleSaved', { amt: `${card.saved.toFixed(0)} ${card.currency}` }) }}</span>
               </div>
             </div>
+            <UIcon :name="collapsedArticles[card.img.id] ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-up'" class="w-4 h-4 text-faint shrink-0 self-center" />
           </div>
-          <div class="border-t border-line-soft px-3.5">
+          <div v-show="!collapsedArticles[card.img.id]" class="border-t border-line-soft px-3.5">
             <div v-for="s in card.sources" :key="s.id" class="flex items-center gap-2.5 py-2.5 border-b border-line-hair last:border-0">
               <button
                 type="button"
