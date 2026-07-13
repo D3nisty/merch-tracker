@@ -148,6 +148,21 @@ export const itineraryAttachments = sqliteTable('itinerary_attachments', {
   createdAt: text('created_at').notNull(),
 })
 
+// People assigned to an itinerary entry. Either a known Person (person_id) —
+// pickable from the trip's participants / account users — or a free-text
+// `name` for someone without an account. Cascades when the item is removed;
+// a person_id assignee also cascades if that Person is deleted.
+export const itineraryItemPersons = sqliteTable('itinerary_item_persons', {
+  id: text('id').primaryKey(),
+  itemId: text('item_id').notNull().references(() => itineraryItems.id, { onDelete: 'cascade' }),
+  personId: text('person_id').references(() => persons.id, { onDelete: 'cascade' }),
+  name: text('name'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+})
+export type ItineraryItemPerson = typeof itineraryItemPersons.$inferSelect
+export type NewItineraryItemPerson = typeof itineraryItemPersons.$inferInsert
+
 // Booths (for conventions) or Shops/Stops (for travel)
 export const booths = sqliteTable('booths', {
   id: text('id').primaryKey(),

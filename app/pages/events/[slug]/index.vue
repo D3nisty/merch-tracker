@@ -32,7 +32,9 @@ const showShareEvent = ref(false)
 const showParticipants = ref(false)
 const showMap = ref(false)
 const showImport = ref(false)
-const viewMode = ref<'plan' | 'timetable'>('plan')
+// Travel trips default to the "Today" view (what's planned for today); the plan
+// (Overview) and full Timetable are the other two tabs. Conventions only use plan.
+const viewMode = ref<'today' | 'plan' | 'timetable'>(event.value?.type === 'travel' ? 'today' : 'plan')
 const showDeleteLocationModal = ref(false)
 const showQrScanner = ref(false)
 const deleteLocationId = ref<string | null>(null)
@@ -208,19 +210,22 @@ onBeforeUnmount(clearFab)
       {{ t('event.showingBudgetFor') }} <b class="text-ink-strong">{{ personsStore.currentPerson.name }}</b>
     </div>
 
-    <!-- view toggle: Overview (shops/plan) ↔ Timetable (travel only) -->
+    <!-- view toggle: Today ↔ Overview (shops/plan) ↔ Timetable (travel only) -->
     <div v-if="!isConv" class="flex gap-1 p-1 rounded-[11px] border border-line bg-surface-2 w-max mb-5">
       <button
-        v-for="v in (['plan','timetable'] as const)" :key="v"
+        v-for="v in (['today','plan','timetable'] as const)" :key="v"
         type="button"
         class="px-4 py-1.5 rounded-[8px] text-[12.5px] flex items-center gap-1.5 transition-colors"
         :class="viewMode === v ? 'bg-sky text-on-accent font-bold' : 'text-muted hover:text-ink font-medium'"
         @click="viewMode = v"
       >
-        <UIcon :name="v === 'plan' ? 'i-heroicons-squares-2x2' : 'i-heroicons-calendar-days'" class="w-3.5 h-3.5" />
-        {{ v === 'plan' ? t('timetable.viewPlan') : t('timetable.viewTimetable') }}
+        <UIcon :name="v === 'today' ? 'i-heroicons-sun' : v === 'plan' ? 'i-heroicons-squares-2x2' : 'i-heroicons-calendar-days'" class="w-3.5 h-3.5" />
+        {{ v === 'today' ? t('timetable.viewToday') : v === 'plan' ? t('timetable.viewPlan') : t('timetable.viewTimetable') }}
       </button>
     </div>
+
+    <!-- ══ TODAY VIEW ══ -->
+    <TripTimetable v-if="!isConv && viewMode === 'today'" :event="event" focus-today class="mb-8" />
 
     <!-- ══ TIMETABLE VIEW ══ -->
     <TripTimetable v-if="!isConv && viewMode === 'timetable'" :event="event" class="mb-8" />

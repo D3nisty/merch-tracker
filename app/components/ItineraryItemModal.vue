@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { useEventsStore, type Event, type ItineraryItem, type ItineraryKind, type ItineraryAttachment } from '~/stores/events'
+import { useEventsStore, type Event, type ItineraryItem, type ItineraryKind, type ItineraryAttachment, type ItineraryAssignee } from '~/stores/events'
+import { usePersonsStore } from '~/stores/persons'
 import { useLocale } from '~/composables/useLocale'
+import { usePersonColor } from '~/composables/usePersonColor'
 
 const props = defineProps<{
   modelValue: boolean
@@ -15,7 +17,9 @@ const props = defineProps<{
 const emit = defineEmits<{ 'update:modelValue': [v: boolean] }>()
 
 const store = useEventsStore()
+const personsStore = usePersonsStore()
 const { t } = useLocale()
+const { personColorClass, initial } = usePersonColor()
 
 const KINDS: { key: ItineraryKind; icon: string }[] = [
   { key: 'activity', icon: 'i-heroicons-map-pin' },
@@ -43,6 +47,54 @@ const attachments = ref<ItineraryAttachment[]>([])
 const pendingFiles = ref<File[]>([])
 const saving = ref(false)
 
+// ── assigned people (participants + manual names) ────────────────────────
+interface PendingAssignee { personId: string | null; name: string; color: string | null }
+const assignees = ref<ItineraryAssignee[]>([])   // edit mode (persisted)
+const pendingAssignees = ref<PendingAssignee[]>([]) // create mode (buffered)
+const manualName = ref('')
+
+// People pickable from the trip: explicit participants, else every known person.
+const people = computed(() => {
+  const base = (props.event.participants && props.event.participants.length)
+    ? props.event.participants
+    : personsStore.persons
+  const taken = new Set(
+    (isEdit.value ? assignees.value : pendingAssignees.value).map(a => a.personId).filter(Boolean),
+  )
+  return base.filter(p => !taken.has(p.id))
+})
+
+interface Chip { key: string; name: string; color: string | null; id: string | null; pending: number }
+const chips = computed<Chip[]>(() => {
+  if (isEdit.value) return assignees.value.map(a => ({ key: a.id, name: a.name, color: a.color, id: a.id, pending: -1 }))
+  return pendingAssignees.value.map((a, i) => ({ key: 'p' + i, name: a.name, color: a.color, id: null, pending: i }))
+})
+
+async function addPerson(p: { id: string; name: string; color: string | null }) {
+  if (isEdit.value && props.item) {
+    const created = await store.addItineraryPerson(props.item.id, { personId: p.id })
+    if (!assignees.value.some(a => a.id === created.id)) assignees.value = [...assignees.value, created]
+  } else {
+    pendingAssignees.value = [...pendingAssignees.value, { personId: p.id, name: p.name, color: p.color }]
+  }
+}
+async function addManual() {
+  const n = manualName.value.trim()
+  if (!n) return
+  if (isEdit.value && props.item) {
+    const created = await store.addItineraryPerson(props.item.id, { name: n })
+    assignees.value = [...assignees.value, created]
+  } else {
+    pendingAssignees.value = [...pendingAssignees.value, { personId: null, name: n, color: null }]
+  }
+  manualName.value = ''
+}
+async function removeChip(c: Chip) {
+  if (c.pending >= 0) { pendingAssignees.value = pendingAssignees.value.filter((_, i) => i !== c.pending); return }
+  if (c.id && props.item) await store.removeItineraryPerson(props.item.id, c.id)
+  assignees.value = assignees.value.filter(a => a.id !== c.id)
+}
+
 function seed() {
   const it = props.item
   if (it) {
@@ -53,6 +105,7 @@ function seed() {
       price: it.price ?? '', currency: it.currency || 'EUR', url: it.url ?? '', notes: it.notes ?? '',
     })
     attachments.value = [...(it.attachments ?? [])]
+    assignees.value = [...(it.assignees ?? [])]
   } else {
     Object.assign(form, {
       locationId: props.lockLocationId ?? props.defaultLocationId ?? cities.value[0]?.id ?? '',
@@ -60,8 +113,11 @@ function seed() {
       time: '', endTime: '', fromLoc: '', toLoc: '', price: '', currency: 'EUR', url: '', notes: '',
     })
     attachments.value = []
+    assignees.value = []
   }
   pendingFiles.value = []
+  pendingAssignees.value = []
+  manualName.value = ''
 }
 watch(() => props.modelValue, (open) => { if (open) seed() })
 
@@ -97,6 +153,9 @@ async function save() {
     } else {
       const created = await store.createItineraryItem({ locationId: form.locationId, ...patch() })
       if (pendingFiles.value.length) await store.uploadItineraryAttachments(created.id, pendingFiles.value)
+      for (const a of pendingAssignees.value) {
+        await store.addItineraryPerson(created.id, a.personId ? { personId: a.personId } : { name: a.name })
+      }
     }
     emit('update:modelValue', false)
   } finally { saving.value = false }
@@ -213,6 +272,39 @@ function removePending(i: number) { pendingFiles.value = pendingFiles.value.filt
 
         <!-- notes -->
         <textarea v-model="form.notes" :placeholder="t('itemModal.notes')" rows="2" class="w-full px-3 py-2 rounded-field border border-line bg-surface-2 text-[12px] text-ink outline-none focus:border-line-focus resize-none" />
+
+        <!-- assigned people -->
+        <div>
+          <label class="block text-[11px] text-muted mb-1.5">{{ t('itemModal.people') }}</label>
+          <div v-if="chips.length" class="flex items-center gap-1.5 flex-wrap mb-2">
+            <span v-for="c in chips" :key="c.key" class="inline-flex items-center gap-1.5 pl-1.5 pr-1 py-0.5 rounded-full border border-line bg-surface-2 text-[12px] text-ink">
+              <span class="w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] font-bold text-on-accent shrink-0" :class="personColorClass(c.color)">{{ initial(c.name) }}</span>
+              {{ c.name }}
+              <button type="button" class="w-4 h-4 rounded-full text-faint hover:text-must flex items-center justify-center" @click="removeChip(c)"><UIcon name="i-heroicons-x-mark" class="w-3 h-3" /></button>
+            </span>
+          </div>
+          <!-- pick from trip participants / account users -->
+          <div v-if="people.length" class="flex items-center gap-1.5 flex-wrap mb-2">
+            <button
+              v-for="p in people" :key="p.id" type="button"
+              class="inline-flex items-center gap-1.5 pl-1.5 pr-2.5 py-0.5 rounded-full border border-dashed border-line-focus text-[12px] text-muted hover:text-ink hover:border-sky transition-colors"
+              @click="addPerson(p)"
+            >
+              <span class="w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] font-bold text-on-accent shrink-0" :class="personColorClass(p.color)">{{ initial(p.name) }}</span>
+              {{ p.name }}
+            </button>
+          </div>
+          <!-- add a manual name (no account) -->
+          <div class="flex gap-2 items-center">
+            <input
+              v-model="manualName"
+              :placeholder="t('itemModal.manualName')"
+              class="flex-1 min-w-0 px-2.5 py-1.5 rounded-field border border-line bg-surface-2 text-[12px] text-ink outline-none focus:border-line-focus"
+              @keydown.enter.prevent="addManual"
+            />
+            <button type="button" class="px-3 py-1.5 rounded-field border border-line-focus text-sky-soft text-[12px] font-semibold hover:bg-chip-sky/50 disabled:opacity-40" :disabled="!manualName.trim()" @click="addManual">{{ t('common.add') }}</button>
+          </div>
+        </div>
 
         <!-- attachments -->
         <div>

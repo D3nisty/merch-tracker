@@ -251,6 +251,14 @@ export interface ItineraryAttachment {
   sortOrder: number
   createdAt: string
 }
+// A person assigned to an itinerary entry. `personId` set = a known Person
+// (name/color resolved server-side); `personId` null = a free-text name.
+export interface ItineraryAssignee {
+  id: string
+  personId: string | null
+  name: string
+  color: string | null
+}
 export interface ItineraryItem {
   id: string
   eventId: string
@@ -270,6 +278,7 @@ export interface ItineraryItem {
   attachmentPath: string | null
   attachmentName: string | null
   attachments?: ItineraryAttachment[]
+  assignees?: ItineraryAssignee[]
   notes: string | null
   sortOrder: number
   createdAt: string
@@ -524,6 +533,20 @@ export const useEventsStore = defineStore('events', () => {
     await $fetch(`/api/itinerary/attachments/${attachmentId}`, { method: 'DELETE' })
     const it = itineraryItemById(itemId)
     if (it?.attachments) it.attachments = it.attachments.filter(a => a.id !== attachmentId)
+  }
+  async function addItineraryPerson(itemId: string, data: { personId?: string | null; name?: string | null }) {
+    const created = await $fetch<ItineraryAssignee>(`/api/itinerary/${itemId}/persons`, { method: 'POST', body: data })
+    const it = itineraryItemById(itemId)
+    if (it) {
+      const list = it.assignees ?? []
+      if (!list.some(a => a.id === created.id)) it.assignees = [...list, created]
+    }
+    return created
+  }
+  async function removeItineraryPerson(itemId: string, assignId: string) {
+    await $fetch(`/api/itinerary/persons/${assignId}`, { method: 'DELETE' })
+    const it = itineraryItemById(itemId)
+    if (it?.assignees) it.assignees = it.assignees.filter(a => a.id !== assignId)
   }
   async function geocodeLocation(id: string) {
     const res = await $fetch<{ id: string; latitude: number; longitude: number }>(`/api/locations/${id}/geocode`, { method: 'POST' })
@@ -1672,6 +1695,8 @@ export const useEventsStore = defineStore('events', () => {
     deleteItineraryItem,
     uploadItineraryAttachments,
     deleteItineraryAttachment,
+    addItineraryPerson,
+    removeItineraryPerson,
     geocodeLocation,
     createBooth,
     updateBooth,

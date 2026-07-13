@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '~/stores/auth'
@@ -26,6 +26,23 @@ onClickOutside(userMenuRef, () => { showUserMenu.value = false })
 // Global search box in the top utility bar. The trips-home page reads this
 // state to filter its card grid live.
 const globalSearch = useState<string>('nomadSearch', () => '')
+
+// Command palette: global search across events/cities/booths/products/schedule
+// + a file-explorer view. Opened from the top box, the mobile search icon, or ⌘K.
+const showSearch = ref(false)
+const searchInitial = ref('')
+function openSearch(seed = '') {
+  searchInitial.value = seed
+  showSearch.value = true
+}
+function onSearchKey(e: KeyboardEvent) {
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+    e.preventDefault()
+    openSearch(globalSearch.value)
+  }
+}
+onMounted(() => window.addEventListener('keydown', onSearchKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onSearchKey))
 
 // Color mode (default 'dark' from nuxt.config). @nuxt/ui applies the class to
 // <html> and persists the preference.
@@ -246,15 +263,16 @@ const initial = computed(() => (displayName.value.trim()[0] ?? '?').toUpperCase(
     <div class="flex-1 min-w-0 flex flex-col">
       <!-- top utility bar (desktop) -->
       <div class="hidden lg:flex items-center justify-between gap-4 px-7 py-[18px] border-b border-line-soft">
-        <div class="flex items-center gap-2.5 w-[300px] px-3.5 py-2.5 rounded-field border border-line bg-surface-2 text-muted focus-within:border-line-focus transition-colors">
+        <button
+          type="button"
+          class="flex items-center gap-2.5 w-[300px] px-3.5 py-2.5 rounded-field border border-line bg-surface-2 text-muted hover:border-line-focus transition-colors text-left"
+          :title="t('search.title')"
+          @click="openSearch('')"
+        >
           <UIcon name="i-heroicons-magnifying-glass" class="w-4 h-4 shrink-0 text-faint" />
-          <input
-            v-model="globalSearch"
-            type="text"
-            :placeholder="t('nav.searchEverything')"
-            class="w-full bg-transparent text-[13px] text-ink placeholder:text-faint outline-none border-0 p-0 focus:ring-0"
-          />
-        </div>
+          <span class="flex-1 min-w-0 text-[13px] text-faint truncate">{{ t('nav.searchEverything') }}</span>
+          <span class="shrink-0 hidden xl:flex items-center text-[10px] text-faint border border-line rounded px-1.5 py-0.5">⌘K</span>
+        </button>
         <div class="flex items-center gap-3">
           <LanguageSelector />
           <button
@@ -285,6 +303,14 @@ const initial = computed(() => (displayName.value.trim()[0] ?? '?').toUpperCase(
           <span class="font-display font-bold text-sm text-ink-strong">merchtracker</span>
         </NuxtLink>
         <div class="flex items-center gap-2">
+          <button
+            type="button"
+            class="w-8 h-8 rounded-field border border-line text-muted flex items-center justify-center"
+            :title="t('search.title')"
+            @click="openSearch('')"
+          >
+            <UIcon name="i-heroicons-magnifying-glass" class="w-4 h-4" />
+          </button>
           <LanguageSelector />
           <button
             type="button"
@@ -327,5 +353,8 @@ const initial = computed(() => (displayName.value.trim()[0] ?? '?').toUpperCase(
         <UIcon v-else name="i-heroicons-arrow-left-on-rectangle" class="w-6 h-6 text-faint" />
       </NuxtLink>
     </nav>
+
+    <!-- global search / file explorer palette -->
+    <SearchModal v-model="showSearch" :initial-query="searchInitial" />
   </div>
 </template>

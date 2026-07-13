@@ -1,5 +1,5 @@
 import { useDb } from '../../db'
-import { events, locations, booths, products, catalogImages, productPersonMarks, boothDiscounts, locationReceipts, locationReceiptItems, locationReceiptItemMarks, eventPersons, persons, itineraryItems, itineraryAttachments } from '../../db/schema'
+import { events, locations, booths, products, catalogImages, productPersonMarks, boothDiscounts, locationReceipts, locationReceiptItems, locationReceiptItemMarks, eventPersons, persons, itineraryItems, itineraryAttachments, itineraryItemPersons } from '../../db/schema'
 import { eq, or, asc, inArray } from 'drizzle-orm'
 import { requireEventView, canEditEvent, userBoothEditIds } from '../../utils/permissions'
 
@@ -94,6 +94,24 @@ export default defineEventHandler(async (event) => {
         .orderBy(asc(itineraryAttachments.sortOrder))
         .all()
     : []
+  // Assigned people per itinerary item: either a known Person (person_id, left-
+  // joined for name/color) or a free-text `name` for someone without an account.
+  const itineraryPersonRows = itineraryItemIds.length
+    ? db.select({
+        id: itineraryItemPersons.id,
+        itemId: itineraryItemPersons.itemId,
+        personId: itineraryItemPersons.personId,
+        manualName: itineraryItemPersons.name,
+        personName: persons.name,
+        color: persons.color,
+        sortOrder: itineraryItemPersons.sortOrder,
+      })
+        .from(itineraryItemPersons)
+        .leftJoin(persons, eq(persons.id, itineraryItemPersons.personId))
+        .where(inArray(itineraryItemPersons.itemId, itineraryItemIds))
+        .orderBy(asc(itineraryItemPersons.sortOrder), asc(itineraryItemPersons.createdAt))
+        .all()
+    : []
 
   // Explicit participants. When empty, the client should fall back to the
   // global persons list (preserves existing behaviour on legacy events).
@@ -172,6 +190,12 @@ export default defineEventHandler(async (event) => {
     itinerary: itineraryRows.filter(i => i.locationId === loc.id).map(i => ({
       ...i,
       attachments: itineraryAttRows.filter(a => a.itemId === i.id),
+      assignees: itineraryPersonRows.filter(a => a.itemId === i.id).map(a => ({
+        id: a.id,
+        personId: a.personId,
+        name: a.personId ? (a.personName ?? '?') : (a.manualName ?? '?'),
+        color: a.color ?? null,
+      })),
     })),
   }))
 

@@ -314,6 +314,15 @@ export function useDb() {
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS itinerary_item_persons (
+      id TEXT PRIMARY KEY,
+      item_id TEXT NOT NULL REFERENCES itinerary_items(id) ON DELETE CASCADE,
+      person_id TEXT REFERENCES persons(id) ON DELETE CASCADE,
+      name TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
   `)
 
   // Column migrations for existing databases (ALTER TABLE is idempotent via try/catch)

@@ -3,6 +3,7 @@ import { useEventsStore, type Location, type ItineraryItem, type ItineraryKind }
 import { usePersonsStore } from '~/stores/persons'
 import { useAuthStore } from '~/stores/auth'
 import { useLocale } from '~/composables/useLocale'
+import { usePersonColor } from '~/composables/usePersonColor'
 
 const props = defineProps<{ modelValue: boolean; location: Location; canEdit: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [v: boolean] }>()
@@ -11,6 +12,7 @@ const store = useEventsStore()
 const personsStore = usePersonsStore()
 const authStore = useAuthStore()
 const { t } = useLocale()
+const { personColorClass, initial } = usePersonColor()
 
 const KINDS: { key: ItineraryKind; icon: string; color: string; label: () => string }[] = [
   { key: 'activity', icon: 'i-heroicons-map-pin', color: 'text-sky', label: () => t('planner.kindActivity') },
@@ -76,31 +78,15 @@ const budget = computed(() => {
   return { planned: fmt(planned), spent: fmt(spent) }
 })
 
-// ── Add form ────────────────────────────────────────────────────────────
-const adding = ref<'itinerary' | 'wishlist' | null>(null)
-const form = reactive({ kind: 'activity' as ItineraryKind, title: '', date: '', time: '', endTime: '', fromLoc: '', toLoc: '', price: '' as string | number, currency: 'EUR', url: '' })
-function startAdd(mode: 'itinerary' | 'wishlist') {
-  adding.value = mode
-  Object.assign(form, { kind: mode === 'wishlist' ? 'shopping' : 'activity', title: '', date: props.location.dateFrom ?? '', time: '', endTime: '', fromLoc: '', toLoc: props.location.name, price: '', currency: 'EUR', url: '' })
-}
-async function submitAdd() {
-  // A transport leg can be title-less (from→to is enough); everything else needs a title.
-  if (form.kind !== 'transport' && !form.title.trim()) return
-  if (form.kind === 'transport' && !form.title.trim() && !form.fromLoc.trim() && !form.toLoc.trim()) return
-  await store.createItineraryItem({
-    locationId: props.location.id,
-    kind: form.kind,
-    title: form.title.trim() || (form.kind === 'transport' ? `${form.fromLoc || '?'} → ${form.toLoc || props.location.name}` : ''),
-    date: form.date || null,
-    time: form.time || null,
-    endTime: form.kind === 'transport' ? (form.endTime || null) : null,
-    fromLoc: form.kind === 'transport' ? (form.fromLoc || null) : null,
-    toLoc: form.kind === 'transport' ? (form.toLoc || null) : null,
-    price: form.price ? Number(form.price) : null,
-    currency: form.currency,
-    url: form.url || null,
-  })
-  adding.value = null
+// ── Add / edit via the shared modal (people + attachments + all fields) ───
+const showItemModal = ref(false)
+const modalItem = ref<ItineraryItem | null>(null)
+const addKind = ref<ItineraryKind>('activity')
+function openAdd(kind: ItineraryKind) {
+  if (!props.canEdit) return
+  modalItem.value = null
+  addKind.value = kind
+  showItemModal.value = true
 }
 
 async function toggleDone(it: ItineraryItem) {
@@ -111,13 +97,10 @@ async function removeItem(it: ItineraryItem) {
   await store.deleteItineraryItem(it.id)
 }
 
-// ── full edit via the shared modal ──────────────────────────────────────
-const editItem = ref<ItineraryItem | null>(null)
-const showEdit = ref(false)
 function openEdit(it: ItineraryItem) {
   if (!props.canEdit) return
-  editItem.value = it
-  showEdit.value = true
+  modalItem.value = it
+  showItemModal.value = true
 }
 const attachInput = ref<HTMLInputElement | null>(null)
 const attachTarget = ref<string | null>(null)
@@ -186,7 +169,7 @@ async function removeAttachment(it: ItineraryItem, attachmentId: string) {
         <div>
           <div class="flex items-center justify-between mb-2">
             <div class="text-[11px] font-bold uppercase tracking-[0.08em] text-faint">{{ t('planner.itinerary') }}</div>
-            <button v-if="canEdit" class="flex items-center gap-1 text-xs text-sky-soft hover:text-sky" @click="startAdd('itinerary')">
+            <button v-if="canEdit" class="flex items-center gap-1 text-xs text-sky-soft hover:text-sky" @click="openAdd('activity')">
               <UIcon name="i-heroicons-plus" class="w-3.5 h-3.5" /> {{ t('planner.addItem') }}
             </button>
           </div>
@@ -211,6 +194,13 @@ async function removeAttachment(it: ItineraryItem, attachmentId: string) {
                     <span>{{ it.fromLoc || '?' }}</span><UIcon name="i-heroicons-arrow-long-right" class="w-3.5 h-3.5" /><span>{{ it.toLoc || '?' }}</span>
                   </div>
                   <p v-if="it.notes" class="text-[11px] text-faint mt-0.5">{{ it.notes }}</p>
+                  <!-- assigned people -->
+                  <div v-if="it.assignees && it.assignees.length" class="flex items-center gap-1.5 flex-wrap mt-1.5">
+                    <span v-for="a in it.assignees" :key="a.id" class="inline-flex items-center gap-1 pl-0.5 pr-2 py-0.5 rounded-full bg-surface-2 border border-line text-[11px] text-muted">
+                      <span class="w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] font-bold text-on-accent shrink-0" :class="personColorClass(a.color)">{{ initial(a.name) }}</span>
+                      {{ a.name }}
+                    </span>
+                  </div>
                   <!-- tickets / QRs (multiple) + link -->
                   <div v-if="(it.attachments && it.attachments.length) || it.url" class="flex items-center gap-2 mt-1.5 flex-wrap">
                     <div v-for="att in it.attachments" :key="att.id" class="relative group/att">
@@ -241,7 +231,7 @@ async function removeAttachment(it: ItineraryItem, attachmentId: string) {
         <div>
           <div class="flex items-center justify-between mb-2">
             <div class="text-[11px] font-bold uppercase tracking-[0.08em] text-faint">{{ t('planner.wishlist') }}</div>
-            <button v-if="canEdit" class="flex items-center gap-1 text-xs text-bought hover:text-bought" @click="startAdd('wishlist')">
+            <button v-if="canEdit" class="flex items-center gap-1 text-xs text-bought hover:text-bought" @click="openAdd('shopping')">
               <UIcon name="i-heroicons-plus" class="w-3.5 h-3.5" /> {{ t('planner.addWish') }}
             </button>
           </div>
@@ -261,51 +251,19 @@ async function removeAttachment(it: ItineraryItem, attachmentId: string) {
           </div>
         </div>
 
-        <!-- Add form -->
-        <div v-if="adding" class="rounded-card border border-line-focus bg-surface-2 p-3.5 space-y-2.5">
-          <div v-if="adding === 'itinerary'" class="flex gap-1.5 flex-wrap">
-            <button
-              v-for="m in KINDS" :key="m.key" type="button"
-              class="flex items-center gap-1 px-2.5 py-1.5 rounded-field border text-[11.5px] font-semibold transition-colors"
-              :class="form.kind === m.key ? 'border-line-focus bg-chip-sky text-sky-soft' : 'border-line text-muted hover:border-line-focus'"
-              @click="form.kind = m.key"
-            ><UIcon :name="m.icon" class="w-3.5 h-3.5" /> {{ m.label() }}</button>
-          </div>
-          <input v-model="form.title" :placeholder="form.kind === 'transport' ? t('planner.transportModePlaceholder') : t('planner.titlePlaceholder')" class="w-full px-3 py-2 rounded-field border border-line bg-surface text-[13px] text-ink outline-none focus:border-line-focus" autofocus @keydown.enter="submitAdd" />
-          <!-- transport: from → to -->
-          <div v-if="form.kind === 'transport'" class="flex gap-2 items-center">
-            <input v-model="form.fromLoc" :placeholder="t('planner.from')" class="flex-1 min-w-0 px-2.5 py-2 rounded-field border border-line bg-surface text-[12px] text-ink outline-none" />
-            <UIcon name="i-heroicons-arrow-long-right" class="w-4 h-4 text-faint shrink-0" />
-            <input v-model="form.toLoc" :placeholder="t('planner.to')" class="flex-1 min-w-0 px-2.5 py-2 rounded-field border border-line bg-surface text-[12px] text-ink outline-none" />
-          </div>
-          <div class="flex gap-2 flex-wrap">
-            <input v-if="adding === 'itinerary'" v-model="form.date" type="date" class="px-2.5 py-2 rounded-field border border-line bg-surface text-[12px] text-ink outline-none" />
-            <label v-if="adding === 'itinerary'" class="flex items-center gap-1 text-[11px] text-faint">
-              <span v-if="form.kind === 'transport'">{{ t('planner.depart') }}</span>
-              <input v-model="form.time" type="time" class="px-2.5 py-2 rounded-field border border-line bg-surface text-[12px] text-ink outline-none w-28" />
-            </label>
-            <label v-if="form.kind === 'transport'" class="flex items-center gap-1 text-[11px] text-faint">
-              {{ t('planner.arrive') }}
-              <input v-model="form.endTime" type="time" class="px-2.5 py-2 rounded-field border border-line bg-surface text-[12px] text-ink outline-none w-28" />
-            </label>
-            <input v-if="adding === 'wishlist' || form.kind === 'ticket'" v-model="form.price" type="number" step="0.01" placeholder="0" class="px-2.5 py-2 rounded-field border border-line bg-surface text-[12px] text-ink outline-none w-24 mono" />
-            <input v-model="form.url" :placeholder="t('planner.urlPlaceholder')" class="flex-1 min-w-[140px] px-2.5 py-2 rounded-field border border-line bg-surface text-[12px] text-ink outline-none" />
-          </div>
-          <div class="flex justify-end gap-2">
-            <button class="px-3 py-1.5 rounded-field text-[12.5px] text-muted hover:text-ink" @click="adding = null">{{ t('common.cancel') }}</button>
-            <button class="px-3.5 py-1.5 rounded-field grad-primary text-[12.5px] font-bold disabled:opacity-50" :disabled="!form.title.trim()" @click="submitAdd">{{ t('planner.save') }}</button>
-          </div>
-        </div>
       </div>
 
       <input ref="attachInput" type="file" accept="image/*,application/pdf" multiple class="hidden" @change="onAttach" />
 
       <ItineraryItemModal
         v-if="store.currentEvent"
-        v-model="showEdit"
+        v-model="showItemModal"
         :event="store.currentEvent"
-        :item="editItem"
+        :item="modalItem"
         :lock-location-id="location.id"
+        :default-location-id="location.id"
+        :default-date="location.dateFrom"
+        :default-kind="addKind"
         :can-edit="canEdit"
       />
     </UCard>
