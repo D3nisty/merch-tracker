@@ -1,5 +1,5 @@
 import { useDb } from '../../db'
-import { events, locations, booths, catalogImages, locationReceipts } from '../../db/schema'
+import { events, locations, booths, catalogImages, locationReceipts, itineraryItems, itineraryAttachments } from '../../db/schema'
 import { eq, or, inArray } from 'drizzle-orm'
 import { requireUser } from '../../utils/auth'
 import { deleteUploadedFiles } from '../../utils/uploads'
@@ -46,11 +46,22 @@ export default defineEventHandler(async (event) => {
         .where(inArray(locationReceipts.locationId, locationIds))
         .all()
     : []
+  const itinFiles = db.select({ path: itineraryItems.attachmentPath })
+    .from(itineraryItems)
+    .where(eq(itineraryItems.eventId, existing.id))
+    .all()
+  const itinAttFiles = db.select({ path: itineraryAttachments.path })
+    .from(itineraryAttachments)
+    .innerJoin(itineraryItems, eq(itineraryItems.id, itineraryAttachments.itemId))
+    .where(eq(itineraryItems.eventId, existing.id))
+    .all()
   const filesToDelete: string[] = []
   for (const l of locs) if (l.floorPlanImage) filesToDelete.push(l.floorPlanImage)
   for (const b of boothRows) if (b.iconPath) filesToDelete.push(b.iconPath)
   for (const i of images) filesToDelete.push(i.path)
   for (const r of receipts) filesToDelete.push(r.path)
+  for (const it of itinFiles) if (it.path) filesToDelete.push(it.path)
+  for (const a of itinAttFiles) if (a.path) filesToDelete.push(a.path)
 
   db.delete(events).where(eq(events.id, existing.id)).run()
 

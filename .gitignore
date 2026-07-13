@@ -10,3 +10,4 @@ public/uploads/
 .env
 .env.local
 .claude/design_handoff_merchtracker_nomad
+testfiles/

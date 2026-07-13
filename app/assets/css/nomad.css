@@ -91,6 +91,18 @@ h1, h2, h3, h4 {
   background-image: linear-gradient(120deg, #2a2358, #161232);
 }
 
+/* ── Trip map (Leaflet) ───────────────────────────────────────────────── */
+.trip-pin {
+  width: 26px; height: 26px; border-radius: 50%;
+  background-image: linear-gradient(140deg, #38bdf8, #6366f1);
+  color: #04121c; font: 700 12px 'Public Sans', sans-serif;
+  display: flex; align-items: center; justify-content: center;
+  border: 2px solid #04121c; box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+}
+.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--c-surface); color: var(--c-text); }
+.leaflet-popup-content { font-family: 'Public Sans', sans-serif; }
+.leaflet-container { background: var(--c-surface-2); font-family: 'Public Sans', sans-serif; }
+
 /* Scrollbar — subtle on the slate surfaces */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--c-border); border-radius: 8px; }

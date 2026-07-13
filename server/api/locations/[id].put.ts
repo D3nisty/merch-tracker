@@ -22,6 +22,8 @@ export default defineEventHandler(async (event) => {
     notes: body.notes !== undefined ? body.notes : existing.notes,
     dateFrom: body.dateFrom !== undefined ? body.dateFrom : existing.dateFrom,
     dateTo: body.dateTo !== undefined ? body.dateTo : existing.dateTo,
+    transport: body.transport !== undefined ? body.transport : existing.transport,
+    accommodation: body.accommodation !== undefined ? body.accommodation : existing.accommodation,
   }
 
   db.update(locations).set(updated).where(eq(locations.id, id)).run()

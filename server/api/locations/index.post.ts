@@ -29,6 +29,8 @@ export default defineEventHandler(async (event) => {
     notes: body.notes ?? null,
     dateFrom: body.dateFrom ?? null,
     dateTo: body.dateTo ?? null,
+    transport: body.transport ?? null,
+    accommodation: body.accommodation ?? null,
     sortOrder,
     createdAt: now(),
   }

@@ -283,9 +283,47 @@ export function useDb() {
       created_at TEXT NOT NULL,
       UNIQUE(booth_id, group_id)
     );
+
+    CREATE TABLE IF NOT EXISTS itinerary_items (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      location_id TEXT NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL DEFAULT 'activity' CHECK(kind IN ('activity','ticket','food','transport','shopping','note')),
+      title TEXT NOT NULL,
+      date TEXT,
+      time TEXT,
+      from_loc TEXT,
+      to_loc TEXT,
+      end_time TEXT,
+      done INTEGER NOT NULL DEFAULT 0,
+      price REAL,
+      currency TEXT NOT NULL DEFAULT 'EUR',
+      url TEXT,
+      attachment_path TEXT,
+      attachment_name TEXT,
+      notes TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS itinerary_attachments (
+      id TEXT PRIMARY KEY,
+      item_id TEXT NOT NULL REFERENCES itinerary_items(id) ON DELETE CASCADE,
+      path TEXT NOT NULL,
+      name TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
   `)
 
   // Column migrations for existing databases (ALTER TABLE is idempotent via try/catch)
+  try { sqlite.exec(`ALTER TABLE locations ADD COLUMN transport TEXT`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE locations ADD COLUMN accommodation TEXT`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE locations ADD COLUMN latitude REAL`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE locations ADD COLUMN longitude REAL`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE itinerary_items ADD COLUMN from_loc TEXT`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE itinerary_items ADD COLUMN to_loc TEXT`) } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE itinerary_items ADD COLUMN end_time TEXT`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE locations ADD COLUMN layout_data TEXT`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE catalog_images ADD COLUMN custom_name TEXT`) } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE catalog_images ADD COLUMN image_type TEXT DEFAULT 'catalog'`) } catch { /* already exists */ }

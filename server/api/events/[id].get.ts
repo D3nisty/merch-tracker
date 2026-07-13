@@ -1,5 +1,5 @@
 import { useDb } from '../../db'
-import { events, locations, booths, products, catalogImages, productPersonMarks, boothDiscounts, locationReceipts, locationReceiptItems, locationReceiptItemMarks, eventPersons, persons } from '../../db/schema'
+import { events, locations, booths, products, catalogImages, productPersonMarks, boothDiscounts, locationReceipts, locationReceiptItems, locationReceiptItemMarks, eventPersons, persons, itineraryItems, itineraryAttachments } from '../../db/schema'
 import { eq, or, asc, inArray } from 'drizzle-orm'
 import { requireEventView, canEditEvent, userBoothEditIds } from '../../utils/permissions'
 
@@ -81,6 +81,20 @@ export default defineEventHandler(async (event) => {
         .all()
     : []
 
+  // Travel-planner entries (activities / tickets / to-dos / day-schedule /
+  // shopping wishlist) for every city in this event.
+  const itineraryRows = db.select().from(itineraryItems)
+    .where(eq(itineraryItems.eventId, eventRow.id))
+    .orderBy(asc(itineraryItems.date), asc(itineraryItems.sortOrder), asc(itineraryItems.createdAt))
+    .all()
+  const itineraryItemIds = itineraryRows.map(i => i.id)
+  const itineraryAttRows = itineraryItemIds.length
+    ? db.select().from(itineraryAttachments)
+        .where(inArray(itineraryAttachments.itemId, itineraryItemIds))
+        .orderBy(asc(itineraryAttachments.sortOrder))
+        .all()
+    : []
+
   // Explicit participants. When empty, the client should fall back to the
   // global persons list (preserves existing behaviour on legacy events).
   const participantRows = db.select({
@@ -154,6 +168,10 @@ export default defineEventHandler(async (event) => {
           quantity: m.quantity,
         })),
       })),
+    })),
+    itinerary: itineraryRows.filter(i => i.locationId === loc.id).map(i => ({
+      ...i,
+      attachments: itineraryAttRows.filter(a => a.itemId === i.id),
     })),
   }))
 

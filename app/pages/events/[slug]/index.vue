@@ -30,6 +30,9 @@ const showAddLocation = ref(false)
 const showEditEvent = ref(false)
 const showShareEvent = ref(false)
 const showParticipants = ref(false)
+const showMap = ref(false)
+const showImport = ref(false)
+const viewMode = ref<'plan' | 'timetable'>('plan')
 const showDeleteLocationModal = ref(false)
 const showQrScanner = ref(false)
 const deleteLocationId = ref<string | null>(null)
@@ -157,6 +160,22 @@ onBeforeUnmount(clearFab)
       </div>
       <div class="flex gap-2 items-start shrink-0 flex-wrap">
         <button
+          v-if="!isConv"
+          class="flex items-center gap-1.5 px-3.5 py-2 rounded-field border border-line-focus text-sky-soft hover:bg-chip-sky/50 text-[12.5px] font-semibold transition-colors"
+          @click="showMap = true"
+        >
+          <UIcon name="i-heroicons-map" class="w-3.5 h-3.5" />
+          <span class="hidden sm:inline">{{ t('map.button') }}</span>
+        </button>
+        <button
+          v-if="!isConv && authStore.isEditing"
+          class="flex items-center gap-1.5 px-3.5 py-2 rounded-field border border-line-focus text-sky-soft hover:bg-chip-sky/50 text-[12.5px] font-semibold transition-colors"
+          @click="showImport = true"
+        >
+          <UIcon name="i-heroicons-arrow-up-tray" class="w-3.5 h-3.5" />
+          <span class="hidden sm:inline">{{ t('import.addTitle') }}</span>
+        </button>
+        <button
           v-if="canShare"
           class="flex items-center gap-1.5 px-3.5 py-2 rounded-field border text-[12.5px] font-semibold transition-colors"
           :class="isConv ? 'border-[#3b3a6b] text-conv-soft hover:bg-chip-conv/50' : 'border-line-focus text-sky-soft hover:bg-chip-sky/50'"
@@ -189,6 +208,25 @@ onBeforeUnmount(clearFab)
       {{ t('event.showingBudgetFor') }} <b class="text-ink-strong">{{ personsStore.currentPerson.name }}</b>
     </div>
 
+    <!-- view toggle: Overview (shops/plan) ↔ Timetable (travel only) -->
+    <div v-if="!isConv" class="flex gap-1 p-1 rounded-[11px] border border-line bg-surface-2 w-max mb-5">
+      <button
+        v-for="v in (['plan','timetable'] as const)" :key="v"
+        type="button"
+        class="px-4 py-1.5 rounded-[8px] text-[12.5px] flex items-center gap-1.5 transition-colors"
+        :class="viewMode === v ? 'bg-sky text-on-accent font-bold' : 'text-muted hover:text-ink font-medium'"
+        @click="viewMode = v"
+      >
+        <UIcon :name="v === 'plan' ? 'i-heroicons-squares-2x2' : 'i-heroicons-calendar-days'" class="w-3.5 h-3.5" />
+        {{ v === 'plan' ? t('timetable.viewPlan') : t('timetable.viewTimetable') }}
+      </button>
+    </div>
+
+    <!-- ══ TIMETABLE VIEW ══ -->
+    <TripTimetable v-if="!isConv && viewMode === 'timetable'" :event="event" class="mb-8" />
+
+    <!-- ══ OVERVIEW (plan) VIEW ══ -->
+    <div v-show="isConv || viewMode === 'plan'">
     <!-- stats -->
     <div :class="['grid gap-3 mb-5', authStore.isEditing ? 'grid-cols-2 md:grid-cols-3 lg:grid-cols-5' : 'grid-cols-3']">
       <div class="rounded-card border border-line bg-surface p-3.5 text-center">
@@ -318,12 +356,15 @@ onBeforeUnmount(clearFab)
         @booth-drag-end="onBoothDragEnd"
       />
     </VueDraggable>
+    </div><!-- /overview view -->
 
     <!-- modals -->
     <AddLocationModal v-model="showAddLocation" :event-id="event.id" :event-type="event.type" />
     <EditEventModal v-model="showEditEvent" :event="event" />
     <ShareEventModal v-model="showShareEvent" :event="event" />
     <EventParticipantsModal v-model="showParticipants" :event-id="event.id" />
+    <TripMapModal v-if="event.type === 'travel'" v-model="showMap" :event="event" :can-edit="authStore.isEditing" />
+    <ImportTravelModal v-if="event.type === 'travel'" v-model="showImport" :target-event="event" />
 
     <QrScannerModal
       v-if="event.type === 'convention'"

@@ -24,8 +24,11 @@ const authStore = useAuthStore()
 const { t } = useLocale()
 const showAddBooth = ref(false)
 const showAddReceipt = ref(false)
+const showPlanner = ref(false)
 const viewingReceipt = ref<LocationReceipt | null>(null)
 const expanded = ref(true)
+
+const itineraryCount = computed(() => props.location.itinerary?.length ?? 0)
 
 const isConv = computed(() => props.eventType === 'convention')
 
@@ -153,6 +156,15 @@ function formatDateRange(from: string | null, to: string | null) {
 
       <!-- actions -->
       <div class="flex items-center gap-1 shrink-0">
+        <button
+          v-if="!isConv"
+          class="relative w-7 h-7 rounded-md flex items-center justify-center text-sky-soft hover:bg-chip-sky/50 transition-colors"
+          :title="t('planner.title')"
+          @click.stop="showPlanner = true"
+        >
+          <UIcon name="i-heroicons-calendar-days" class="w-4 h-4" />
+          <span v-if="itineraryCount" class="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-1 rounded-full bg-sky text-on-accent text-[9px] font-bold flex items-center justify-center">{{ itineraryCount }}</span>
+        </button>
         <NuxtLink
           v-if="isConv"
           :to="`/events/${route.params.slug}/hallplan`"
@@ -252,6 +264,7 @@ function formatDateRange(from: string | null, to: string | null) {
       </VueDraggable>
     </div>
 
+    <CityPlannerModal v-if="!isConv" v-model="showPlanner" :location="location" :can-edit="authStore.isEditing" />
     <AddBoothModal v-model="showAddBooth" :location-id="location.id" :event-type="eventType" />
     <UploadLocationReceiptModal
       v-if="canHaveReceipts"

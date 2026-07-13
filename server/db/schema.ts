@@ -96,6 +96,54 @@ export const locations = sqliteTable('locations', {
   notes: text('notes'),
   dateFrom: text('date_from'),
   dateTo: text('date_to'),
+  // Travel-planner logistics for a city stop (free text; auto-filled on import).
+  transport: text('transport'),
+  accommodation: text('accommodation'),
+  // Geocoded coordinates for the trip map (route + city pins).
+  latitude: real('latitude'),
+  longitude: real('longitude'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+})
+
+// Unified per-city travel-planner entry: activities, to-dos, tickets /
+// reservations (with an openable link or uploaded screenshot/QR), transport &
+// food notes, and quick shopping-wishlist items. `date` (nullable) ties an
+// entry to a day for the day-by-day itinerary; `kind` categorises it; `done`
+// checks it off (or "bought" for shopping). `price`/`currency` feed the
+// per-city budget; `url` + `attachmentPath` make tickets/QRs openable.
+export const itineraryItems = sqliteTable('itinerary_items', {
+  id: text('id').primaryKey(),
+  eventId: text('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
+  locationId: text('location_id').notNull().references(() => locations.id, { onDelete: 'cascade' }),
+  kind: text('kind', { enum: ['activity', 'ticket', 'food', 'transport', 'shopping', 'note'] }).notNull().default('activity'),
+  title: text('title').notNull(),
+  date: text('date'),
+  time: text('time'),
+  // Structured transport legs (kind='transport'): from → to, `time` is the
+  // departure time and `endTime` the arrival time.
+  fromLoc: text('from_loc'),
+  toLoc: text('to_loc'),
+  endTime: text('end_time'),
+  done: integer('done', { mode: 'boolean' }).notNull().default(false),
+  price: real('price'),
+  currency: text('currency').notNull().default('EUR'),
+  url: text('url'),
+  // Legacy single-attachment columns (superseded by itinerary_attachments).
+  attachmentPath: text('attachment_path'),
+  attachmentName: text('attachment_name'),
+  notes: text('notes'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+})
+
+// Multiple ticket / reservation files (PDFs or screenshot / QR images) per
+// itinerary item. Cascades when the item is removed.
+export const itineraryAttachments = sqliteTable('itinerary_attachments', {
+  id: text('id').primaryKey(),
+  itemId: text('item_id').notNull().references(() => itineraryItems.id, { onDelete: 'cascade' }),
+  path: text('path').notNull(),
+  name: text('name').notNull(),
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: text('created_at').notNull(),
 })

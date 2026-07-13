@@ -229,10 +229,50 @@ export interface Location {
   notes: string | null
   dateFrom: string | null
   dateTo: string | null
+  transport?: string | null
+  accommodation?: string | null
+  latitude?: number | null
+  longitude?: number | null
   createdAt: string
   booths?: Booth[]
   // Travel-mode receipts that span multiple shops within this location.
   receipts?: LocationReceipt[]
+  // Travel-planner entries (activities / tickets / to-dos / day-schedule /
+  // shopping wishlist) for this city.
+  itinerary?: ItineraryItem[]
+}
+
+export type ItineraryKind = 'activity' | 'ticket' | 'food' | 'transport' | 'shopping' | 'note'
+export interface ItineraryAttachment {
+  id: string
+  itemId: string
+  path: string
+  name: string
+  sortOrder: number
+  createdAt: string
+}
+export interface ItineraryItem {
+  id: string
+  eventId: string
+  locationId: string
+  kind: ItineraryKind
+  title: string
+  date: string | null
+  time: string | null
+  // Structured transport legs (kind='transport'): time = departure, endTime = arrival.
+  fromLoc?: string | null
+  toLoc?: string | null
+  endTime?: string | null
+  done: boolean
+  price: number | null
+  currency: string
+  url: string | null
+  attachmentPath: string | null
+  attachmentName: string | null
+  attachments?: ItineraryAttachment[]
+  notes: string | null
+  sortOrder: number
+  createdAt: string
 }
 
 // City-wide receipt: one image, products checked off come from any booth
@@ -441,6 +481,55 @@ export const useEventsStore = defineStore('events', () => {
       if (idx !== -1) currentEvent.value.locations[idx] = { ...currentEvent.value.locations[idx], ...updated }
     }
     return updated
+  }
+
+  // ── Travel-planner itinerary items ──────────────────────────────────
+  function locationById(id: string) {
+    return currentEvent.value?.locations?.find(l => l.id === id)
+  }
+  async function createItineraryItem(data: Partial<ItineraryItem> & { locationId: string; title: string }) {
+    const created = await $fetch<ItineraryItem>('/api/itinerary', { method: 'POST', body: data })
+    const loc = locationById(data.locationId)
+    if (loc) loc.itinerary = [...(loc.itinerary ?? []), created]
+    return created
+  }
+  async function updateItineraryItem(id: string, data: Partial<ItineraryItem>) {
+    const updated = await $fetch<ItineraryItem>(`/api/itinerary/${id}`, { method: 'PUT', body: data })
+    const loc = currentEvent.value?.locations?.find(l => (l.itinerary ?? []).some(i => i.id === id))
+    if (loc?.itinerary) {
+      const idx = loc.itinerary.findIndex(i => i.id === id)
+      if (idx !== -1) loc.itinerary[idx] = { ...loc.itinerary[idx], ...updated }
+    }
+    return updated
+  }
+  async function deleteItineraryItem(id: string) {
+    await $fetch(`/api/itinerary/${id}`, { method: 'DELETE' })
+    const loc = currentEvent.value?.locations?.find(l => (l.itinerary ?? []).some(i => i.id === id))
+    if (loc?.itinerary) loc.itinerary = loc.itinerary.filter(i => i.id !== id)
+  }
+  function itineraryItemById(itemId: string) {
+    const loc = currentEvent.value?.locations?.find(l => (l.itinerary ?? []).some(i => i.id === itemId))
+    return loc?.itinerary?.find(i => i.id === itemId)
+  }
+  async function uploadItineraryAttachments(itemId: string, files: File[]) {
+    const fd = new FormData()
+    fd.append('itemId', itemId)
+    for (const f of files) fd.append('file', f)
+    const list = await $fetch<ItineraryAttachment[]>('/api/upload/itinerary-attachment', { method: 'POST', body: fd })
+    const it = itineraryItemById(itemId)
+    if (it) it.attachments = list
+    return list
+  }
+  async function deleteItineraryAttachment(itemId: string, attachmentId: string) {
+    await $fetch(`/api/itinerary/attachments/${attachmentId}`, { method: 'DELETE' })
+    const it = itineraryItemById(itemId)
+    if (it?.attachments) it.attachments = it.attachments.filter(a => a.id !== attachmentId)
+  }
+  async function geocodeLocation(id: string) {
+    const res = await $fetch<{ id: string; latitude: number; longitude: number }>(`/api/locations/${id}/geocode`, { method: 'POST' })
+    const loc = currentEvent.value?.locations?.find(l => l.id === id)
+    if (loc) { loc.latitude = res.latitude; loc.longitude = res.longitude }
+    return res
   }
 
   async function deleteLocation(id: string) {
@@ -1578,6 +1667,12 @@ export const useEventsStore = defineStore('events', () => {
     createLocation,
     updateLocation,
     deleteLocation,
+    createItineraryItem,
+    updateItineraryItem,
+    deleteItineraryItem,
+    uploadItineraryAttachments,
+    deleteItineraryAttachment,
+    geocodeLocation,
     createBooth,
     updateBooth,
     deleteBooth,

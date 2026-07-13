@@ -30,6 +30,7 @@ const dateToMin = computed(() => form.date || undefined)
 
 const submitting = ref(false)
 const error = ref('')
+const showImport = ref(false)
 
 async function handleSubmit() {
   if (!form.name.trim()) {
@@ -69,7 +70,16 @@ const typeOptions = computed(() => [
       <NuxtLink to="/" class="text-gray-400 hover:text-white flex items-center gap-1 text-sm mb-4">
         <UIcon name="i-heroicons-arrow-left" class="w-4 h-4" /> {{ t('common.back') }}
       </NuxtLink>
-      <h1 class="text-2xl font-bold text-white">{{ t('createEvent.title') }}</h1>
+      <div class="flex items-center justify-between gap-3 flex-wrap">
+        <h1 class="text-2xl font-bold text-white">{{ t('createEvent.title') }}</h1>
+        <button
+          type="button"
+          class="flex items-center gap-1.5 px-3.5 py-2 rounded-field border border-line-focus text-sky-soft hover:bg-chip-sky/50 text-[12.5px] font-semibold transition-colors"
+          @click="showImport = true"
+        >
+          <UIcon name="i-heroicons-arrow-up-tray" class="w-4 h-4" /> {{ t('import.button') }}
+        </button>
+      </div>
     </div>
 
     <UCard>
@@ -141,5 +151,7 @@ const typeOptions = computed(() => [
         </div>
       </form>
     </UCard>
+
+    <ImportTravelModal v-model="showImport" />
   </div>
 </template>
