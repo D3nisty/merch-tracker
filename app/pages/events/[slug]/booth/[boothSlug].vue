@@ -543,6 +543,11 @@ function onFabAdd() {
   else showAddProduct.value = true
 }
 
+// Mobile bottom-bar FAB → adds a product / new article on this booth (editors).
+const { setFab, clearFab } = useMobileFab()
+onMounted(() => { if (canEdit.value) setFab({ label: t('booth.addProduct'), icon: 'i-heroicons-plus', run: onFabAdd }) })
+onBeforeUnmount(clearFab)
+
 // Article gallery cards — each article image + its price sources, cheapest
 // wins, savings vs. average. `isPurchased`/`isPlanned` on each source are the
 // VIEWER's own marks (server-substituted), so each viewer sees their winner.

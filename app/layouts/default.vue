@@ -6,6 +6,7 @@ import { useAuthStore } from '~/stores/auth'
 import { usePersonsStore } from '~/stores/persons'
 import { useEventsStore } from '~/stores/events'
 import { useLocale } from '~/composables/useLocale'
+import { useMobileFab } from '~/composables/useMobileFab'
 
 const authStore = useAuthStore()
 const personsStore = usePersonsStore()
@@ -51,6 +52,14 @@ async function handleLogout() {
   await authStore.logout()
   personsStore.selectPerson(null)
   router.push('/')
+}
+
+// Context-aware mobile FAB: run the page's registered "add" action, or fall
+// back to creating a new event.
+const { fab } = useMobileFab()
+function onMobileFab() {
+  if (fab.value) fab.value.run()
+  else router.push('/events/create')
 }
 
 // ── Contextual accent ──────────────────────────────────────────────────
@@ -300,14 +309,16 @@ const initial = computed(() => (displayName.value.trim()[0] ?? '?').toUpperCase(
       <NuxtLink to="/admin/groups" class="p-1.5" :class="activeNav === 'groups' ? 'text-sky' : 'text-faint'">
         <UIcon name="i-heroicons-user-group" class="w-6 h-6" />
       </NuxtLink>
-      <NuxtLink
+      <button
         v-if="authStore.isLoggedIn"
-        to="/events/create"
+        type="button"
         class="w-11 h-11 -mt-6 rounded-[14px] flex items-center justify-center shadow-lg"
         :class="isConvContext ? 'grad-conv' : 'grad-primary'"
+        :title="fab ? fab.label : t('nav.newEvent')"
+        @click="onMobileFab"
       >
-        <UIcon name="i-heroicons-plus" class="w-6 h-6 text-on-accent" />
-      </NuxtLink>
+        <UIcon :name="fab?.icon ?? 'i-heroicons-plus'" class="w-6 h-6 text-on-accent" />
+      </button>
       <NuxtLink to="/account" class="p-1.5 text-faint">
         <UIcon name="i-heroicons-cog-6-tooth" class="w-6 h-6" />
       </NuxtLink>

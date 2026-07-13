@@ -115,6 +115,19 @@ function confirmDeleteLocation(id: string) {
   deleteLocationId.value = id
   showDeleteLocationModal.value = true
 }
+
+// Mobile bottom-bar FAB → add a city (travel) / hall (convention) here (editors).
+const { setFab, clearFab } = useMobileFab()
+onMounted(() => {
+  if (authStore.isEditing) {
+    setFab({
+      label: isConv.value ? t('event.addHall') : t('event.addLocation'),
+      icon: 'i-heroicons-plus',
+      run: () => { showAddLocation.value = true },
+    })
+  }
+})
+onBeforeUnmount(clearFab)
 </script>
 
 <template>

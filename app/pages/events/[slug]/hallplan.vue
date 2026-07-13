@@ -165,6 +165,15 @@ const locationStats = computed(() => {
     spent,
   }
 })
+
+// Mobile bottom-bar FAB → add a booth to the selected hall (editors).
+const { setFab, clearFab } = useMobileFab()
+onMounted(() => {
+  if (authStore.isEditing) {
+    setFab({ label: t('hallplan.addBooth'), icon: 'i-heroicons-plus', run: () => { showAddBooth.value = true } })
+  }
+})
+onBeforeUnmount(clearFab)
 </script>
 
 <template>
